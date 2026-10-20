@@ -95,8 +95,14 @@ export class CarPhysics {
   }
 
   integrate(dt) {
-    const forward = !!(this.keys.ArrowUp || this.keys.KeyW);
-    const backward = !!(this.keys.ArrowDown || this.keys.KeyS);
+    const keyForward = !!(this.keys.ArrowUp || this.keys.KeyW);
+    const keyBackward = !!(this.keys.ArrowDown || this.keys.KeyS);
+    const tilt = this.tiltInput || { throttle: 0, steering: 0 };
+    // Touch/keyboard pedals override tilt, including an immediate brake override.
+    const pedal = keyForward || keyBackward ? Number(keyForward) - Number(keyBackward) : tilt.throttle;
+    const forward = pedal > 0 || (keyForward && keyBackward);
+    const backward = pedal < 0 || (keyForward && keyBackward);
+    const pressure = Math.abs(pedal);
     this.handbrake = !!this.keys.Space;
     const oldHeading = this.heading;
     const previousSpeed = this.speed;
@@ -107,21 +113,21 @@ export class CarPhysics {
       this.reverseDelay = 0;
     } else if ((forward && this.speed < 0) || (backward && this.speed > 0)) {
       // Opposite pedal first brakes to rest. It cannot change direction in one step.
-      this.speed = stop(this.braking * dt);
+      this.speed = stop(this.braking * pressure * dt);
       this.reverseDelay = 0;
-      this.throttle = -0.6;
+      this.throttle = -0.6 * pressure;
     } else if (backward) {
       this.reverseDelay = (this.reverseDelay || 0) + dt;
       if (this.reverseDelay >= 0.3 || this.speed < 0) {
-        this.throttle = -0.6;
-        this.speed = Math.max(-30, this.speed - this.acceleration * 0.45 * dt);
+        this.throttle = -0.6 * pressure;
+        this.speed = Math.max(-30, this.speed - this.acceleration * 0.45 * pressure * dt);
       }
     } else if (forward) {
       this.reverseDelay = 0;
-      this.throttle = 1;
+      this.throttle = pressure;
       const mode = this.handlingMode === 'Sport+' ? 1.2 : 1;
       const power = Math.max(0, 1 - (this.speed / this.maxSpeed) ** 2);
-      this.speed = Math.min(this.maxSpeed, this.speed + this.acceleration * mode * power * dt);
+      this.speed = Math.min(this.maxSpeed, this.speed + this.acceleration * mode * power * pressure * dt);
     } else {
       this.reverseDelay = 0;
       // Rolling resistance plus aerodynamic drag; never changes travel direction.
@@ -130,7 +136,7 @@ export class CarPhysics {
 
     const left = !!(this.keys.ArrowLeft || this.keys.KeyA);
     const right = !!(this.keys.ArrowRight || this.keys.KeyD);
-    const target = Number(left) - Number(right);
+    const target = left || right ? Number(left) - Number(right) : tilt.steering;
     this.steering += (target - this.steering) * (1 - Math.exp(-7 * dt));
     if (Math.abs(this.steering) < 0.0001) this.steering = 0;
     const speedMs = (previousSpeed + this.speed) / 7.2;

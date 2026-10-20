@@ -759,6 +759,21 @@
       .start-title { font-size: 30px; }
       .start-subtitle { margin-bottom: 10px; }
     }
+    .touch-steering { position: relative; }
+    .tilt-settings { position: absolute; bottom: 78px; left: 0; width: 190px; display: flex; flex-wrap: wrap; gap: 5px; pointer-events: auto; }
+    .tilt-settings button { min-height: 44px; padding: 6px 10px; border-radius: 9px; border: 1px solid #8197a6; background: #101e2c; color: white; touch-action: manipulation; }
+    .tilt-settings button[aria-pressed="true"] { background: #085c66; }
+    .tilt-settings button:disabled { opacity: .5; }
+    #tilt-status { font-size: 10px; line-height: 1.35; background: #101e2cee; padding: 4px; border-radius: 4px; }
+    @media (max-width: 800px), (any-pointer: coarse) {
+      #map-container { bottom: calc(195px + env(safe-area-inset-bottom)); width: 132px; height: 80px; }
+      #imagery-attribution { bottom: calc(285px + env(safe-area-inset-bottom)) !important; }
+    }
+    @media (max-height: 500px) and (orientation: landscape) {
+      #map-container { left: 220px; bottom: max(12px, env(safe-area-inset-bottom)); height: 65px; width: 100px; }
+      #imagery-attribution { bottom: 8px !important; }
+      #akanzi-hud { left: 230px !important; top: 150px !important; }
+    }
     [hidden] { display: none !important; }
 
     /* Responsive expedition studio and direct driving controls */
@@ -913,6 +928,21 @@
       .start-title { font-size: 30px; }
       .start-subtitle { margin-bottom: 10px; }
     }
+    .touch-steering { position: relative; }
+    .tilt-settings { position: absolute; bottom: 78px; left: 0; width: 190px; display: flex; flex-wrap: wrap; gap: 5px; pointer-events: auto; }
+    .tilt-settings button { min-height: 44px; padding: 6px 10px; border-radius: 9px; border: 1px solid #8197a6; background: #101e2c; color: white; touch-action: manipulation; }
+    .tilt-settings button[aria-pressed="true"] { background: #085c66; }
+    .tilt-settings button:disabled { opacity: .5; }
+    #tilt-status { font-size: 10px; line-height: 1.35; background: #101e2cee; padding: 4px; border-radius: 4px; }
+    @media (max-width: 800px), (any-pointer: coarse) {
+      #map-container { bottom: calc(195px + env(safe-area-inset-bottom)); width: 132px; height: 80px; }
+      #imagery-attribution { bottom: calc(285px + env(safe-area-inset-bottom)) !important; }
+    }
+    @media (max-height: 500px) and (orientation: landscape) {
+      #map-container { left: 220px; bottom: max(12px, env(safe-area-inset-bottom)); height: 65px; width: 100px; }
+      #imagery-attribution { bottom: 8px !important; }
+      #akanzi-hud { left: 230px !important; top: 150px !important; }
+    }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -969,6 +999,11 @@
       <button id="sidebar-toggle" type="button" aria-controls="control-sidebar" aria-expanded="false">Studio</button>
       <div id="drive-touch-controls" role="group" aria-label="Touch driving controls">
         <div class="touch-steering">
+          <div class="tilt-settings">
+            <button id="tilt-toggle" type="button" aria-pressed="false">Enable tilt</button>
+            <button id="tilt-calibrate" type="button" disabled aria-label="Calibrate neutral phone position">Center</button>
+            <span id="tilt-status" role="status">Tilt your phone to drive</span>
+          </div>
           <button class="drive-touch-btn" type="button" data-drive-key="ArrowLeft" aria-label="Steer left" aria-pressed="false">←</button>
           <button class="drive-touch-btn" type="button" data-drive-key="ArrowRight" aria-label="Steer right" aria-pressed="false">→</button>
         </div>

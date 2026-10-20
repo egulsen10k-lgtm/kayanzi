@@ -1,3 +1,4 @@
+import { bindTiltInput } from './tilt-input.js';
 import { bindDrivingInput } from './driving-input.js';
 import { assetUrl } from './resource-urls.js';
 import { CarPhysics } from './physics.js';
@@ -247,6 +248,9 @@ document.addEventListener('DOMContentLoaded', () => {
     endRoute();physics.setRoadNetwork(null);physics.speed=0;
     visualizer.loadRoadsAt(physics.lat,physics.lng).catch(()=>{});
   });
+
+  bindTiltInput({ physics, button: document.getElementById('tilt-toggle'),
+    calibrate: document.getElementById('tilt-calibrate'), status: document.getElementById('tilt-status') });
 
   bindDrivingInput({ physics, buttons: document.querySelectorAll('[data-drive-key]'),
     onHorn: () => audio.triggerHorn() });
