@@ -1,0 +1,61 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { CarPhysics } from '../src/physics.js';
+import { decodeWorld, projectCoordinate } from '../src/road-network.js';
+import { footprintOnRoad, nearestRoadSpawn, localToCoordinate, sweepRoadMotion } from '../src/road-safety.js';
+import { buildBuildings } from '../src/building-world.js';
+const road = () => ({center:{lat:0,lng:0},radiusMeters:500,roads:[{width:8,points:[[0,-400],[0,400]],name:'Test street'}]});
+const location = (p,heading=0) => ({...localToCoordinate(p,{lat:0,lng:0}),heading});
+
+test('car is held safely without road data and teleport clears old coverage',()=>{
+  const car=new CarPhysics();car.keys.KeyW=true;car.update(.1);
+  assert.equal(car.speed,0);assert.equal(car.roadBlocked,true);
+  car.setRoadNetwork(road());car.teleport(35,139);assert.equal(car.roadNetwork,null);
+});
+test('whole car footprint blocks nose and corner excursions, not only its center',()=>{
+  const n=road();
+  assert.ok(footprintOnRoad(n,[0,0],0));
+  assert.equal(footprintOnRoad(n,[2,0],Math.PI/2),false);
+  assert.equal(footprintOnRoad(n,[3,0],0),false);
+});
+test('swept path cannot jump across a narrow off-road gap at high speed',()=>{
+  const n=road();n.roads=[{width:6,points:[[-20,0],[-5,0]]},{width:6,points:[[5,0],[20,0]]}];
+  const result=sweepRoadMotion(n,location([-10,0],Math.PI/2),location([10,0],Math.PI/2));
+  assert.ok(result>0&&result<.5);
+});
+test('collision stops without reversing automatically; deliberate reversing remains available',()=>{
+  const car=new CarPhysics();car.teleport(0,0);car.setRoadNetwork(road());
+  car.heading=Math.PI/2;car.speed=200;car.keys.KeyW=true;car.update(.1);
+  assert.equal(car.speed, 0);
+  assert.equal(car.roadBlocked,true);
+  assert.ok(footprintOnRoad(road(),projectCoordinate(car.lat,car.lng,{lat:0,lng:0}),car.heading));
+  const impactLng=car.lng;car.keys={KeyS:true};for(let i=0;i<10;i++)car.update(.1);assert.ok(car.lng<impactLng);
+});
+test('intersection permits a crossing while unloaded coverage edges block movement',()=>{
+  const n=road();n.roads.push({width:8,points:[[-400,0],[400,0]]});
+  assert.equal(sweepRoadMotion(n,location([-10,0],Math.PI/2),location([10,0],Math.PI/2)),1);
+  assert.equal(footprintOnRoad(n,[499,0],Math.PI/2),false);
+});
+test('bundled Munich is real mapped road geometry with 3D buildings and a valid spawn',()=>{
+  const data=JSON.parse(fs.readFileSync(new URL('../public/data/munich.json',import.meta.url)));
+  const world=decodeWorld(data.elements,48.1764,11.5583,450);
+  assert.ok(world.roads.length>10);assert.ok(world.buildings.length>5);
+  const spawn=nearestRoadSpawn(world,48.1764,11.5583);
+  assert.ok(spawn && spawn.distance<150);
+  assert.ok(footprintOnRoad(world,projectCoordinate(spawn.lat,spawn.lng,world.center),spawn.heading));
+  const geometry=buildBuildings({buildings:[{id:'asymmetric',points:[[10,20],[20,20],[20,40],[10,40],[10,20]],height:12}]}).children[0].geometry;
+  geometry.computeBoundingBox();
+  assert.equal(geometry.boundingBox.min.x,10);
+  assert.equal(geometry.boundingBox.max.x,20);
+  assert.equal(geometry.boundingBox.min.z,-40);
+  assert.equal(geometry.boundingBox.max.z,-20);
+  assert.ok(geometry.boundingBox.max.y>=12);
+  assert.ok([...geometry.attributes.position.array].every(Number.isFinite));
+});
+
+test('building volumes block road travel even when map geometry overlaps them',()=>{
+  const n=road();n.buildings=[{points:[[-10,10],[10,10],[10,20],[-10,20],[-10,10]],height:12}];
+  assert.equal(footprintOnRoad(n,[0,15],0),false);
+  assert.ok(sweepRoadMotion(n,location([0,0]),location([0,30]))<.4);
+});

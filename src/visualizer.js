@@ -1,8 +1,17 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { loadRoads } from './road-network.js';
-import { buildRoadMeshes } from './road-mesh.js';
+import { buildRouteRibbon } from './route-ribbon.js';
+import { loadWorld } from './world-data.js';
+import { buildMappedScenery } from './mapped-scenery.js';
+import { buildBuildings, buildBuildingsAsync, disposeWorldGroup } from './building-world.js';
+import { buildRoadMeshes, ROAD_SURFACE_HEIGHT } from './road-mesh.js';
 import { SatelliteWorld } from './satellite-world.js';
+import { PhotorealWorld } from './photoreal-world.js';
+import { nearbyCachedWorld, nextWorldLocation } from './world-streaming.js';
+import { footprintOnRoad, roadSurfaceAt } from './road-safety.js';
+import { buildCoastalWater } from './coastal-water.js';
+import { buildBridgePiers } from './bridge-piers.js';
+import { projectCoordinate } from './road-network.js';
 import { createCarModel } from './car-model.js';
 
 export function geographicOffset(center, lat, lng) {
@@ -58,13 +67,14 @@ export class CarVisualizer3D {
 
     this.peerCars = new Map();
     this.roadGroup = new THREE.Group();
-    this.roadGroup.visible = false;
+    this.roadGroup.visible = true;
+    this.roadGroup.renderOrder = 1;
     this.scene.add(this.roadGroup);
     this.roadCenter = null;
     this.roadTarget = null;
     this.roadRequest = null;
     this.roadLoading = false;
-    this.roadOverlayEnabled = false;
+    this.roadOverlayEnabled = true;
     this.lastRoadRequestAt = 0;
     this.roadCache = new Map();
     this.currentColor = '#1c3fa8';
@@ -77,7 +87,8 @@ export class CarVisualizer3D {
     this.setModel(this.currentModel);
     this.camera.position.set(8, 7, 12);
     this.satellite = new SatelliteWorld(this.scene, container, this.renderer);
-    this.satellite.setLocation(this.lastPosition.lat, this.lastPosition.lng);
+
+    this.satellite.group.visible = true;
     this.resizeObserver = new ResizeObserver(() => this.onWindowResize());
     this.resizeObserver.observe(container);
   }
@@ -95,15 +106,17 @@ export class CarVisualizer3D {
   }
 
   setupEnvironment() {
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(20000, 20000), new THREE.MeshBasicMaterial({ color: 0x47534b }));
+    this.environmentGroup = new THREE.Group();
+    this.scene.add(this.environmentGroup);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(20000, 20000), new THREE.MeshBasicMaterial({ color: 0x778977 }));
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.08;
-    this.scene.add(ground);
+    this.environmentGroup.add(ground);
     const shadow = new THREE.Mesh(new THREE.PlaneGeometry(18, 18), new THREE.ShadowMaterial({ opacity: 0.38 }));
     shadow.rotation.x = -Math.PI / 2;
     shadow.position.y = -0.012;
     shadow.receiveShadow = true;
-    this.scene.add(shadow);
+    this.environmentGroup.add(shadow);
   }
 
   setModel(model) {
@@ -114,6 +127,12 @@ export class CarVisualizer3D {
     this.wheels = next.wheels;
     this.bodyMaterials = next.bodyMaterials;
     this.exhaustFlames = next.exhaustFlames;
+    this.brakeMaterials = new Set();
+    this.carGroup.traverse(object => {
+      const material=object.material;
+      if(material?.emissive?.getHex() === 0xdc2626) this.brakeMaterials.add(material);
+    });
+    this.carGroup.position.y = ROAD_SURFACE_HEIGHT;
     this.scene.add(this.carGroup);
   }
 
@@ -123,29 +142,29 @@ export class CarVisualizer3D {
   }
 
   setCameraMode(mode) {
-    if (['chase', 'wide', 'aerial'].includes(mode)) this.cameraMode = mode;
+    if (['chase', 'hood', 'cockpit', 'reverse', 'wide', 'aerial'].includes(mode)) this.cameraMode = mode;
   }
 
-  setRoadOverlayEnabled(enabled) {
-    this.roadOverlayEnabled = Boolean(enabled);
-    this.roadGroup.visible = Boolean(enabled);
-    if (!enabled) this.roadRequest?.abort();
-    this.loadRoadsAt(this.lastPosition.lat, this.lastPosition.lng).catch(() => {});
+  setRoadOverlayEnabled() {
+    // The road is the driving surface, never an optional image overlay.
+    this.roadOverlayEnabled = true;
+    this.roadGroup.visible = true;
   }
 
-  clearRoads() {
-    for (const mesh of [...this.roadGroup.children]) {
-      mesh.geometry.dispose();
-      mesh.material.dispose();
-      this.roadGroup.remove(mesh);
-    }
-  }
+  clearRoads() { disposeWorldGroup(this.roadGroup); }
 
-  setRoads(network) {
+  setRoads(network, buildings = null) {
     this.clearRoads();
     this.roadCenter = network.center;
     const surfaces = buildRoadMeshes(network);
-    this.roadGroup.add(...surfaces.children.slice());
+    if (surfaces.children.length) this.roadGroup.add(...surfaces.children.slice());
+    this.roadGroup.add(buildings ?? buildBuildings(network));
+    this.roadGroup.add(buildMappedScenery(network));
+    this.roadGroup.add(buildCoastalWater(network));
+    this.roadGroup.add(buildBridgePiers(network));
+    this.waterMeshes = [];
+    this.roadGroup.traverse(object => { if(object.userData.animateWater) this.waterMeshes.push(object); });
+    if (this.routeData) this.roadGroup.add(buildRouteRibbon(this.routeData, network.center, network));
     // Render barriers if present
     if (network.barriers?.length) {
       const barrierGroup = new THREE.Group();
@@ -174,14 +193,10 @@ export class CarVisualizer3D {
     }
   }
 
-  async loadRoadsAt(lat, lng) {
-    this.lastPosition = { lat, lng };
-    this.satellite?.setLocation(lat, lng, true);
+  async loadRoadsAt(lat, lng, streaming = false) {
+    if (!streaming) this.lastPosition = { lat, lng };
+    if (!streaming && this.satellite?.group.visible) this.satellite.setLocation(lat, lng, true);
     this.roadRequest?.abort();
-    if (this.roadOverlayEnabled === false) {
-      this.container.dispatchEvent(new CustomEvent('roadstatus', { detail: { state: 'disabled' } }));
-      return null;
-    }
     const controller = new AbortController();
     this.roadRequest = controller;
     this.roadLoading = true;
@@ -193,26 +208,63 @@ export class CarVisualizer3D {
     }
     this.container.dispatchEvent(new CustomEvent('roadstatus', { detail: { state: 'loading' } }));
     try {
-      const cacheKey = `${lat},${lng}`;
-      const cached = this.roadCache.get(cacheKey);
+      const cached = nearbyCachedWorld(this.roadCache, lat, lng);
+      const cacheKey = cached?.key ?? `${lat},${lng}`;
       const network = cached && Date.now() - cached.savedAt < 300000 ? cached.network
-        : await loadRoads({ lat, lng, radiusMeters: 800, signal: controller.signal });
+        : await loadWorld({ lat, lng, signal: controller.signal });
       if (controller.signal.aborted) return null;
       this.roadCache.delete(cacheKey);
-      this.roadCache.set(cacheKey, { network, savedAt: Date.now() });
+      if (!network.routeApproximate) this.roadCache.set(cacheKey, { network, savedAt: Date.now() });
       if (this.roadCache.size > 8) this.roadCache.delete(this.roadCache.keys().next().value);
-      this.setRoads(network);
+      if (streaming && this.lastPosition && !footprintOnRoad(network,
+        projectCoordinate(this.lastPosition.lat, this.lastPosition.lng, network.center), this.lastHeading ?? 0, this.lastRoadHeight ?? ROAD_SURFACE_HEIGHT)) {
+        throw new Error('Next district does not cover the car safely; retaining the current roads.');
+      }
+      const buildings = await buildBuildingsAsync(network);
+      if (controller.signal.aborted) { disposeWorldGroup(buildings); return null; }
+      if (streaming && !footprintOnRoad(network,
+        projectCoordinate(this.lastPosition.lat,this.lastPosition.lng,network.center),this.lastHeading ?? 0, this.lastRoadHeight ?? ROAD_SURFACE_HEIGHT)) {
+        disposeWorldGroup(buildings);
+        throw new Error('Keeping current district while the car is outside replacement coverage.');
+      }
+      this.setRoads(network, buildings);
+      this.roadTarget = network.center;
+      this.roadFailures = 0;
+      this.roadRetryAt = 0;
       this.container.dispatchEvent(new CustomEvent('roadstatus', {
-        detail: { state: network.roads.length ? 'ready' : 'empty', count: network.roads.length }
+        detail: { state: network.roads.length ? 'ready' : 'empty', count: network.roads.length, network }
       }));
       return network;
     } catch (error) {
       if (controller.signal.aborted) return null;
+      this.roadFailures = (this.roadFailures ?? 0) + 1;
+      this.roadRetryAt = performance.now() + Math.min(30000, 2000 * 2 ** Math.min(this.roadFailures,4));
       this.container.dispatchEvent(new CustomEvent('roadstatus', { detail: { state: 'error', message: error.message } }));
       throw error;
     } finally {
       if (this.roadRequest === controller) this.roadLoading = false;
     }
+  }
+
+  setPhotorealPreview(enabled) {
+    if (enabled && !import.meta.env?.VITE_GOOGLE_MAPS_API_KEY) return false;
+    this.previewActive = enabled;
+    this.carGroup.visible = !enabled;
+    this.roadGroup.visible = !enabled;
+    this.environmentGroup.visible = !enabled;
+    this.satellite.group.visible = !enabled;
+    this.scene.fog = enabled ? null : new THREE.Fog(0xc4d4df, 100, 650);
+    this.camera.far = enabled ? 100000 : 2000;
+    this.camera.updateProjectionMatrix();
+    if (enabled) {
+      this.previewHeading = 0;
+      this.camera.position.set(0,1200,500);
+      this.photoreal = new PhotorealWorld(this.scene,this.camera,this.renderer,this.container);
+    } else {
+      this.photoreal?.dispose(); this.photoreal = null;
+      this.satellite.setLocation(this.lastPosition.lat,this.lastPosition.lng,true);
+    }
+    return true;
   }
 
   triggerExhaustFlames() { this.flameUntil = performance.now() + 140; }
@@ -234,33 +286,94 @@ export class CarVisualizer3D {
   update(physics, dt = 1 / 60) {
     dt = Math.max(0, Math.min(0.1, Number.isFinite(dt) ? dt : 0));
     this.lastPosition = { lat: physics.lat, lng: physics.lng };
-    this.satellite.setLocation(physics.lat, physics.lng);
-    this.carGroup.rotation.y = Math.PI - physics.heading;
+    this.lastHeading = physics.heading;
+    this.lastRoadHeight = physics.roadHeight ?? ROAD_SURFACE_HEIGHT;
+    if (this.previewActive) {
+      this.carGroup.visible = false;
+      for (const peer of this.peerCars.values()) peer.group.visible = false;
+      this.roadGroup.visible = false;
+      const turn = (physics.keys.ArrowRight || physics.keys.KeyD ? 1 : 0) - (physics.keys.ArrowLeft || physics.keys.KeyA ? 1 : 0);
+      this.previewHeading += turn * dt * .6;
+      const ready = this.photoreal.groundReady;
+      const radius = ready ? 110 : 500, height = ready ? 80 : 1200;
+      this.camera.position.lerp(new THREE.Vector3(Math.sin(this.previewHeading)*radius,height,Math.cos(this.previewHeading)*radius),1-Math.exp(-2*dt));
+      this.camera.lookAt(0,0,0);
+      this.photoreal.update(physics.lat,physics.lng,dt);
+      this.renderer.render(this.scene,this.camera);
+      return;
+    }
+    const roadHeight = physics.roadHeight ?? ROAD_SURFACE_HEIGHT;
+    const underground = roadHeight < -.5;
+    this.environmentGroup.visible = !underground;
+    this.satellite.group.visible = !underground;
+    if (!underground) this.satellite.setLocation(physics.lat, physics.lng);
+    this.carGroup.position.y = roadHeight;
+    let pitch = 0;
+    if (physics.roadNetwork) {
+      const point = projectCoordinate(physics.lat,physics.lng,physics.roadNetwork.center);
+      const forward=[Math.sin(physics.heading)*1.425,Math.cos(physics.heading)*1.425];
+      const front=roadSurfaceAt(physics.roadNetwork,[point[0]+forward[0],point[1]+forward[1]],roadHeight);
+      const rear=roadSurfaceAt(physics.roadNetwork,[point[0]-forward[0],point[1]-forward[1]],roadHeight);
+      if(front!==null && rear!==null) pitch=Math.atan2(front-rear,2.85);
+    }
+    this.carGroup.rotation.set(-pitch,Math.PI-physics.heading,0,'YXZ');
+    for (const water of this.waterMeshes ?? []) water.userData.animateWater(performance.now()/1000);
     animateWheels(this.wheels, physics.speed, physics.steering, dt);
+    for(const material of this.brakeMaterials) material.emissiveIntensity = physics.throttle < 0 || physics.handbrake ? 2.5 : .65;
     for (const flame of this.exhaustFlames) flame.visible = performance.now() < this.flameUntil;
     if (this.roadCenter) {
       const { east, north } = geographicOffset(this.roadCenter, physics.lat, physics.lng);
       this.roadGroup.position.set(-east, 0, north);
     }
-    if (this.roadOverlayEnabled && this.roadTarget && !this.roadLoading && performance.now() - this.lastRoadRequestAt > 60000) {
+    if (this.roadOverlayEnabled && this.roadTarget && !this.roadLoading && performance.now() > (this.roadRetryAt ?? 0) && performance.now() - this.lastRoadRequestAt > 1500) {
       const p = geographicOffset(this.roadTarget, physics.lat, physics.lng);
-      if (Math.hypot(p.east, p.north) > 400) this.loadRoadsAt(physics.lat, physics.lng).catch(() => {});
+      if (Math.hypot(p.east, p.north) > 140) {
+        const next = nextWorldLocation(physics, physics.heading, physics.speed);
+        this.loadRoadsAt(next.lat, next.lng, true).catch(() => {});
+      }
     }
     for (const [id, peer] of this.peerCars) {
       if (performance.now() - peer.lastSeen > 10000) { disposeModel(peer.group); this.peerCars.delete(id); continue; }
       const p = geographicOffset(this.lastPosition, peer.state.lat, peer.state.lng);
-      peer.group.position.set(p.east, 0, -p.north);
+      peer.group.position.set(p.east, Number.isFinite(peer.state.roadHeight) ? peer.state.roadHeight : ROAD_SURFACE_HEIGHT, -p.north);
       peer.group.rotation.y = Math.PI - peer.state.heading;
       peer.group.visible = Math.hypot(p.east, p.north) < 1000;
     }
     const mobile = this.container.clientWidth < 600;
-    const settings = this.cameraMode === 'aerial' ? [0.01, 180, 0]
-      : this.cameraMode === 'wide' ? [20, 17, 3] : [mobile ? 14 : 10.5, mobile ? 9 : 6, 2.5];
-    const [distance, height, ahead] = settings;
+    let target, lookAt;
     const heading = this.cameraMode === 'aerial' ? 0 : physics.heading;
-    const target = new THREE.Vector3(-Math.sin(heading) * distance, height, Math.cos(heading) * distance);
-    this.camera.position.lerp(target, 1 - Math.exp(-5 * dt));
-    this.camera.lookAt(Math.sin(heading) * ahead, 0.5, -Math.cos(heading) * ahead);
+
+    if (this.cameraMode === 'aerial') {
+      target = new THREE.Vector3(0, 180, 0.01);
+      lookAt = new THREE.Vector3(0, 0, 0);
+    } else if (this.cameraMode === 'cockpit') {
+      target = new THREE.Vector3(-Math.sin(heading)*.15,1.25,Math.cos(heading)*.15);
+      lookAt = new THREE.Vector3(Math.sin(heading) * 15, 1.05, -Math.cos(heading) * 15);
+    } else if (this.cameraMode === 'hood') {
+      target = new THREE.Vector3(Math.sin(heading)*1.2,1.15,-Math.cos(heading)*1.2);
+      lookAt = new THREE.Vector3(Math.sin(heading) * 20, 0.75, -Math.cos(heading) * 20);
+    } else if (this.cameraMode === 'reverse') {
+      const dist = 7.5, ht = 3.2;
+      target = new THREE.Vector3(Math.sin(heading) * dist, ht, -Math.cos(heading) * dist);
+      lookAt = new THREE.Vector3(-Math.sin(heading) * 2, 0.5, Math.cos(heading) * 2);
+    } else {
+      const [distance, height, ahead] = this.cameraMode === 'wide' ? [20, 17, 3] : [mobile ? 12 : 9.5, mobile ? 5.5 : 4.3, 3.5];
+      const sideOffset = this.cameraMode === 'chase' ? 1.8 : 0;
+      target = new THREE.Vector3(-Math.sin(heading) * distance + Math.cos(heading) * sideOffset, height, Math.cos(heading) * distance + Math.sin(heading) * sideOffset);
+      lookAt = new THREE.Vector3(Math.sin(heading) * ahead, 0.5, -Math.cos(heading) * ahead);
+    }
+
+    if (underground && !['hood','cockpit'].includes(this.cameraMode)) {
+      target.set(-Math.sin(heading)*6,2.1,Math.cos(heading)*6);
+      lookAt.set(Math.sin(heading)*8,1,-Math.cos(heading)*8);
+    }
+    target.y += roadHeight;
+    lookAt.y += roadHeight;
+    this.camera.position.lerp(target, 1 - Math.exp(-6 * dt));
+    if (this.cameraMode === 'cockpit' || this.cameraMode === 'hood') {
+      this.camera.position.copy(target);
+    }
+    this.camera.lookAt(lookAt);
     this.renderer.render(this.scene, this.camera);
   }
 

@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BMW Ultimate Earth Drive Simulator</title>
+  <link rel="icon" href="data:,">
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="preconnect" href="https://server.arcgisonline.com" crossorigin />
+  <style>
+    :root {
+      color-scheme: dark;
+      --sidebar-width: 360px;
+      --bg-primary: #080b10;
+      --panel-bg: rgba(12, 17, 24, 0.94);
+      --panel-raised: rgba(21, 29, 39, 0.92);
+      --accent-blue: #1769aa;
+      --accent-cyan: #79d9f0;
+      --accent-pink: #ff5577;
+      --text-main: #f3f6f8;
+      --text-dim: #a2adb7;
+      --border-color: rgba(121, 217, 240, 0.2);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      user-select: none;
+    }
+
+    button, input, select {
+      font: inherit;
+    }
+
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 2px solid var(--accent-cyan);
+      outline-offset: 3px;
+    }
+
+    html {
+      overflow: hidden;
+      width: 100%;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      overflow: hidden;
+      width: 100%;
+      height: 100dvh;
+      min-height: 100vh;
+    }
+
+    #app-container {
+      overflow: clip;
+      display: flex;
+      width: 100%;
+      height: 100dvh;
+      min-height: 100vh;
+      position: relative;
+    }
+
+    #main-viewport {
+      flex: 1;
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: #000;
+    }
+
+    #render-canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      inset: 0;
+      touch-action: none;
+    }
+
+    #map-container {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      width: 260px;
+      height: 180px;
+      border-radius: 12px;
+      border: 2px solid var(--accent-cyan);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.8), 0 0 20px rgba(0,240,255,0.3);
+      overflow: hidden;
+      z-index: 10;
+      background: #111;
+      transition: all 0.3s ease;
+    }
+
+    @media (min-width: 800px) {
+      #map-container {
+        width: 320px;
+        height: 220px;
+        bottom: 24px;
+        left: 24px;
+      }
+      #map-container:hover {
+        width: 480px;
+        height: 340px;
+      }
+    }
+
+    /* HUD Elements */
+    .hud-overlay {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      display: flex;
+      gap: 12px;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .hud-card {
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 12px 18px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+
+    .speedometer-val {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      color: var(--accent-cyan);
+      font-variant-numeric: tabular-nums;
+    }
+
+    @media (min-width: 800px) {
+      .speedometer-val {
+        font-size: 42px;
+      }
+    }
+
+    .speedometer-unit {
+      font-size: 13px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .rpm-container {
+      margin-top: 6px;
+      width: 120px;
+      height: 5px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .rpm-bar {
+      height: 100%;
+      width: 20%;
+      background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan), var(--accent-pink));
+      transition: width 0.08s linear;
+    }
+
+    /* Toggle Button for Sidebar on Small Screens */
+    #sidebar-toggle {
+      display: none;
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      z-index: 30;
+      background: var(--panel-bg);
+      border: 1px solid var(--accent-cyan);
+      color: var(--text-main);
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    /* Responsive Control Panel Sidebar */
+    #control-sidebar {
+      width: var(--sidebar-width);
+      flex: 0 0 var(--sidebar-width);
+      background: var(--panel-bg);
+      backdrop-filter: blur(20px);
+      border-left: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      z-index: 20;
+      overflow-y: auto;
+      box-shadow: -10px 0 40px rgba(0,0,0,0.8);
+      transition: transform 0.3s ease;
+    }
+
+    @media (max-width: 800px) {
+      #sidebar-toggle {
+        display: block;
+        min-height: 44px;
+        touch-action: manipulation;
+      }
+      :root {
+        --sidebar-width: min(300px, 100vw);
+      }
+      #control-sidebar {
+        position: absolute;
+        top: 0;
+        right: 0;
+        height: 100%;
+        flex-basis: auto;
+        width: var(--sidebar-width);
+        max-width: 100vw;
+        padding: 16px;
+        transform: translateX(100%);
+        overscroll-behavior: contain;
+      }
+      #control-sidebar.open {
+        transform: translateX(0);
+      }
+      .hud-overlay {
+        right: 16px;
+        gap: 8px;
+        max-width: calc(100% - 32px);
+      }
+      .hud-card {
+        min-width: 0;
+        padding: 10px 12px;
+      }
+      .hud-overlay .hud-card:nth-child(2) {
+        flex: 1;
+        overflow: hidden;
+      }
+      #hud-location-name, #hud-coords {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #map-container {
+        bottom: 82px;
+        width: min(260px, calc(100vw - 32px));
+        max-width: calc(100vw - 32px);
+        height: min(180px, 24dvh);
+      }
+      #drive-touch-controls {
+        position: absolute;
+        z-index: 15;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 8px;
+        padding: 8px;
+        border: 1px solid var(--border-color);
+        border-radius: 14px;
+        background: var(--panel-bg);
+        backdrop-filter: blur(12px);
+        touch-action: none;
+      }
+      .drive-touch-btn {
+        min-width: 52px;
+        min-height: 52px;
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 12px;
+        background: rgba(255,255,255,0.08);
+        color: var(--text-main);
+        font-size: 18px;
+        font-weight: 700;
+        touch-action: none;
+      }
+      .drive-touch-btn:active, .drive-touch-btn[aria-pressed="true"] {
+        background: var(--accent-blue);
+        border-color: var(--accent-cyan);
+      }
+    }
+    @media (min-width: 801px) {
+      #drive-touch-controls { display: none; }
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding-bottom: 12px;
+    }
+
+    .bmw-logo-badge {
+      width: 32px;
+      height: 32px;
+      background: radial-gradient(circle, #0066b1 50%, #ffffff 51%, #111111 52%);
+      border-radius: 50%;
+      border: 2px solid #fff;
+    }
+
+    .panel-header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .panel-header p {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--accent-cyan);
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .control-group {
+      margin-bottom: 20px;
+    }
+
+    .btn-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .action-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--text-main);
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 12px;
+      transition: all 0.2s ease;
+      text-align: center;
+    }
+
+    .action-btn:hover {
+      background: rgba(0, 240, 255, 0.15);
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 15px rgba(0,240,255,0.2);
+    }
+
+    .action-btn.active {
+      background: var(--accent-blue);
+      border-color: var(--accent-cyan);
+      color: #fff;
+      box-shadow: 0 0 20px rgba(0,102,177,0.6);
+    }
+
+    .color-picker-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .color-swatch {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.3);
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    .color-swatch:hover {
+      transform: scale(1.15);
+    }
+
+    .teleport-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .teleport-item {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.2s;
+    }
+
+    .teleport-item:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: var(--accent-cyan);
+    }
+
+    .audio-toggle-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(0,0,0,0.3);
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    /* Start Overlay for AudioContext */
+    #start-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(10, 10, 18, 0.92);
+      backdrop-filter: blur(24px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      transition: opacity 0.5s ease;
+      padding: 20px;
+    }
+
+    .start-title {
+      font-size: 30px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff, var(--accent-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    @media (min-width: 800px) {
+      .start-title {
+        font-size: 38px;
+      }
+    }
+
+    .start-subtitle {
+      color: var(--text-dim);
+      font-size: 14px;
+      margin-bottom: 28px;
+      text-align: center;
+      max-width: 520px;
+      line-height: 1.5;
+    }
+
+    .start-btn {
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+      color: white;
+      border: none;
+      padding: 14px 42px;
+      font-size: 15px;
+      font-weight: 700;
+      border-radius: 30px;
+      cursor: pointer;
+      box-shadow: 0 0 30px rgba(0, 240, 255, 0.5);
+      transition: transform 0.2s, box-shadow 0.2s;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .start-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 40px rgba(0, 240, 255, 0.8);
+    }
+
+    .controls-hint {
+      margin-top: 20px;
+      font-size: 11px;
+      color: var(--text-dim);
+      text-align: center;
+    }
+
+    /* Channel Reorder and Settings UI Styles */
+    .channel-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .channel-item {
+      display: flex;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: grab;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .channel-item:active {
+      cursor: grabbing;
+    }
+
+    .channel-item.dragging {
+      opacity: 0.4;
+      border-color: var(--accent-cyan);
+    }
+
+    .drag-handle {
+      margin-right: 10px;
+      color: var(--text-dim);
+      font-size: 14px;
+    }
+
+    .channel-label {
+      flex: 1;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    /* Toggle Switch */
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(255, 255, 255, 0.2);
+      transition: 0.3s;
+      border-radius: 20px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .toggle-slider {
+      background-color: var(--accent-cyan);
+    }
+
+    input:checked + .toggle-slider:before {
+      transform: translateX(16px);
+    }
+
+    .settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .settings-select {
+      background: rgba(0, 0, 0, 0.5);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .settings-range {
+      flex: 1;
+      margin: 0 12px;
+      accent-color: var(--accent-cyan);
+      cursor: pointer;
+    }
+    /* Expedition interface refinement */
+    :root {
+      --sidebar-width: 340px;
+      --bg-primary: #080b10;
+      --panel-bg: rgba(12, 17, 24, 0.94);
+      --panel-raised: rgba(21, 29, 39, 0.92);
+      --accent-blue: #1769aa;
+      --accent-cyan: #79d9f0;
+      --accent-pink: #ff5577;
+      --text-main: #f3f6f8;
+      --text-dim: #a2adb7;
+      --border-color: rgba(121, 217, 240, 0.2);
+    }
+
+    #main-viewport { min-width: 0; overflow: hidden; }
+    #render-canvas-container, #render-canvas-container canvas { display: block; }
+    #control-sidebar { gap: 0; border-left-color: rgba(255,255,255,0.08); }
+    #control-sidebar.collapsed {
+      flex-basis: 0;
+      width: 0;
+      min-width: 0;
+      padding-left: 0;
+      padding-right: 0;
+      border: 0;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .panel-header { justify-content: space-between; }
+    .panel-header h1 { letter-spacing: 0.02em; font-size: 17px; }
+    .panel-header p { margin-top: 3px; }
+    .section-title { color: var(--text-dim); letter-spacing: 0.12em; font-size: 10px; }
+    .action-btn, .teleport-item, .settings-row, .channel-item {
+      background: rgba(255,255,255,0.035);
+      border-color: rgba(255,255,255,0.1);
+    }
+    .action-btn { min-height: 40px; }
+    .action-btn.active { background: rgba(23,105,170,0.48); border-color: var(--accent-cyan); }
+    .action-btn:hover, .teleport-item:hover { background: rgba(121,217,240,0.1); }
+    .teleport-item { min-height: 40px; }
+    .color-swatch { width: 32px; height: 32px; }
+    .hud-overlay { align-items: flex-start; gap: 10px; }
+    .hud-card { border-color: rgba(255,255,255,0.12); background: rgba(9,14,20,0.82); }
+    .speedometer-val { color: #f4f8fa; }
+    .speedometer-unit { font-size: 10px; letter-spacing: 0.14em; }
+    #road-status-indicator { pointer-events: auto; }
+    #satellite-status-text { color: var(--text-dim); }
+    #retry-roads-btn { pointer-events: auto; color: var(--accent-cyan); }
+    #sidebar-toggle {
+      display: block;
+      min-height: 40px;
+      padding: 8px 12px;
+      background: rgba(9,14,20,0.88);
+      border-color: rgba(255,255,255,0.18);
+    }
+    .hero-kicker { color: var(--accent-cyan); font-size: 11px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; margin-bottom: 16px; }
+    .start-title { max-width: 760px; font-size: clamp(34px, 8vw, 72px); line-height: .98; letter-spacing: -.055em; text-wrap: balance; }
+    .start-subtitle { max-width: 520px; font-size: 15px; }
+    .start-btn { min-height: 52px; border-radius: 10px; box-shadow: none; text-transform: none; letter-spacing: .02em; }
+    .start-btn:hover { box-shadow: 0 8px 28px rgba(0,0,0,.35); }
+    .controls-hint { line-height: 1.7; max-width: 540px; }
+    #drive-touch-controls { display: none; }
+    #imagery-attribution {
+      position: absolute;
+      z-index: 14;
+      right: 12px;
+      bottom: 10px;
+      max-width: calc(100% - 24px);
+      color: #e8edf0;
+      background: rgba(8,11,16,.75);
+      border-radius: 5px;
+      padding: 4px 7px;
+      font-size: 9px;
+      line-height: 1.35;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      pointer-events: auto;
+    }
+    #teleport-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; }
+    #teleport-form label { display: grid; gap: 4px; color: var(--text-dim); font-size: 10px; }
+    #teleport-form input {
+      width: 100%; min-width: 0; padding: 9px 8px; color: var(--text-main);
+      border: 1px solid rgba(255,255,255,.16); border-radius: 7px; background: rgba(0,0,0,.3);
+    }
+    #teleport-form button { align-self: end; padding: 8px 10px; }
+    #teleport-error { min-height: 1.3em; margin-top: 5px; color: #ff9baa; font-size: 11px; }
+    #camera-controls { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
+    #studio-close { display: none; }
+    @media (max-width: 800px) {
+      #control-sidebar {
+        z-index: 31;
+        width: var(--sidebar-width);
+        max-width: 100vw;
+        flex-basis: auto;
+        padding: 16px;
+        transform: translateX(100%);
+      }
+      #control-sidebar.open { transform: translateX(0); opacity: 1; pointer-events: auto; }
+      #control-sidebar.collapsed { width: var(--sidebar-width); }
+      #sidebar-toggle { right: 12px; top: 12px; }
+      .hud-overlay { left: 12px; right: 12px; top: 12px; gap: 7px; max-width: none; }
+      .hud-card { padding: 9px 10px; border-radius: 10px; }
+      .speedometer-val { font-size: 29px; }
+      .rpm-container { width: min(120px, 28vw); }
+      #hud-location-name { font-size: 12px !important; }
+      #hud-coords { font-size: 9px !important; }
+      #map-container { bottom: 104px; left: 12px; width: min(224px, calc(100vw - 24px)); height: min(148px, 18dvh); }
+      #drive-touch-controls {
+        position: absolute; z-index: 16; bottom: 12px; left: 50%; transform: translateX(-50%);
+        width: max-content; max-width: calc(100% - 24px); display: flex; justify-content: center; gap: 6px;
+        padding: 7px; border: 1px solid var(--border-color); border-radius: 14px;
+        background: rgba(9,14,20,.9); backdrop-filter: blur(12px); touch-action: none;
+      }
+      .drive-touch-btn {
+        width: clamp(42px, 12vw, 52px); min-width: 0; height: 50px; min-height: 50px;
+        border: 1px solid rgba(255,255,255,.16); border-radius: 11px; background: rgba(255,255,255,.07);
+        color: var(--text-main); font-size: 17px; font-weight: 700; touch-action: none;
+      }
+      .drive-touch-btn:active, .drive-touch-btn[aria-pressed="true"] { background: var(--accent-blue); border-color: var(--accent-cyan); }
+      #imagery-attribution { bottom: 75px; right: 10px; font-size: 8px; }
+      #studio-close { display: block; }
+      #start-overlay { padding: 28px 20px; }
+      .start-subtitle { font-size: 13px; }
+      .controls-hint { font-size: 10px; }
+    }
+    @media (min-width: 801px) {
+      #drive-touch-controls { display: none !important; }
+      #control-sidebar { transition: width .24s ease, flex-basis .24s ease, padding .24s ease, opacity .2s ease; }
+    }
+    @media (max-width: 360px) {
+      .hud-card { padding: 8px; }
+      #map-container { width: 178px; height: 124px; }
+      .drive-touch-btn { width: 42px; }
+      #drive-touch-controls { gap: 4px; }
+    }
+    [hidden] { display: none !important; }
+
+    /* Responsive expedition studio and direct driving controls */
+    :root {
+      --sidebar-width: 350px;
+      --bg-primary: #080b10;
+      --panel-bg: rgba(12, 17, 24, 0.96);
+      --panel-raised: rgba(21, 29, 39, 0.92);
+      --accent-blue: #1769aa;
+      --accent-cyan: #79d9f0;
+      --accent-pink: #ff5577;
+      --text-main: #f3f6f8;
+      --text-dim: #a2adb7;
+      --border-color: rgba(121, 217, 240, 0.2);
+    }
+    #main-viewport { min-width: 0; overflow: hidden; }
+    #render-canvas-container, #render-canvas-container canvas { display: block; }
+    #control-sidebar { border-left-color: rgba(255,255,255,0.08); }
+    #control-sidebar.collapsed {
+      flex-basis: 0; width: 0; min-width: 0; padding-left: 0; padding-right: 0;
+      border: 0; overflow: hidden; opacity: 0; pointer-events: none;
+    }
+    .panel-header { justify-content: space-between; }
+    .panel-header h1 { font-size: 17px; letter-spacing: .02em; }
+    .panel-header p { margin-top: 3px; }
+    .section-title { color: var(--text-dim); font-size: 10px; letter-spacing: .12em; }
+    .action-btn, .teleport-item, .settings-row, .channel-item {
+      background: rgba(255,255,255,.035); border-color: rgba(255,255,255,.1);
+    }
+    .action-btn { min-height: 40px; }
+    .action-btn.active { background: rgba(23,105,170,.48); border-color: var(--accent-cyan); }
+    .action-btn:hover, .teleport-item:hover { background: rgba(121,217,240,.1); }
+    .teleport-item { min-height: 40px; width: 100%; color: var(--text-main); text-align: left; }
+    .color-swatch { width: 32px; height: 32px; flex: 0 0 auto; }
+    .hud-overlay { align-items: flex-start; gap: 10px; }
+    .hud-card { border-color: rgba(255,255,255,.12); background: rgba(9,14,20,.84); }
+    .speedometer-val { color: #f4f8fa; }
+    .speedometer-unit { font-size: 10px; letter-spacing: .14em; }
+    #road-status-indicator { pointer-events: auto; }
+    #retry-roads-btn { pointer-events: auto; color: var(--accent-cyan); }
+    #satellite-status-text { color: var(--text-dim); }
+    #sidebar-toggle {
+      display: block; min-height: 40px; padding: 8px 12px;
+      background: rgba(9,14,20,.88); border-color: rgba(255,255,255,.18);
+    }
+    .hero-kicker { margin-bottom: 16px; color: var(--accent-cyan); font-size: 11px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; }
+    .start-title { max-width: 760px; font-size: clamp(34px,8vw,72px); line-height: .98; letter-spacing: -.055em; text-wrap: balance; }
+    .start-subtitle { max-width: 520px; font-size: 15px; }
+    .start-btn { min-height: 52px; border-radius: 10px; box-shadow: none; text-transform: none; letter-spacing: .02em; }
+    .start-btn:hover { box-shadow: 0 8px 28px rgba(0,0,0,.35); }
+    .controls-hint { max-width: 540px; line-height: 1.7; }
+    #drive-touch-controls { display: none; }
+    #camera-controls { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
+    #studio-close { display: none; }
+    #imagery-attribution {
+      position: absolute; z-index: 14; right: 12px; bottom: 10px; max-width: calc(100% - 24px);
+      padding: 4px 7px; border-radius: 5px; color: #e8edf0; background: rgba(8,11,16,.76);
+      font-size: 9px; line-height: 1.35; text-decoration: underline; text-underline-offset: 2px; pointer-events: auto;
+    }
+    #teleport-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; }
+    #teleport-form label { display: grid; gap: 4px; color: var(--text-dim); font-size: 10px; }
+    #teleport-form input {
+      width: 100%; min-width: 0; padding: 9px 8px; border: 1px solid rgba(255,255,255,.16);
+      border-radius: 7px; color: var(--text-main); background: rgba(0,0,0,.3);
+    }
+    #teleport-form button { align-self: end; padding: 8px 10px; }
+    #teleport-error { min-height: 1.3em; margin-top: 5px; color: #ff9baa; font-size: 11px; }
+    #road-overlay-row { margin-top: 10px; }
+    @media (max-width: 800px) {
+      #control-sidebar {
+        position: absolute; z-index: 31; top: 0; right: 0; height: 100%; width: var(--sidebar-width);
+        max-width: 100vw; flex-basis: auto; padding: 16px; transform: translateX(100%); overscroll-behavior: contain;
+      }
+      #control-sidebar.open { transform: translateX(0); opacity: 1; pointer-events: auto; }
+      #control-sidebar.collapsed { width: var(--sidebar-width); }
+      #sidebar-toggle { top: 12px; right: 12px; }
+      .hud-overlay { left: 12px; right: 12px; top: 12px; gap: 7px; max-width: none; }
+      .hud-card { min-width: 0; padding: 9px 10px; border-radius: 10px; }
+      .speedometer-val { font-size: 29px; }
+      .rpm-container { width: min(120px,28vw); }
+      #hud-location-name { font-size: 12px !important; }
+      #hud-coords { font-size: 9px !important; }
+      #hud-location-name, #hud-coords { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #map-container { bottom: 104px; left: 12px; width: min(224px,calc(100vw - 24px)); height: min(148px,18dvh); }
+      #drive-touch-controls {
+        position: absolute; z-index: 16; bottom: 12px; left: 50%; transform: translateX(-50%);
+        width: max-content; max-width: calc(100% - 24px); display: flex; justify-content: center; gap: 6px;
+        padding: 7px; border: 1px solid var(--border-color); border-radius: 14px;
+        background: rgba(9,14,20,.92); backdrop-filter: blur(12px); touch-action: none;
+      }
+      .drive-touch-btn {
+        width: clamp(42px,12vw,52px); min-width: 0; height: 50px; min-height: 50px;
+        border: 1px solid rgba(255,255,255,.16); border-radius: 11px; color: var(--text-main);
+        background: rgba(255,255,255,.07); font-size: 17px; font-weight: 700; touch-action: none;
+      }
+      .drive-touch-btn:active, .drive-touch-btn[aria-pressed="true"] { background: var(--accent-blue); border-color: var(--accent-cyan); }
+      #imagery-attribution { bottom: 75px; right: 10px; font-size: 8px; }
+      #studio-close { display: block; }
+      #start-overlay { padding: 28px 20px; }
+      .start-subtitle { font-size: 13px; }
+      .controls-hint { font-size: 10px; }
+    }
+    @media (min-width: 801px) {
+      #drive-touch-controls { display: none !important; }
+      #control-sidebar { transition: width .24s ease, flex-basis .24s ease, padding .24s ease, opacity .2s ease; }
+    }
+    @media (max-width: 360px) {
+      .hud-card { padding: 8px; }
+      #map-container { width: 178px; height: 124px; }
+      .drive-touch-btn { width: 42px; }
+      #drive-touch-controls { gap: 4px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- The live Three.js scene remains visible beneath the first-run introduction. -->
+  <section id="start-overlay" aria-labelledby="start-title">
+    <div class="hero-kicker">BMW M · World expedition</div>
+    <h1 class="start-title" id="start-title">The world is your road.</h1>
+    <p class="start-subtitle">Drive a BMW-inspired car through a 3D city. Solid streets, raised curbs, and road boundaries keep your car on the road.</p>
+    <button class="start-btn" id="start-simulation-btn" type="button">Start driving</button>
+    <p class="controls-hint">Keyboard: W/↑ accelerate · S/↓ brake and reverse · A/← and D/→ steer · Space handbrake</p>
+  </section>
+
+  <div id="app-container">
+    <!-- Main 3D Viewport -->
+    <div id="main-viewport">
+      <div id="render-canvas-container"></div>
+
+      <!-- Heads Up Display -->
+      <div class="hud-overlay">
+        <div class="hud-card">
+          <div class="speedometer-unit">Speed</div>
+          <div class="speedometer-val"><span id="hud-speed">0</span> <span style="font-size: 16px; color: var(--text-dim);">km/h</span></div>
+          <div class="rpm-container">
+            <div class="rpm-bar" id="hud-rpm-bar"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; color: var(--text-dim);">
+            <span>Gear: <strong id="hud-gear" style="color: #fff;">1</strong></span>
+            <span>RPM: <strong id="hud-rpm" style="color: #fff;">800</strong></span>
+          </div>
+        </div>
+
+        <div class="hud-card" style="display: flex; flex-direction: column; justify-content: center;">
+          <div style="font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Location</div>
+          <div id="hud-location-name" style="font-size: 14px; font-weight: 700; color: var(--accent-cyan); margin-top: 2px;">Munich BMW Welt</div>
+          <div id="hud-coords" style="font-size: 10px; color: var(--text-dim); margin-top: 2px;">48.1764° N, 11.5583° E</div>
+          <div id="road-status-indicator" style="font-size: 9px; color: var(--text-dim); margin-top: 4px; display: flex; align-items: center; gap: 4px;">
+            <span id="road-status-dot" aria-hidden="true" style="width: 6px; height: 6px; border-radius: 50%; background: #718096; display: inline-block;"></span>
+            <span id="road-status-text" role="status">3D roads loading</span>
+          </div>
+          <div id="road-driving-hint" style="font-size:10px;color:#ffc688;max-width:210px"></div>
+          <div id="satellite-status-text" role="status" aria-live="polite" style="font-size: 9px; margin-top: 3px;">3D city · OpenStreetMap</div>
+          <div id="world-detail-status" style="font-size: 9px; margin-top: 3px;">Ground streets only</div>
+          <div id="imagery-status-text" role="status" style="font-size: 9px; margin-top: 3px;">Loading aerial imagery…</div>
+        </div>
+      </div>
+
+      <div id="akanzi-hud" hidden style="position:absolute;z-index:15;top:145px;left:16px;max-width:calc(100% - 32px);padding:11px 14px;border:1px solid #19e4ed;border-radius:10px;background:rgba(9,14,20,.92);pointer-events:none">
+        <div id="akanzi-progress" style="font-size:13px;font-weight:700;color:#8ceef5">Akanzi</div>
+        <div id="akanzi-next" style="font-size:11px;margin-top:4px"></div>
+        <div id="akanzi-instruction" style="font-size:11px;margin-top:4px;color:#a2adb7"></div>
+      </div>
+      <button id="sidebar-toggle" type="button" aria-controls="control-sidebar" aria-expanded="false">Studio</button>
+      <div id="drive-touch-controls" role="group" aria-label="Driving controls">
+        <button class="drive-touch-btn" type="button" data-drive-key="ArrowLeft" aria-label="Steer left" aria-pressed="false">←</button>
+        <button class="drive-touch-btn" type="button" data-drive-key="ArrowDown" aria-label="Brake or reverse" aria-pressed="false">▼</button>
+        <button class="drive-touch-btn" type="button" data-drive-key="ArrowUp" aria-label="Accelerate" aria-pressed="false">▲</button>
+        <button class="drive-touch-btn" type="button" data-drive-key="ArrowRight" aria-label="Steer right" aria-pressed="false">→</button>
+        <button class="drive-touch-btn" type="button" data-drive-key="Space" aria-label="Handbrake" aria-pressed="false">HB</button>
+      </div>
+      <div id="photoreal-attribution" hidden style="position:absolute;bottom:12px;right:12px;z-index:25;background:#101820;color:white;padding:8px;font-size:12px;max-width:85%;">Google Maps</div>
+      <div id="imagery-attribution">Imagery © Esri, Vantor, Earthstar Geographics · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">Map © OpenStreetMap contributors</a></div>
+
+      <!-- Leaflet Interactive Map -->
+      <div id="map-container">
+        <div id="leaflet-map" style="width: 100%; height: 100%;"></div>
+      </div>
+    </div>
+
+    <!-- Control & Customization Sidebar -->
+    <aside id="control-sidebar" aria-label="Driving controls">
+      <div class="panel-header">
+        <div class="bmw-logo-badge" aria-hidden="true"></div>
+        <div>
+          <h1>Drive studio</h1>
+          <p>Vehicle · camera · destination</p>
+        </div>
+        <button class="action-btn" id="studio-close" type="button" aria-label="Close drive studio">Close</button>
+      </div>
+
+      <!-- Model Selector -->
+      <div class="control-group">
+        <div class="section-title">Select BMW M Model</div>
+        <div class="btn-grid">
+          <button class="action-btn active" type="button" data-model="M3 Competition" aria-pressed="true">M3 Competition</button>
+          <button class="action-btn" type="button" data-model="M4 CSL" aria-pressed="false">M4 CSL</button>
+          <button class="action-btn" type="button" data-model="M5 CS" aria-pressed="false">M5 CS</button>
+          <button class="action-btn" type="button" data-model="i4 M50 (EV)" aria-pressed="false">i4 M50 (EV)</button>
+        </div>
+      </div>
+
+      <!-- Exterior Paint Customizer -->
+      <div class="control-group">
+        <div class="section-title">Individual Paint</div>
+        <div class="color-picker-row">
+          <div class="color-swatch" style="background: #1c3fa8;" data-color="#1c3fa8" title="Motorsport Blue"></div>
+          <div class="color-swatch" style="background: #ff3366;" data-color="#ff3366" title="Fire Orange"></div>
+          <div class="color-swatch" style="background: #111111;" data-color="#111111" title="Frozen Black"></div>
+          <div class="color-swatch" style="background: #22c55e;" data-color="#22c55e" title="Isle of Man Green"></div>
+          <div class="color-swatch" style="background: #e2e8f0;" data-color="#e2e8f0" title="Alpine White"></div>
+          <div class="color-swatch" style="background: #eab308;" data-color="#eab308" title="Speed Yellow"></div>
+        </div>
+      </div>
+
+      <!-- Handling & Drive Modes -->
+      <div class="control-group">
+        <div class="section-title">Drive Dynamics</div>
+        <div class="btn-grid">
+          <button class="action-btn active" type="button" data-mode="Sport+">Sport +</button>
+          <button class="action-btn" type="button" data-mode="Drift">Low grip</button>
+        </div>
+      </div>
+
+      <!-- Teleport Anywhere on Earth -->
+      <div class="control-group">
+        <div class="section-title">Camera view</div>
+        <div id="camera-controls" role="group" aria-label="Camera view">
+          <button class="action-btn active" type="button" data-camera-mode="chase" aria-pressed="true">Chase</button>
+          <button class="action-btn" type="button" data-camera-mode="hood" aria-pressed="false">Hood</button>
+          <button class="action-btn" type="button" data-camera-mode="cockpit" aria-pressed="false">Cockpit</button>
+          <button class="action-btn" type="button" data-camera-mode="reverse" aria-pressed="false">Reverse</button>
+          <button class="action-btn" type="button" data-camera-mode="wide" aria-pressed="false">Wide</button>
+          <button class="action-btn" type="button" data-camera-mode="aerial" aria-pressed="false">Aerial</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <div class="section-title">Photographic 3D world</div>
+        <p style="font-size:12px;line-height:1.6;color:var(--text-dim)">Optional real 3D scenery preview. Driving pauses while viewing; A/D rotates the view.</p>
+        <button id="photoreal-toggle" type="button" class="action-btn" style="width:100%;margin-top:8px" aria-pressed="false">Open 3D preview</button>
+        <p id="photoreal-message" role="status" style="font-size:11px;line-height:1.5;margin-top:8px"></p>
+      </div>
+      <div class="control-group">
+        <div class="section-title">Akanzi · İstanbul coastal drive</div>
+        <p style="font-size:12px;line-height:1.6;color:var(--text-dim);margin-bottom:10px">Bağdat Caddesi → Caddebostan → Bostancı → Maltepe → Kartal → Pendik Sahil. Free mapped districts load locally; no API key needed.</p>
+        <button id="akanzi-start" class="action-btn" type="button" style="width:100%;border-color:#19e4ed">Drive Akanzi</button>
+        <button id="akanzi-end" class="action-btn" type="button" hidden style="width:100%;margin-top:8px">End route · explore here</button>
+        <p id="akanzi-message" role="status" style="font-size:11px;color:#ffc688;margin-top:6px"></p>
+      </div>
+
+      <div class="control-group">
+        <div class="section-title">Coordinates</div>
+        <form id="teleport-form" novalidate>
+          <label>Latitude<input id="teleport-lat" name="lat" type="number" min="-90" max="90" step="any" inputmode="decimal" required></label>
+          <label>Longitude<input id="teleport-lng" name="lng" type="number" min="-180" max="180" step="any" inputmode="decimal" required></label>
+          <button class="action-btn" type="submit">Go</button>
+        </form>
+        <div id="teleport-error" role="status" aria-live="polite"></div>
+      </div>
+
+      <div class="control-group">
+        <div class="section-title">Global Teleport</div>
+        <div class="teleport-list">
+          <div class="teleport-item" data-lat="48.1764" data-lng="11.5583" data-name="Munich BMW Welt">
+            <span>Munich BMW Welt</span>
+            <span style="color: var(--accent-cyan); font-size: 11px;">Germany</span>
+          </div>
+          <div class="teleport-item" data-lat="35.6595" data-lng="139.7005" data-name="Tokyo Shibuya Crossing">
+            <span>Tokyo Shibuya Crossing</span>
+            <span style="color: var(--accent-cyan); font-size: 11px;">Japan</span>
+          </div>
+          <div class="teleport-item" data-lat="34.0522" data-lng="-118.2437" data-name="Los Angeles Downtown">
+            <span>Los Angeles Downtown</span>
+            <span style="color: var(--accent-cyan); font-size: 11px;">USA</span>
+          </div>
+          <div class="teleport-item" data-lat="51.5074" data-lng="-0.1278" data-name="London Piccadilly Circus">
+            <span>London Piccadilly Circus</span>
+            <span style="color: var(--accent-cyan); font-size: 11px;">UK</span>
+          </div>
+          <div class="teleport-item" data-lat="25.2048" data-lng="55.2708" data-name="Dubai Sheikh Zayed Road">
+            <span>Dubai Sheikh Zayed Road</span>
+            <span style="color: var(--accent-cyan); font-size: 11px;">UAE</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sound & Immersion -->
+      <div class="control-group">
+        <div class="section-title">Immersion & Audio</div>
+        <div class="audio-toggle-bar">
+          <div>
+            <div style="font-weight: 600; font-size: 12px;">Exhaust & Turbo Sound</div>
+            <div style="font-size: 10px; color: var(--text-dim);">Web Audio Synthesizer</div>
+          </div>
+          <button class="action-btn" id="audio-toggle-btn" style="padding: 6px 14px;">Mute</button>
+        </div>
+        <div style="margin-top: 10px; display: flex; gap: 8px;">
+          <button class="action-btn" id="horn-btn" style="flex: 1;">Horn 🔊</button>
+          <button class="action-btn" id="exhaust-pop-btn" style="flex: 1;">Exhaust Pop 💥</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <div class="section-title">Road driving</div>
+        <p id="road-boundary-status" role="status" style="font-size:12px;margin-bottom:10px">Road boundaries active</p>
+        <button id="reset-road-btn" class="action-btn" type="button">Reset to nearest road</button>
+        <p style="font-size:11px;color:var(--text-dim);margin-top:8px">Your car stays within mapped streets. Choose a place to load its roads and 3D buildings. Building heights are estimated where unavailable.</p>
+      </div>
+
+      <!-- Audio Channels — drag to reorder, toggle on/off, adjust sample rate -->
+      <div class="control-group">
+        <div class="section-title">Audio Channels</div>
+        <ul id="audio-channel-list" class="channel-list">
+          <li class="channel-item" data-channel="engine" draggable="true">
+            <span class="drag-handle">⠿</span>
+            <span class="channel-label">Engine</span>
+            <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="engine"><span class="toggle-slider"></span></label>
+          </li>
+          <li class="channel-item" data-channel="turbo" draggable="true">
+            <span class="drag-handle">⠿</span>
+            <span class="channel-label">Turbo Spool</span>
+            <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="turbo"><span class="toggle-slider"></span></label>
+          </li>
+          <li class="channel-item" data-channel="exhaust" draggable="true">
+            <span class="drag-handle">⠿</span>
+            <span class="channel-label">Exhaust Pops</span>
+            <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="exhaust"><span class="toggle-slider"></span></label>
+          </li>
+          <li class="channel-item" data-channel="tires" draggable="true">
+            <span class="drag-handle">⠿</span>
+            <span class="channel-label">Tire Screech</span>
+            <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="tires"><span class="toggle-slider"></span></label>
+          </li>
+          <li class="channel-item" data-channel="wind" draggable="true">
+            <span class="drag-handle">⠿</span>
+            <span class="channel-label">Wind</span>
+            <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="wind"><span class="toggle-slider"></span></label>
+          </li>
+          <li class="channel-item" data-channel="horn" draggable="true">
+            <span class="drag-handle">⠿</span>
+            <span class="channel-label">Horn</span>
+            <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="horn"><span class="toggle-slider"></span></label>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Audio Sample Rate & Master Volume -->
+      <div class="control-group">
+        <div class="section-title">Audio Settings</div>
+        <div class="settings-row">
+          <label for="sample-rate-select" style="font-size: 12px; font-weight: 600;">Sample Rate</label>
+          <select id="sample-rate-select" class="settings-select">
+            <option value="22050">22 050 Hz (Low)</option>
+            <option value="44100" selected>44 100 Hz (Standard)</option>
+            <option value="48000">48 000 Hz (High)</option>
+          </select>
+        </div>
+        <div class="settings-row" style="margin-top: 10px;">
+          <label for="master-volume-slider" style="font-size: 12px; font-weight: 600;">Master Volume</label>
+          <input type="range" id="master-volume-slider" min="0" max="100" value="40" class="settings-range">
+          <span id="master-volume-value" style="font-size: 11px; color: var(--text-dim); min-width: 32px; text-align: right;">40%</span>
+        </div>
+      </div>
+
+      <!-- HUD Preferences -->
+      <div class="control-group">
+        <div class="section-title">HUD Preferences</div>
+        <div class="settings-row">
+          <label style="font-size: 12px; font-weight: 600;">Speed Unit</label>
+          <div class="btn-grid" style="grid-template-columns: repeat(2, 1fr); gap: 6px;">
+            <button class="action-btn active" data-speed-unit="kmh" style="padding: 6px 10px; font-size: 11px;">km/h</button>
+            <button class="action-btn" data-speed-unit="mph" style="padding: 6px 10px; font-size: 11px;">mph</button>
+          </div>
+        </div>
+        <div class="settings-row" style="margin-top: 10px;">
+          <label style="font-size: 12px; font-weight: 600;">Show Mini-Map</label>
+          <label class="toggle-switch"><input type="checkbox" id="minimap-toggle" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="settings-row" style="margin-top: 10px;">
+          <label style="font-size: 12px; font-weight: 600;">Track Trail</label>
+          <label class="toggle-switch"><input type="checkbox" id="trail-toggle" checked><span class="toggle-slider"></span></label>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Main Application Script -->
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

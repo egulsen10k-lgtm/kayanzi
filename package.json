@@ -1,0 +1,20 @@
+{
+  "name": "bmw-earth-drive",
+  "version": "1.0.0",
+  "description": "Drive a BMW anywhere on earth",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "3d-tiles-renderer": "0.3.40",
+    "cannon-es": "^0.20.0",
+    "leaflet": "^1.9.4",
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}

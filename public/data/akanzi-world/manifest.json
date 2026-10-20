@@ -1,0 +1,939 @@
+{
+  "version": 1,
+  "name": "Akanzi mapped world",
+  "route": "/data/akanzi-route.json",
+  "copyright": "© OpenStreetMap contributors",
+  "attributionUrl": "https://www.openstreetmap.org/copyright",
+  "license": "https://opendatacommons.org/licenses/odbl/1-0/",
+  "source": "https://api.openstreetmap.org/api/0.6/map.json",
+  "radiusMeters": 400,
+  "spacingMeters": 450,
+  "routeDistanceMeters": 20246.348958349932,
+  "plannedPatches": 46,
+  "complete": true,
+  "bytes": 9335058,
+  "generated": "2026-10-19T13:50:07.450Z",
+  "coverageNote": "Bboxes describe queried coverage. Overlapping ways are duplicated across patches so each patch loads independently; consumers merging patches should deduplicate way IDs. Geometry is real OSM map data; heights and surface details may be absent. Multipolygon relations are not reconstructed.",
+  "patches": [
+    {
+      "id": "patch-000",
+      "center": {
+        "lat": 40.963512,
+        "lng": 29.074807
+      },
+      "distance": 0,
+      "bbox": [
+        29.0700432,
+        40.9599147,
+        29.0795708,
+        40.9671093
+      ],
+      "file": "patch-000.json",
+      "url": "/data/akanzi-world/patch-000.json",
+      "bytes": 361256,
+      "ways": 744,
+      "elements": 744,
+      "downloaded": "2026-10-19T13:48:14.762Z"
+    },
+    {
+      "id": "patch-001",
+      "center": {
+        "lat": 40.96584334405501,
+        "lng": 29.070430617642014
+      },
+      "distance": 450,
+      "bbox": [
+        29.0656666,
+        40.9622461,
+        29.0751946,
+        40.9694406
+      ],
+      "file": "patch-001.json",
+      "url": "/data/akanzi-world/patch-001.json",
+      "bytes": 331736,
+      "ways": 701,
+      "elements": 731,
+      "downloaded": "2026-10-19T13:48:30.335Z"
+    },
+    {
+      "id": "patch-002",
+      "center": {
+        "lat": 40.96815172819114,
+        "lng": 29.066030000401827
+      },
+      "distance": 900,
+      "bbox": [
+        29.0612659,
+        40.9645544,
+        29.0707941,
+        40.971749
+      ],
+      "file": "patch-002.json",
+      "url": "/data/akanzi-world/patch-002.json",
+      "bytes": 261348,
+      "ways": 633,
+      "elements": 690,
+      "downloaded": "2026-10-19T13:48:32.103Z"
+    },
+    {
+      "id": "patch-003",
+      "center": {
+        "lat": 40.96909240066245,
+        "lng": 29.062017120758213
+      },
+      "distance": 1350,
+      "bbox": [
+        29.0572529,
+        40.9654951,
+        29.0667813,
+        40.9726897
+      ],
+      "file": "patch-003.json",
+      "url": "/data/akanzi-world/patch-003.json",
+      "bytes": 272771,
+      "ways": 689,
+      "elements": 717,
+      "downloaded": "2026-10-19T13:48:33.850Z"
+    },
+    {
+      "id": "patch-004",
+      "center": {
+        "lat": 40.96657579508242,
+        "lng": 29.06306688466052
+      },
+      "distance": 1800,
+      "bbox": [
+        29.0583029,
+        40.9629785,
+        29.0678309,
+        40.9701731
+      ],
+      "file": "patch-004.json",
+      "url": "/data/akanzi-world/patch-004.json",
+      "bytes": 310196,
+      "ways": 642,
+      "elements": 1091,
+      "downloaded": "2026-10-19T13:48:35.504Z"
+    },
+    {
+      "id": "patch-005",
+      "center": {
+        "lat": 40.96360668007858,
+        "lng": 29.06585019603706
+      },
+      "distance": 2250,
+      "bbox": [
+        29.0610864,
+        40.9600094,
+        29.070614,
+        40.967204
+      ],
+      "file": "patch-005.json",
+      "url": "/data/akanzi-world/patch-005.json",
+      "bytes": 210029,
+      "ways": 406,
+      "elements": 726,
+      "downloaded": "2026-10-19T13:48:37.061Z"
+    },
+    {
+      "id": "patch-006",
+      "center": {
+        "lat": 40.96196269779283,
+        "lng": 29.070342161173656
+      },
+      "distance": 2700,
+      "bbox": [
+        29.0655785,
+        40.9583654,
+        29.0751059,
+        40.96556
+      ],
+      "file": "patch-006.json",
+      "url": "/data/akanzi-world/patch-006.json",
+      "bytes": 225530,
+      "ways": 482,
+      "elements": 501,
+      "downloaded": "2026-10-19T13:48:38.622Z"
+    },
+    {
+      "id": "patch-007",
+      "center": {
+        "lat": 40.958532823103674,
+        "lng": 29.07298710485263
+      },
+      "distance": 3150,
+      "bbox": [
+        29.0682237,
+        40.9549355,
+        29.0777506,
+        40.9621301
+      ],
+      "file": "patch-007.json",
+      "url": "/data/akanzi-world/patch-007.json",
+      "bytes": 128317,
+      "ways": 267,
+      "elements": 267,
+      "downloaded": "2026-10-19T13:48:40.132Z"
+    },
+    {
+      "id": "patch-008",
+      "center": {
+        "lat": 40.95693093086388,
+        "lng": 29.07757640138984
+      },
+      "distance": 3600,
+      "bbox": [
+        29.0728131,
+        40.9533336,
+        29.0823397,
+        40.9605282
+      ],
+      "file": "patch-008.json",
+      "url": "/data/akanzi-world/patch-008.json",
+      "bytes": 160855,
+      "ways": 367,
+      "elements": 367,
+      "downloaded": "2026-10-19T13:48:41.720Z"
+    },
+    {
+      "id": "patch-009",
+      "center": {
+        "lat": 40.95461610866627,
+        "lng": 29.0819501491633
+      },
+      "distance": 4050,
+      "bbox": [
+        29.077187,
+        40.9510188,
+        29.0867133,
+        40.9582134
+      ],
+      "file": "patch-009.json",
+      "url": "/data/akanzi-world/patch-009.json",
+      "bytes": 137592,
+      "ways": 276,
+      "elements": 276,
+      "downloaded": "2026-10-19T13:48:43.270Z"
+    },
+    {
+      "id": "patch-010",
+      "center": {
+        "lat": 40.955519145114316,
+        "lng": 29.087124682121022
+      },
+      "distance": 4500,
+      "bbox": [
+        29.0823615,
+        40.9519219,
+        29.0918879,
+        40.9591164
+      ],
+      "file": "patch-010.json",
+      "url": "/data/akanzi-world/patch-010.json",
+      "bytes": 231517,
+      "ways": 465,
+      "elements": 465,
+      "downloaded": "2026-10-19T13:48:44.964Z"
+    },
+    {
+      "id": "patch-011",
+      "center": {
+        "lat": 40.952660046006244,
+        "lng": 29.090540083067324
+      },
+      "distance": 4950,
+      "bbox": [
+        29.0857771,
+        40.9490628,
+        29.0953031,
+        40.9562573
+      ],
+      "file": "patch-011.json",
+      "url": "/data/akanzi-world/patch-011.json",
+      "bytes": 183428,
+      "ways": 385,
+      "elements": 385,
+      "downloaded": "2026-10-19T13:48:46.638Z"
+    },
+    {
+      "id": "patch-012",
+      "center": {
+        "lat": 40.952423674937904,
+        "lng": 29.095730256818516
+      },
+      "distance": 5400,
+      "bbox": [
+        29.0909672,
+        40.9488264,
+        29.1004933,
+        40.956021
+      ],
+      "file": "patch-012.json",
+      "url": "/data/akanzi-world/patch-012.json",
+      "bytes": 300174,
+      "ways": 696,
+      "elements": 698,
+      "downloaded": "2026-10-19T13:48:48.546Z"
+    },
+    {
+      "id": "patch-013",
+      "center": {
+        "lat": 40.94954233420798,
+        "lng": 29.099257315354414
+      },
+      "distance": 5850,
+      "bbox": [
+        29.0944945,
+        40.9459451,
+        29.1040201,
+        40.9531396
+      ],
+      "file": "patch-013.json",
+      "url": "/data/akanzi-world/patch-013.json",
+      "bytes": 252174,
+      "ways": 618,
+      "elements": 618,
+      "downloaded": "2026-10-19T13:48:50.323Z"
+    },
+    {
+      "id": "patch-014",
+      "center": {
+        "lat": 40.94615534901722,
+        "lng": 29.102133113506934
+      },
+      "distance": 6300,
+      "bbox": [
+        29.0973706,
+        40.9425581,
+        29.1068957,
+        40.9497526
+      ],
+      "file": "patch-014.json",
+      "url": "/data/akanzi-world/patch-014.json",
+      "bytes": 176344,
+      "ways": 434,
+      "elements": 434,
+      "downloaded": "2026-10-19T13:48:51.894Z"
+    },
+    {
+      "id": "patch-015",
+      "center": {
+        "lat": 40.944440441315216,
+        "lng": 29.106600817553254
+      },
+      "distance": 6750,
+      "bbox": [
+        29.1018384,
+        40.9408432,
+        29.1113632,
+        40.9480377
+      ],
+      "file": "patch-015.json",
+      "url": "/data/akanzi-world/patch-015.json",
+      "bytes": 234256,
+      "ways": 617,
+      "elements": 646,
+      "downloaded": "2026-10-19T13:48:53.612Z"
+    },
+    {
+      "id": "patch-016",
+      "center": {
+        "lat": 40.94141927756024,
+        "lng": 29.110009903599572
+      },
+      "distance": 7200,
+      "bbox": [
+        29.1052477,
+        40.937822,
+        29.1147721,
+        40.9450166
+      ],
+      "file": "patch-016.json",
+      "url": "/data/akanzi-world/patch-016.json",
+      "bytes": 214764,
+      "ways": 540,
+      "elements": 661,
+      "downloaded": "2026-10-19T13:48:55.294Z"
+    },
+    {
+      "id": "patch-017",
+      "center": {
+        "lat": 40.93795750740473,
+        "lng": 29.11278216855656
+      },
+      "distance": 7650,
+      "bbox": [
+        29.1080202,
+        40.9343602,
+        29.1175441,
+        40.9415548
+      ],
+      "file": "patch-017.json",
+      "url": "/data/akanzi-world/patch-017.json",
+      "bytes": 208335,
+      "ways": 529,
+      "elements": 648,
+      "downloaded": "2026-10-19T13:48:56.845Z"
+    },
+    {
+      "id": "patch-018",
+      "center": {
+        "lat": 40.93453110673757,
+        "lng": 29.115632280770633
+      },
+      "distance": 8100,
+      "bbox": [
+        29.1108706,
+        40.9309338,
+        29.120394,
+        40.9381284
+      ],
+      "file": "patch-018.json",
+      "url": "/data/akanzi-world/patch-018.json",
+      "bytes": 224025,
+      "ways": 518,
+      "elements": 576,
+      "downloaded": "2026-10-19T13:48:58.496Z"
+    },
+    {
+      "id": "patch-019",
+      "center": {
+        "lat": 40.931169374373695,
+        "lng": 29.118601821380658
+      },
+      "distance": 8550,
+      "bbox": [
+        29.1138403,
+        40.9275721,
+        29.1233633,
+        40.9347667
+      ],
+      "file": "patch-019.json",
+      "url": "/data/akanzi-world/patch-019.json",
+      "bytes": 216582,
+      "ways": 525,
+      "elements": 571,
+      "downloaded": "2026-10-19T13:49:00.110Z"
+    },
+    {
+      "id": "patch-020",
+      "center": {
+        "lat": 40.927806641431204,
+        "lng": 29.121578215512685
+      },
+      "distance": 9000,
+      "bbox": [
+        29.116817,
+        40.9242094,
+        29.1263394,
+        40.9314039
+      ],
+      "file": "patch-020.json",
+      "url": "/data/akanzi-world/patch-020.json",
+      "bytes": 211117,
+      "ways": 573,
+      "elements": 578,
+      "downloaded": "2026-10-19T13:49:01.774Z"
+    },
+    {
+      "id": "patch-021",
+      "center": {
+        "lat": 40.924401817337774,
+        "lng": 29.1244725934705
+      },
+      "distance": 9450,
+      "bbox": [
+        29.1197116,
+        40.9208045,
+        29.1292336,
+        40.9279991
+      ],
+      "file": "patch-021.json",
+      "url": "/data/akanzi-world/patch-021.json",
+      "bytes": 237886,
+      "ways": 678,
+      "elements": 696,
+      "downloaded": "2026-10-19T13:49:03.461Z"
+    },
+    {
+      "id": "patch-022",
+      "center": {
+        "lat": 40.921017073167846,
+        "lng": 29.127406262671833
+      },
+      "distance": 9900,
+      "bbox": [
+        29.1226455,
+        40.9174198,
+        29.132167,
+        40.9246144
+      ],
+      "file": "patch-022.json",
+      "url": "/data/akanzi-world/patch-022.json",
+      "bytes": 268770,
+      "ways": 790,
+      "elements": 796,
+      "downloaded": "2026-10-19T13:49:05.255Z"
+    },
+    {
+      "id": "patch-023",
+      "center": {
+        "lat": 40.917617933718226,
+        "lng": 29.130312023313945
+      },
+      "distance": 10350,
+      "bbox": [
+        29.1255515,
+        40.9140207,
+        29.1350725,
+        40.9212152
+      ],
+      "file": "patch-023.json",
+      "url": "/data/akanzi-world/patch-023.json",
+      "bytes": 199119,
+      "ways": 570,
+      "elements": 579,
+      "downloaded": "2026-10-19T13:49:06.889Z"
+    },
+    {
+      "id": "patch-024",
+      "center": {
+        "lat": 40.91414498850553,
+        "lng": 29.133030414966115
+      },
+      "distance": 10800,
+      "bbox": [
+        29.1282702,
+        40.9105477,
+        29.1377907,
+        40.9177423
+      ],
+      "file": "patch-024.json",
+      "url": "/data/akanzi-world/patch-024.json",
+      "bytes": 154721,
+      "ways": 404,
+      "elements": 413,
+      "downloaded": "2026-10-19T13:49:08.408Z"
+    },
+    {
+      "id": "patch-025",
+      "center": {
+        "lat": 40.91050815705335,
+        "lng": 29.13533508820941
+      },
+      "distance": 11250,
+      "bbox": [
+        29.1305751,
+        40.9069109,
+        29.1400951,
+        40.9141054
+      ],
+      "file": "patch-025.json",
+      "url": "/data/akanzi-world/patch-025.json",
+      "bytes": 179448,
+      "ways": 439,
+      "elements": 439,
+      "downloaded": "2026-10-19T13:49:09.917Z"
+    },
+    {
+      "id": "patch-026",
+      "center": {
+        "lat": 40.90724637895011,
+        "lng": 29.138501416977743
+      },
+      "distance": 11700,
+      "bbox": [
+        29.1337417,
+        40.9036491,
+        29.1432612,
+        40.9108437
+      ],
+      "file": "patch-026.json",
+      "url": "/data/akanzi-world/patch-026.json",
+      "bytes": 179363,
+      "ways": 442,
+      "elements": 443,
+      "downloaded": "2026-10-19T13:49:11.478Z"
+    },
+    {
+      "id": "patch-027",
+      "center": {
+        "lat": 40.904022222670335,
+        "lng": 29.14173767013695
+      },
+      "distance": 12150,
+      "bbox": [
+        29.1369781,
+        40.9004249,
+        29.1464972,
+        40.9076195
+      ],
+      "file": "patch-027.json",
+      "url": "/data/akanzi-world/patch-027.json",
+      "bytes": 139992,
+      "ways": 310,
+      "elements": 311,
+      "downloaded": "2026-10-19T13:49:13.002Z"
+    },
+    {
+      "id": "patch-028",
+      "center": {
+        "lat": 40.90179706362188,
+        "lng": 29.145929414581644
+      },
+      "distance": 12600,
+      "bbox": [
+        29.1411701,
+        40.8981998,
+        29.1506888,
+        40.9053943
+      ],
+      "file": "patch-028.json",
+      "url": "/data/akanzi-world/patch-028.json",
+      "bytes": 161246,
+      "ways": 368,
+      "elements": 369,
+      "downloaded": "2026-10-19T13:49:14.547Z"
+    },
+    {
+      "id": "patch-029",
+      "center": {
+        "lat": 40.90219005475555,
+        "lng": 29.151227146844526
+      },
+      "distance": 13050,
+      "bbox": [
+        29.1464678,
+        40.8985928,
+        29.1559865,
+        40.9057873
+      ],
+      "file": "patch-029.json",
+      "url": "/data/akanzi-world/patch-029.json",
+      "bytes": 170125,
+      "ways": 374,
+      "elements": 375,
+      "downloaded": "2026-10-19T13:49:16.130Z"
+    },
+    {
+      "id": "patch-030",
+      "center": {
+        "lat": 40.900626948856235,
+        "lng": 29.156117926920977
+      },
+      "distance": 13500,
+      "bbox": [
+        29.1513587,
+        40.8970297,
+        29.1608772,
+        40.9042242
+      ],
+      "file": "patch-030.json",
+      "url": "/data/akanzi-world/patch-030.json",
+      "bytes": 150120,
+      "ways": 319,
+      "elements": 319,
+      "downloaded": "2026-10-19T13:49:17.648Z"
+    },
+    {
+      "id": "patch-031",
+      "center": {
+        "lat": 40.898514823441786,
+        "lng": 29.160666772572057
+      },
+      "distance": 13950,
+      "bbox": [
+        29.1559076,
+        40.8949175,
+        29.1654259,
+        40.9021121
+      ],
+      "file": "patch-031.json",
+      "url": "/data/akanzi-world/patch-031.json",
+      "bytes": 166977,
+      "ways": 354,
+      "elements": 354,
+      "downloaded": "2026-10-19T13:49:19.231Z"
+    },
+    {
+      "id": "patch-032",
+      "center": {
+        "lat": 40.896350506172595,
+        "lng": 29.165190601309604
+      },
+      "distance": 14400,
+      "bbox": [
+        29.1604316,
+        40.8927532,
+        29.1699496,
+        40.8999478
+      ],
+      "file": "patch-032.json",
+      "url": "/data/akanzi-world/patch-032.json",
+      "bytes": 190537,
+      "ways": 427,
+      "elements": 427,
+      "downloaded": "2026-10-19T13:49:20.846Z"
+    },
+    {
+      "id": "patch-033",
+      "center": {
+        "lat": 40.89391249983367,
+        "lng": 29.16944936334672
+      },
+      "distance": 14850,
+      "bbox": [
+        29.1646906,
+        40.8903152,
+        29.1742082,
+        40.8975098
+      ],
+      "file": "patch-033.json",
+      "url": "/data/akanzi-world/patch-033.json",
+      "bytes": 174720,
+      "ways": 402,
+      "elements": 402,
+      "downloaded": "2026-10-19T13:49:22.472Z"
+    },
+    {
+      "id": "patch-034",
+      "center": {
+        "lat": 40.89145288243138,
+        "lng": 29.173694718777018
+      },
+      "distance": 15300,
+      "bbox": [
+        29.1689361,
+        40.8878556,
+        29.1784533,
+        40.8950502
+      ],
+      "file": "patch-034.json",
+      "url": "/data/akanzi-world/patch-034.json",
+      "bytes": 178250,
+      "ways": 381,
+      "elements": 381,
+      "downloaded": "2026-10-19T13:49:24.109Z"
+    },
+    {
+      "id": "patch-035",
+      "center": {
+        "lat": 40.88817285225355,
+        "lng": 29.17680579908067
+      },
+      "distance": 15750,
+      "bbox": [
+        29.1720474,
+        40.8845756,
+        29.1815642,
+        40.8917701
+      ],
+      "file": "patch-035.json",
+      "url": "/data/akanzi-world/patch-035.json",
+      "bytes": 186193,
+      "ways": 384,
+      "elements": 384,
+      "downloaded": "2026-10-19T13:49:25.746Z"
+    },
+    {
+      "id": "patch-036",
+      "center": {
+        "lat": 40.88576350512593,
+        "lng": 29.18087480658324
+      },
+      "distance": 16200,
+      "bbox": [
+        29.1761166,
+        40.8821662,
+        29.185633,
+        40.8893608
+      ],
+      "file": "patch-036.json",
+      "url": "/data/akanzi-world/patch-036.json",
+      "bytes": 180703,
+      "ways": 404,
+      "elements": 406,
+      "downloaded": "2026-10-19T13:49:27.426Z"
+    },
+    {
+      "id": "patch-037",
+      "center": {
+        "lat": 40.88643832088052,
+        "lng": 29.185870038811878
+      },
+      "distance": 16650,
+      "bbox": [
+        29.1811118,
+        40.882841,
+        29.1906283,
+        40.8900356
+      ],
+      "file": "patch-037.json",
+      "url": "/data/akanzi-world/patch-037.json",
+      "bytes": 270084,
+      "ways": 662,
+      "elements": 664,
+      "downloaded": "2026-10-19T13:49:29.251Z"
+    },
+    {
+      "id": "patch-038",
+      "center": {
+        "lat": 40.8869269219805,
+        "lng": 29.190606996100957
+      },
+      "distance": 17100,
+      "bbox": [
+        29.1858487,
+        40.8833296,
+        29.1953653,
+        40.8905242
+      ],
+      "file": "patch-038.json",
+      "url": "/data/akanzi-world/patch-038.json",
+      "bytes": 285813,
+      "ways": 737,
+      "elements": 737,
+      "downloaded": "2026-10-19T13:49:31.095Z"
+    },
+    {
+      "id": "patch-039",
+      "center": {
+        "lat": 40.88525657709906,
+        "lng": 29.19547994467112
+      },
+      "distance": 17550,
+      "bbox": [
+        29.1907218,
+        40.8816593,
+        29.2002381,
+        40.8888539
+      ],
+      "file": "patch-039.json",
+      "url": "/data/akanzi-world/patch-039.json",
+      "bytes": 166241,
+      "ways": 450,
+      "elements": 450,
+      "downloaded": "2026-10-19T13:49:32.801Z"
+    },
+    {
+      "id": "patch-040",
+      "center": {
+        "lat": 40.88455890796138,
+        "lng": 29.20058119076756
+      },
+      "distance": 18000,
+      "bbox": [
+        29.1958231,
+        40.8809616,
+        29.2053393,
+        40.8881562
+      ],
+      "file": "patch-040.json",
+      "url": "/data/akanzi-world/patch-040.json",
+      "bytes": 149512,
+      "ways": 391,
+      "elements": 391,
+      "downloaded": "2026-10-19T13:49:34.405Z"
+    },
+    {
+      "id": "patch-041",
+      "center": {
+        "lat": 40.883601492218254,
+        "lng": 29.205742437431393
+      },
+      "distance": 18450,
+      "bbox": [
+        29.2009844,
+        40.8800042,
+        29.2105005,
+        40.8871988
+      ],
+      "file": "patch-041.json",
+      "url": "/data/akanzi-world/patch-041.json",
+      "bytes": 131917,
+      "ways": 273,
+      "elements": 273,
+      "downloaded": "2026-10-19T13:49:36.016Z"
+    },
+    {
+      "id": "patch-042",
+      "center": {
+        "lat": 40.88181199455957,
+        "lng": 29.210519788057404
+      },
+      "distance": 18900,
+      "bbox": [
+        29.2057619,
+        40.8782147,
+        29.2152777,
+        40.8854093
+      ],
+      "file": "patch-042.json",
+      "url": "/data/akanzi-world/patch-042.json",
+      "bytes": 110544,
+      "ways": 223,
+      "elements": 223,
+      "downloaded": "2026-10-19T13:49:37.572Z"
+    },
+    {
+      "id": "patch-043",
+      "center": {
+        "lat": 40.87938585188432,
+        "lng": 29.214747040513153
+      },
+      "distance": 19350,
+      "bbox": [
+        29.2099893,
+        40.8757886,
+        29.2195048,
+        40.8829831
+      ],
+      "file": "patch-043.json",
+      "url": "/data/akanzi-world/patch-043.json",
+      "bytes": 129287,
+      "ways": 276,
+      "elements": 276,
+      "downloaded": "2026-10-19T13:49:39.256Z"
+    },
+    {
+      "id": "patch-044",
+      "center": {
+        "lat": 40.8770922150545,
+        "lng": 29.218931263470985
+      },
+      "distance": 19800,
+      "bbox": [
+        29.2141737,
+        40.8734949,
+        29.2236888,
+        40.8806895
+      ],
+      "file": "patch-044.json",
+      "url": "/data/akanzi-world/patch-044.json",
+      "bytes": 138011,
+      "ways": 280,
+      "elements": 280,
+      "downloaded": "2026-10-19T13:49:40.885Z"
+    },
+    {
+      "id": "patch-045",
+      "center": {
+        "lat": 40.875442,
+        "lng": 29.223473
+      },
+      "distance": 20246.348958349932,
+      "bbox": [
+        29.2187155,
+        40.8718447,
+        29.2282305,
+        40.8790393
+      ],
+      "file": "patch-045.json",
+      "url": "/data/akanzi-world/patch-045.json",
+      "bytes": 183133,
+      "ways": 416,
+      "elements": 416,
+      "downloaded": "2026-10-19T13:49:42.601Z"
+    }
+  ]
+}

@@ -10,7 +10,7 @@ test('road surfaces have thickness and raised curbs only at their edges', () => 
   const asphalt = bounds(group.getObjectByName('asphalt'));
   assert.equal(asphalt.min.x, -3);
   assert.equal(asphalt.max.x, 3);
-  assert.equal(asphalt.min.z, -100);
+  assert.equal(asphalt.min.z, -103);
   assert.ok(asphalt.min.y < 0 && Math.abs(asphalt.max.y - ROAD_SURFACE_HEIGHT) < 1e-6);
   const curbs = group.getObjectByName('curbs').geometry.attributes.position;
   for (let i=0; i<curbs.count; i++) assert.ok(Math.abs(curbs.getX(i)) >= 3, 'curbs must never cover the asphalt center');
@@ -46,4 +46,21 @@ test('marking cadence does not reset at each small map segment', () => {
   const group = make([[0,0],[0,2],[0,4],[0,6],[0,8],[0,10]]);
   const p = group.getObjectByName('markings').geometry.attributes.position;
   for(let i=0;i<p.count;i++) { const d=-p.getZ(i); assert.ok(d <=3 || d >=8); }
+});
+
+test('crossings halfway along long segments have no curb walls or crossing lane dashes', () => {
+  const group = buildRoadMeshes({roads:[
+    {points:[[-50,0],[50,0]],width:8,highway:'residential'},
+    {points:[[0,-50],[0,50]],width:8,highway:'residential'}
+  ]});
+  const curbs = group.getObjectByName('curbs').geometry.attributes.position;
+  // Check triangle centroids, not only endpoints: a wall may span the junction.
+  for (let i=0;i<curbs.count;i+=3) {
+    const x=(curbs.getX(i)+curbs.getX(i+1)+curbs.getX(i+2))/3;
+    const z=(curbs.getZ(i)+curbs.getZ(i+1)+curbs.getZ(i+2))/3;
+    assert.ok(Math.abs(x)>4.3 || Math.abs(z)>4.3, 'intersection must remain open');
+  }
+  const marks=group.getObjectByName('markings').geometry.attributes.position;
+  for(let i=0;i<marks.count;i++) assert.ok(Math.abs(marks.getX(i))>4.3 || Math.abs(marks.getZ(i))>4.3);
+  assert.ok(curbs.count>0, 'curbs should remain along the street away from intersections');
 });
