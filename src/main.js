@@ -1,3 +1,4 @@
+import { bindDrivingInput } from './driving-input.js';
 import { assetUrl } from './resource-urls.js';
 import { CarPhysics } from './physics.js';
 import { CarAudio } from './audio.js';
@@ -247,59 +248,8 @@ document.addEventListener('DOMContentLoaded', () => {
     visualizer.loadRoadsAt(physics.lat,physics.lng).catch(()=>{});
   });
 
-  const drivingKeys = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space']);
-
-  window.addEventListener('keydown', (e) => {
-    const active = document.activeElement;
-    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
-      return;
-    }
-
-    if (drivingKeys.has(e.code)) {
-      e.preventDefault();
-    }
-
-    physics.keys[e.code] = true;
-    if (e.code === 'KeyH') {
-      audio.triggerHorn();
-    }
-  });
-
-  window.addEventListener('keyup', (e) => {
-    physics.keys[e.code] = false;
-  });
-
-  const clearDriveKeys = () => {
-    for (const key of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space']) {
-      physics.keys[key] = false;
-    }
-  };
-
-  window.addEventListener('blur', clearDriveKeys);
-  document.querySelectorAll('[data-drive-key]').forEach((button) => {
-    const code = button.getAttribute('data-drive-key');
-    let pointerId = null;
-    const release = (event) => {
-      if (event && pointerId !== event.pointerId) return;
-      physics.keys[code] = false;
-      button.setAttribute('aria-pressed', 'false');
-      const capturedId = pointerId;
-      pointerId = null;
-      if (capturedId !== null && button.hasPointerCapture(capturedId)) button.releasePointerCapture(capturedId);
-    };
-    button.addEventListener('pointerdown', (event) => {
-      if (event.button !== 0 || pointerId !== null) return;
-      event.preventDefault();
-      pointerId = event.pointerId;
-      button.setPointerCapture(pointerId);
-      physics.keys[code] = true;
-      button.setAttribute('aria-pressed', 'true');
-    });
-    button.addEventListener('pointerup', release);
-    button.addEventListener('pointercancel', release);
-    button.addEventListener('lostpointercapture', () => release());
-    button.addEventListener('contextmenu', (event) => event.preventDefault());
-  });
+  bindDrivingInput({ physics, buttons: document.querySelectorAll('[data-drive-key]'),
+    onHorn: () => audio.triggerHorn() });
 
   document.querySelectorAll('[data-model]').forEach((button) => {
     button.addEventListener('click', () => {

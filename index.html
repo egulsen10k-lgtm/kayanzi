@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>BMW Ultimate Earth Drive Simulator</title>
   <link rel="icon" href="data:,">
   <!-- Leaflet CSS -->
@@ -720,6 +720,45 @@
       .drive-touch-btn { width: 42px; }
       #drive-touch-controls { gap: 4px; }
     }
+    .touch-hint { display: none; }
+    @media (max-width: 800px), (any-pointer: coarse) {
+      .keyboard-hint { display: none; }
+      .touch-hint { display: inline; }
+      #drive-touch-controls {
+        display: flex !important; position: absolute; z-index: 16;
+        left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right));
+        bottom: max(12px, env(safe-area-inset-bottom)); transform: none;
+        width: auto; max-width: none; padding: 0; border: 0; background: none; backdrop-filter: none;
+        justify-content: space-between; align-items: end; pointer-events: none;
+      }
+      .touch-steering { display: flex; gap: 8px; }
+      .touch-pedals { display: grid; grid-template-columns: 62px 62px; gap: 8px; }
+      .drive-touch-btn {
+        pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none;
+        -webkit-touch-callout: none; width: 62px; height: 64px; min-height: 64px;
+        border: 1px solid #7b8e9e; border-radius: 16px; background: rgba(12,23,32,.9);
+        color: white; font-size: 28px; font-weight: 700; box-shadow: 0 3px 12px #0005;
+      }
+      .drive-touch-btn span { display: block; font-size: 11px; margin-top: 5px; }
+      .touch-pedals .drive-touch-btn { font-size: 13px; }
+      .touch-pedals .touch-handbrake { grid-column: 1 / -1; width: 132px; height: 48px; min-height: 48px; font-size: 11px; }
+      .touch-gas { background: #085c66; border-color: #46dce0; }
+      .drive-touch-btn[aria-pressed="true"] { background: #177cc7; border-color: white; transform: translateY(2px); }
+      #map-container .leaflet-control-attribution { font-size: 7px; line-height: 1.15; }
+      #map-container { left: max(12px, env(safe-area-inset-left)); bottom: calc(94px + env(safe-area-inset-bottom)); width: 132px; height: 96px; }
+      #imagery-attribution, #photoreal-attribution { bottom: calc(199px + env(safe-area-inset-bottom)) !important; font-size: 8px !important; right: 12px; }
+      #control-sidebar { position: absolute; z-index: 31; top: 0; right: 0; height: 100%; width: 350px; max-width: 100vw; }
+      #studio-close { display: block; }
+    }
+    @media (max-height: 500px) and (orientation: landscape) {
+      #map-container { left: 170px; bottom: max(12px, env(safe-area-inset-bottom)); width: 112px; height: 72px; }
+      #akanzi-hud { top: 150px !important; left: 16px !important; max-width: 300px !important; padding: 7px !important; }
+      #akanzi-instruction { display: none; }
+      #imagery-attribution, #photoreal-attribution { bottom: 8px !important; right: 165px !important; max-width: 35%; }
+      #start-overlay { padding: 12px 20px; overflow-y: auto; }
+      .start-title { font-size: 30px; }
+      .start-subtitle { margin-bottom: 10px; }
+    }
     [hidden] { display: none !important; }
 
     /* Responsive expedition studio and direct driving controls */
@@ -835,6 +874,45 @@
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
     }
+    .touch-hint { display: none; }
+    @media (max-width: 800px), (any-pointer: coarse) {
+      .keyboard-hint { display: none; }
+      .touch-hint { display: inline; }
+      #drive-touch-controls {
+        display: flex !important; position: absolute; z-index: 16;
+        left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right));
+        bottom: max(12px, env(safe-area-inset-bottom)); transform: none;
+        width: auto; max-width: none; padding: 0; border: 0; background: none; backdrop-filter: none;
+        justify-content: space-between; align-items: end; pointer-events: none;
+      }
+      .touch-steering { display: flex; gap: 8px; }
+      .touch-pedals { display: grid; grid-template-columns: 62px 62px; gap: 8px; }
+      .drive-touch-btn {
+        pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none;
+        -webkit-touch-callout: none; width: 62px; height: 64px; min-height: 64px;
+        border: 1px solid #7b8e9e; border-radius: 16px; background: rgba(12,23,32,.9);
+        color: white; font-size: 28px; font-weight: 700; box-shadow: 0 3px 12px #0005;
+      }
+      .drive-touch-btn span { display: block; font-size: 11px; margin-top: 5px; }
+      .touch-pedals .drive-touch-btn { font-size: 13px; }
+      .touch-pedals .touch-handbrake { grid-column: 1 / -1; width: 132px; height: 48px; min-height: 48px; font-size: 11px; }
+      .touch-gas { background: #085c66; border-color: #46dce0; }
+      .drive-touch-btn[aria-pressed="true"] { background: #177cc7; border-color: white; transform: translateY(2px); }
+      #map-container .leaflet-control-attribution { font-size: 7px; line-height: 1.15; }
+      #map-container { left: max(12px, env(safe-area-inset-left)); bottom: calc(94px + env(safe-area-inset-bottom)); width: 132px; height: 96px; }
+      #imagery-attribution, #photoreal-attribution { bottom: calc(199px + env(safe-area-inset-bottom)) !important; font-size: 8px !important; right: 12px; }
+      #control-sidebar { position: absolute; z-index: 31; top: 0; right: 0; height: 100%; width: 350px; max-width: 100vw; }
+      #studio-close { display: block; }
+    }
+    @media (max-height: 500px) and (orientation: landscape) {
+      #map-container { left: 170px; bottom: max(12px, env(safe-area-inset-bottom)); width: 112px; height: 72px; }
+      #akanzi-hud { top: 150px !important; left: 16px !important; max-width: 300px !important; padding: 7px !important; }
+      #akanzi-instruction { display: none; }
+      #imagery-attribution, #photoreal-attribution { bottom: 8px !important; right: 165px !important; max-width: 35%; }
+      #start-overlay { padding: 12px 20px; overflow-y: auto; }
+      .start-title { font-size: 30px; }
+      .start-subtitle { margin-bottom: 10px; }
+    }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -846,7 +924,7 @@
     <h1 class="start-title" id="start-title">The world is your road.</h1>
     <p class="start-subtitle">Drive a BMW-inspired car through a 3D city. Solid streets, raised curbs, and road boundaries keep your car on the road.</p>
     <button class="start-btn" id="start-simulation-btn" type="button">Start driving</button>
-    <p class="controls-hint">Keyboard: W/↑ accelerate · S/↓ brake and reverse · A/← and D/→ steer · Space handbrake</p>
+    <p class="controls-hint"><span class="keyboard-hint">Keyboard: W/↑ accelerate · S/↓ brake and reverse · A/← and D/→ steer · Space handbrake</span><span class="touch-hint">Sol başparmakla yön ver, sağ başparmakla gaz veya fren yap. Geri gitmek için durduktan sonra freni basılı tut.</span></p>
   </section>
 
   <div id="app-container">
@@ -889,12 +967,16 @@
         <div id="akanzi-instruction" style="font-size:11px;margin-top:4px;color:#a2adb7"></div>
       </div>
       <button id="sidebar-toggle" type="button" aria-controls="control-sidebar" aria-expanded="false">Studio</button>
-      <div id="drive-touch-controls" role="group" aria-label="Driving controls">
-        <button class="drive-touch-btn" type="button" data-drive-key="ArrowLeft" aria-label="Steer left" aria-pressed="false">←</button>
-        <button class="drive-touch-btn" type="button" data-drive-key="ArrowDown" aria-label="Brake or reverse" aria-pressed="false">▼</button>
-        <button class="drive-touch-btn" type="button" data-drive-key="ArrowUp" aria-label="Accelerate" aria-pressed="false">▲</button>
-        <button class="drive-touch-btn" type="button" data-drive-key="ArrowRight" aria-label="Steer right" aria-pressed="false">→</button>
-        <button class="drive-touch-btn" type="button" data-drive-key="Space" aria-label="Handbrake" aria-pressed="false">HB</button>
+      <div id="drive-touch-controls" role="group" aria-label="Touch driving controls">
+        <div class="touch-steering">
+          <button class="drive-touch-btn" type="button" data-drive-key="ArrowLeft" aria-label="Steer left" aria-pressed="false">←</button>
+          <button class="drive-touch-btn" type="button" data-drive-key="ArrowRight" aria-label="Steer right" aria-pressed="false">→</button>
+        </div>
+        <div class="touch-pedals">
+          <button class="drive-touch-btn touch-handbrake" type="button" data-drive-key="Space" aria-label="Handbrake" aria-pressed="false">EL FRENİ</button>
+          <button class="drive-touch-btn touch-brake" type="button" data-drive-key="ArrowDown" aria-label="Brake or reverse" aria-pressed="false">FREN<span>GERİ</span></button>
+          <button class="drive-touch-btn touch-gas" type="button" data-drive-key="ArrowUp" aria-label="Accelerate" aria-pressed="false">GAZ<span>↑</span></button>
+        </div>
       </div>
       <div id="photoreal-attribution" hidden style="position:absolute;bottom:12px;right:12px;z-index:25;background:#101820;color:white;padding:8px;font-size:12px;max-width:85%;">Google Maps</div>
       <div id="imagery-attribution">Imagery © Esri, Vantor, Earthstar Geographics · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">Map © OpenStreetMap contributors</a></div>
