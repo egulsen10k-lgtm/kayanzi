@@ -20,6 +20,15 @@ test('pedestrians cannot board a fast car or chase forever',()=>{
  sim.horn(c);sim.update(c,.1);assert.equal(sim.passengers,0);
  sim.people[0].remaining=.01;sim.update(c,.1);assert.equal(sim.people[0].state,'idle');
 });
+test('overflow passengers cling to the car and ragdoll at speed or during a sharp wiggle',()=>{
+ const sim=new Pedestrians(),c=car();sim.network=network;sim.passengers=4;
+ sim.people=[person(2)];sim.horn(c);sim.update(c,.1);assert.equal(sim.people[0].state,'clinging');
+ const held=sim.people[0],previousY=held.y;c.lat=.0001;sim.update(c,.1);assert.notEqual(held.y,previousY);
+ c.speed=30;sim.update(c,.1);assert.equal(sim.people[0].state,'ragdoll');
+ const wiggling=new Pedestrians(),d=car();wiggling.network=network;wiggling.passengers=4;wiggling.people=[person(2)];
+ wiggling.horn(d);wiggling.update(d,.1);assert.equal(wiggling.people[0].state,'clinging');
+ d.speed=15;d.heading=.2;wiggling.update(d,.1);assert.equal(wiggling.people[0].state,'ragdoll');
+});
 test('spawn budget is bounded and places people on ground streets only',()=>{
  const sim=new Pedestrians(),c=car();sim.update(c,.1);assert.ok(sim.people.length>0);assert.ok(sim.people.length<=16);
  for(const p of sim.people)assert.ok(Math.abs(p.x)>4);

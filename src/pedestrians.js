@@ -1,5 +1,5 @@
 import { projectCoordinate } from './road-network.js';
-import { roadSurfaceAt } from './road-safety.js';
+import { localToCoordinate, roadSurfaceAt } from './road-safety.js';
 import { sidewalkWidth } from './sidewalks.js';
 
 export const seatCapacity = model => /m4|csl/i.test(model) ? 2 : 5;
@@ -50,7 +50,7 @@ export class Pedestrians {
     const p=projectCoordinate(car.lat,car.lng,this.network.center);
     let count=0;
     for(const person of this.people) {
-      if(person.state==='boarded'||Math.hypot(person.x-p[0],person.y-p[1])>55)continue;
+      if(!['idle','chasing'].includes(person.state)||Math.hypot(person.x-p[0],person.y-p[1])>55)continue;
       person.state='chasing';person.remaining=18;count++;
     }
     this.message=count ? `${count} kişi geliyor! Binmeleri için yavaşla.` : 'Yakında korna duyacak yaya yok.';
@@ -62,16 +62,65 @@ export class Pedestrians {
     if(!car.roadNetwork) {this.people=[];this.network=null;return;}
     const p=projectCoordinate(car.lat,car.lng,car.roadNetwork.center);
     const far=this.network===car.roadNetwork && this.people.length && this.people.every(n=>Math.hypot(n.x-p[0],n.y-p[1])>130);
-    if(this.network!==car.roadNetwork||far)this.reset(car.roadNetwork,car);
+    if(this.network!==car.roadNetwork||far) {
+      const attached=this.network ? this.people.filter(n=>n.state==='clinging').map(n=>({person:n,coordinate:localToCoordinate([n.x,n.y],this.network.center)})) : [];
+      this.reset(car.roadNetwork,car);
+      for(const {person,coordinate} of attached) {
+        const point=projectCoordinate(coordinate.lat,coordinate.lng,this.network.center);
+        person.x=point[0];person.y=point[1];
+      }
+      this.people=[...attached.map(n=>n.person),...this.people].slice(0,16);
+    }
     dt=Math.min(.1,Math.max(0,dt));
+    const acceleration=dt>0 ? (Math.abs(car.speed)-Math.abs(this.previousSpeed ?? car.speed))/(3.6*dt) : 0;
+    const previousHeading=this.previousHeading ?? car.heading ?? 0;
+    const headingDelta=Math.atan2(Math.sin((car.heading ?? 0)-previousHeading),Math.cos((car.heading ?? 0)-previousHeading));
+    const yawRate=dt>0 ? Math.abs(headingDelta)/dt : 0;
+    this.previousSpeed=car.speed;
+    this.previousHeading=car.heading ?? 0;
     for(const person of this.people) {
+      if(person.state==='clinging') {
+        const heading=car.heading ?? 0, side=person.gripSlot%2 ? 1 : -1, along=person.gripSlot<2 ? .65 : -.8;
+        person.x=p[0]+Math.sin(heading)*along+Math.cos(heading)*side*1.25;
+        person.y=p[1]+Math.cos(heading)*along-Math.sin(heading)*side*1.25;
+        person.height=(car.roadHeight??.08)+.12;
+        person.heading=heading-side*Math.PI/2;
+        const speed=Math.abs(car.speed);
+        if(speed>=28 || (speed>12 && (acceleration>2 || yawRate>1.15))) {
+          person.state='ragdoll';
+          person.fall={age:0,vx:Math.sin(heading)*car.speed/3.6+Math.cos(heading)*side*2,
+            vy:2.5,vz:Math.cos(heading)*car.speed/3.6-Math.sin(heading)*side*2};
+          this.message=yawRate>1.15 ? 'Sert savrulma: tutunanlar düştü!' : 'Tutunanlar düştü! Birazdan ayağa kalkacaklar.';
+        }
+        continue;
+      }
+      if(person.state==='ragdoll') {
+        person.fall.age+=dt;
+        if(person.fall.age>=4) {
+          const point=person.recoveryPoint;
+          if(point){person.x=point.x;person.y=point.y;person.height=point.height;}
+          person.state='recovering';person.recoveryTime=0;
+        }
+        continue;
+      }
+      if(person.state==='recovering') {
+        person.recoveryTime+=dt;
+        if(person.recoveryTime>=1.2){person.state='idle';person.fall=null;person.recoveryPoint=null;}
+        continue;
+      }
       if(person.state!=='chasing')continue;
       person.remaining-=dt;
       if(person.remaining<=0||Math.abs(person.height-(car.roadHeight??.08))>.6){person.state='idle';continue;}
       const dx=p[0]-person.x,dy=p[1]-person.y,distance=Math.hypot(dx,dy);
       if(distance<2.8 && Math.abs(car.speed)<8 && ![.25,.5,.75].some(t=>insideBuilding(this.network,[person.x+dx*t,person.y+dy*t]))) {
         if(this.passengers<capacity-1){this.passengers++;person.state='boarded';this.message=`Yolcu bindi · ${this.passengers+1}/${capacity} kişi`;} 
-        else {person.state='idle';this.message='Araba dolu. Kapasite aşılmıyor.';}
+        else {
+          const occupied=new Set(this.people.filter(n=>n.state==='clinging').map(n=>n.gripSlot));
+          const active=this.people.filter(n=>['clinging','ragdoll','recovering'].includes(n.state)).length;
+          const slot=[0,1,2,3].find(i=>!occupied.has(i));
+          if(slot!==undefined && active<4){person.state='clinging';person.gripSlot=slot;this.message='Araba dolu: dışarıdan tutunuyorlar. Hızlanınca düşerler!';}
+          else {person.state='idle';this.message='Araba ve tutunma yerleri dolu.';}
+        }
         continue;
       }
       const direction=Math.atan2(dx,dy),step=Math.min(4.3*dt,Math.max(0,distance-2.1));

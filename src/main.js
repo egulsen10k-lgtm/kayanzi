@@ -20,10 +20,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const visualizer = new CarVisualizer3D(canvasContainer);
   const pedestrians = new Pedestrians();
   const pedestrianView = new PedestrianView(visualizer.scene);
-  const soundHorn = () => {
-    audio.triggerHorn();
+  const startHorn = () => {
+    audio.startHorn();
     if (!visualizer.previewActive) pedestrians.horn(physics);
   };
+  const stopHorn = () => audio.stopHorn();
   let routeGuide = null;
   let routeGeneration = 0;
   function endRoute() {
@@ -261,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
     calibrate: document.getElementById('tilt-calibrate'), status: document.getElementById('tilt-status') });
 
   bindDrivingInput({ physics, buttons: document.querySelectorAll('[data-drive-key]'),
-    onHorn: soundHorn });
+    onHornStart: startHorn, onHornEnd: stopHorn });
 
   document.querySelectorAll('[data-model]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -354,8 +355,10 @@ document.addEventListener('DOMContentLoaded', () => {
     audioToggleBtn.classList.toggle('active', isMuted);
   });
 
-  document.getElementById('horn-btn').addEventListener('click', soundHorn);
-  document.getElementById('mobile-horn').addEventListener('click', soundHorn);
+  for (const hornButton of [document.getElementById('horn-btn'), document.getElementById('mobile-horn')]) {
+    hornButton.addEventListener('pointerdown', event => { event.preventDefault(); hornButton.setPointerCapture(event.pointerId); startHorn(); });
+    for (const eventName of ['pointerup', 'pointercancel', 'lostpointercapture']) hornButton.addEventListener(eventName, stopHorn);
+  }
 
   document.getElementById('exhaust-pop-btn').addEventListener('click', () => {
     audio.triggerExhaustPop();
@@ -499,7 +502,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (!visualizer.previewActive) pedestrians.update(physics, dt);
     pedestrianView.update(pedestrians, physics, visualizer.carGroup, visualizer.previewActive);
-    const occupancy = `Kişi: ${pedestrians.passengers + 1}/${seatCapacity(physics.bmwModel)} · Sürücü dahil`;
+    const clinging = pedestrians.people.filter(person => person.state === 'clinging').length;
+    const occupancy = `Kişi: ${pedestrians.passengers + 1}/${seatCapacity(physics.bmwModel)}${clinging ? ` · Tutunan: ${clinging}` : ' · Sürücü dahil'}`;
     const passengerHud = document.getElementById('hud-passengers');
     if (passengerHud.textContent !== occupancy) passengerHud.textContent = occupancy;
     const passengerStatus = document.getElementById('passenger-status');

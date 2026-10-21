@@ -145,13 +145,26 @@ export class CarPhysics {
     // lateral acceleration, preventing unrealistically rapid highway-speed spins.
     const wheelAngle = this.steering * 0.61 / (1 + (absMs / 18) ** 2);
     const requestedYaw = -speedMs * Math.tan(wheelAngle) / 2.85;
-    const grip = this.handlingMode === 'Drift' ? 6.5 : 8.8;
+    const grip = this.handlingMode === 'Drift' ? 4.2 : 8.8;
     const yawLimit = grip / Math.max(absMs, 0.1);
     const yaw = Math.max(-yawLimit, Math.min(yawLimit, requestedYaw));
     this.heading = ((oldHeading + yaw * dt) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
-    // This controller has no lateral tire/slip simulation; do not invent drift yaw.
-    this.driftFactor = 0;
-    this.isDrifting = false;
+
+    // Drift physics - lateral slide when turning at speed in Drift mode
+    const isFastEnough = absMs > 7;
+    const isTurned = Math.abs(this.steering) > 0.25;
+    const drifting = this.handlingMode === 'Drift' && isFastEnough && isTurned;
+
+    if (drifting) {
+      this.lat += Math.cos(this.heading + Math.PI/2) * this.driftFactor * dt * 0.002;
+      this.lng += Math.sin(this.heading + Math.PI/2) * this.driftFactor * dt * 0.002;
+      this.heading += Math.sign(this.steering) * this.driftFactor * dt * 0.3;
+      this.driftFactor = Math.min(3.5, this.driftFactor + dt * 2);
+      this.isDrifting = true;
+    } else {
+      this.driftFactor = Math.max(0, this.driftFactor - dt * 4);
+      this.isDrifting = false;
+    }
     const distanceMeters = speedMs * dt;
     if (!distanceMeters) return true;
     const latitude = this.lat * Math.PI / 180;

@@ -1,5 +1,5 @@
 // Keep keyboard and individual fingers independent: releasing one cannot cancel another.
-export function bindDrivingInput({ physics, buttons, onHorn = () => {}, win = window, doc = document }) {
+export function bindDrivingInput({ physics, buttons, onHorn = () => {}, onHornStart = onHorn, onHornEnd = () => {}, win = window, doc = document }) {
   const codes = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space']);
   const keyboard = new Set();
   const held = new Map();
@@ -13,6 +13,7 @@ export function bindDrivingInput({ physics, buttons, onHorn = () => {}, win = wi
     sync(item.code);
   };
   const clear = () => {
+    onHornEnd();
     keyboard.clear();
     for (const id of [...held.keys()]) release(id);
     for (const code of codes) physics.keys[code] = false;
@@ -21,9 +22,9 @@ export function bindDrivingInput({ physics, buttons, onHorn = () => {}, win = wi
     const active = doc.activeElement;
     if (active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)) return;
     if (codes.has(e.code)) { e.preventDefault(); keyboard.add(e.code); sync(e.code); }
-    if (e.code === 'KeyH' && !e.repeat) onHorn();
+    if (e.code === 'KeyH' && !e.repeat) onHornStart();
   });
-  win.addEventListener('keyup', e => { keyboard.delete(e.code); if (codes.has(e.code)) sync(e.code); });
+  win.addEventListener('keyup', e => { keyboard.delete(e.code); if (codes.has(e.code)) sync(e.code); if (e.code === 'KeyH') onHornEnd(); });
   win.addEventListener('blur', clear);
   win.addEventListener('resize', clear);
   doc.addEventListener('visibilitychange', () => { if (doc.hidden) clear(); });

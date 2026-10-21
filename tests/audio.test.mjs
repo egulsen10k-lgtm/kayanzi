@@ -121,6 +121,17 @@ test('horn exists, respects channel/mute, and repeated key events are rate-limit
   audio.dispose();
 });
 
+test('held horn remains active until released', () => {
+  const audio = create(), steady = audio.sources.size;
+  audio.startHorn();
+  assert.equal(audio.sources.size, steady + 2);
+  audio.startHorn();
+  assert.equal(audio.sources.size, steady + 2);
+  audio.stopHorn();
+  assert.equal(audio.sources.size, steady);
+  audio.dispose();
+});
+
 test('road and wind noise depend on speed magnitude and tire noise requires actual slip', () => {
   const audio = create();
   audio.update(800, 0, 80, false);

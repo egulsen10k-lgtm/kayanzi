@@ -15,6 +15,7 @@ export class CarAudio {
     this.shiftUntil = -Infinity;
     this.popCooldown = -Infinity;
     this.hornCooldown = -Infinity;
+    this.hornVoice = null;
     this.nodes = new Set();
     this.sources = new Set();
     this.channels = { engine: true, turbo: true, exhaust: true, tires: true, wind: true, horn: true };
@@ -37,6 +38,7 @@ export class CarAudio {
   setChannelEnabled(channel, enabled) {
     if (!Object.hasOwn(this.channels, channel)) return;
     this.channels[channel] = Boolean(enabled);
+    if (channel === 'horn' && !enabled) this.stopHorn();
     const groups = { engine: ['engineGain'], turbo: ['turboGain'], tires: ['screechGain', 'roadGain'], wind: ['windGain'] };
     if (!enabled && this.ctx) for (const name of groups[channel] || []) {
       this[name]?.gain.cancelScheduledValues(this.ctx.currentTime);
@@ -170,6 +172,35 @@ export class CarAudio {
     this.hornCooldown = this.ctx.currentTime;
     for (const frequency of [420, 510]) this.burst({ frequency, endFrequency: frequency, volume: 0.15, duration: 0.32, type: 'sawtooth' });
   }
+  startHorn() {
+    if (!this.initialized || this.isMuted || !this.channels.horn || this.hornVoice) return;
+    const filter = this.filterNode('lowpass', 1450, .7);
+    const gain = this.gain(.0001);
+    const sources = [420, 510].map(frequency => {
+      const source = this.source(this.ctx.createOscillator());
+      source.type = 'sawtooth';
+      source.frequency.setValueAtTime(frequency, this.ctx.currentTime);
+      source.connect(filter); source.start();
+      return source;
+    });
+    filter.connect(gain); gain.connect(this.masterGain);
+    gain.gain.linearRampToValueAtTime(.15, this.ctx.currentTime + .025);
+    this.hornVoice = { sources, filter, gain };
+  }
+  stopHorn() {
+    const horn = this.hornVoice;
+    if (!horn) return;
+    this.hornVoice = null;
+    horn.gain.gain.cancelScheduledValues(this.ctx?.currentTime ?? 0);
+    horn.gain.gain.setValueAtTime(.0001, this.ctx?.currentTime ?? 0);
+    for (const source of horn.sources) {
+      source.onended = null;
+      try { source.stop(); } catch {}
+      source.disconnect(); this.sources.delete(source); this.nodes.delete(source);
+    }
+    horn.filter.disconnect(); horn.gain.disconnect();
+    this.nodes.delete(horn.filter); this.nodes.delete(horn.gain);
+  }
 
   update(rpm, throttle, speedKmh, isDrifting, options = {}) {
     if (!this.initialized) return;
@@ -234,12 +265,13 @@ export class CarAudio {
   }
 
   dispose() {
+    this.stopHorn();
     for (const source of this.sources) { source.onended = null; try { source.stop(); } catch {} }
     for (const node of this.nodes) { try { node.disconnect(); } catch {} }
     this.sources.clear(); this.nodes.clear();
     if (this.ctx) { try { this.ctx.close()?.catch(() => {}); } catch {} }
     this.ctx = null; this.initialized = false; this.noiseBuffer = null;
     this.waveProfile = null; this.shiftUntil = -Infinity;
-    this.lastThrottle = 0; this.lastGear = null; this.popCooldown = -Infinity; this.hornCooldown = -Infinity;
+    this.lastThrottle = 0; this.lastGear = null; this.popCooldown = -Infinity; this.hornCooldown = -Infinity; this.hornVoice = null;
   }
 }
