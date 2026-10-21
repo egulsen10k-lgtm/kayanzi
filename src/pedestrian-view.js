@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createPerson } from './person-model.js';
 import { projectCoordinate } from './road-network.js';
-const colors=['#e9a13b','#4586ad','#b55257','#62a27c','#e4ded1','#8665ae'];
+const colors=['#e9c9bd','#91b7cf','#b86476','#7eaa94','#f0e9dc','#ad9ac5'];
 export class PedestrianView {
   constructor(scene) {
     this.group=new THREE.Group();this.group.name='pedestrians';scene.add(this.group);

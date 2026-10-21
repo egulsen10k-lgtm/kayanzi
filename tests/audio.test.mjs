@@ -14,6 +14,7 @@ class Node {
   constructor() {
     for (const key of ['gain', 'frequency', 'Q', 'threshold', 'knee', 'ratio']) this[key] = new Param();
   }
+  setPeriodicWave(wave) { this.wave = wave; this.type = 'custom'; }
   connect() {}
   disconnect() { this.disconnected = true; }
   start() { this.started = true; }
@@ -21,6 +22,7 @@ class Node {
 }
 class Context {
   constructor({ sampleRate }) { this.sampleRate = sampleRate; this.currentTime = 0; this.state = 'suspended'; this.destination = new Node(); }
+  createPeriodicWave(real, imaginary) { return { real, imaginary }; }
   createGain() { return new Node(); }
   createOscillator() { return new Node(); }
   createBufferSource() { return new Node(); }
@@ -132,5 +134,41 @@ test('road and wind noise depend on speed magnitude and tire noise requires actu
   assert.equal(audio.roadGain.gain.value, 0); assert.equal(audio.screechGain.gain.value, 0);
   audio.update(800, 0, 0, false);
   assert.equal(audio.windGain.gain.value, 0);
+  audio.dispose();
+});
+
+
+test('combustion is harmonic-rich and every layer follows RPM, including crankshaft bass', () => {
+  const audio = create();
+  audio.update(900, 0, 0, false, { model: 'M3', gear: 1 });
+  assert.equal(audio.osc1.type, 'custom');
+  assert.ok(audio.osc1.wave.imaginary.slice(2).filter(value => value > 0).length > 20);
+  const bassIdle = audio.osc4.frequency.value;
+  audio.update(6000, 1, 90, false, { model: 'M3', gear: 1 });
+  assert.equal(audio.osc4.frequency.value, 100);
+  assert.ok(audio.osc4.frequency.value > bassIdle);
+  assert.equal(audio.osc3.frequency.value, 150);
+  audio.update(6000, 1, 90, false, { model: 'i4', gear: 1 });
+  assert.equal(audio.osc1.type, 'sine');
+  assert.equal(audio.intakeGain.gain.value, 0);
+  audio.dispose();
+});
+
+test('load opens intake and exhaust timbre and shifts briefly interrupt engine torque sound', () => {
+  const audio = create();
+  audio.update(4000, 0, 60, false, { gear: 2 });
+  const quietIntake = audio.intakeGain.gain.value, closedFilter = audio.filter.frequency.value;
+  audio.update(4000, 1, 60, false, { gear: 2 });
+  const loadedVolume = audio.engineGain.gain.value;
+  assert.ok(audio.intakeGain.gain.value > quietIntake);
+  assert.ok(audio.filter.frequency.value > closedFilter);
+  audio.update(4000, 1, 60, false, { gear: 3 });
+  assert.ok(audio.engineGain.gain.value < loadedVolume * 0.5);
+  audio.ctx.currentTime += 0.2;
+  audio.update(4000, 1, 60, false, { gear: 3 });
+  assert.equal(audio.engineGain.gain.value, loadedVolume);
+  audio.setChannelEnabled('engine', false);
+  audio.update(6000, 1, 90, false);
+  assert.equal(audio.engineGain.gain.value, 0);
   audio.dispose();
 });

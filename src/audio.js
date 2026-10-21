@@ -11,6 +11,8 @@ export class CarAudio {
     this.lastThrottle = 0;
     this.lastGear = null;
     this.profile = 'six';
+    this.waveProfile = null;
+    this.shiftUntil = -Infinity;
     this.popCooldown = -Infinity;
     this.hornCooldown = -Infinity;
     this.nodes = new Set();
@@ -79,23 +81,35 @@ export class CarAudio {
       this.filter = this.filterNode('lowpass', 600);
       this.engineGain.connect(this.filter);
       this.filter.connect(this.masterGain);
-      // More harmonics for richer engine: fundamental + 2nd + 3rd + sub-bass
+      // A short combustion pressure pulse has a broad harmonic spectrum. Use
+      // band-limited periodic waves (browser handles Nyquist) instead of beeps.
+      this.combustionWaves = {};
+      for (const profile of ['six', 'eight']) {
+        const real = new Float32Array(33), imaginary = new Float32Array(33);
+        for (let harmonic = 1; harmonic < real.length; harmonic++) {
+          const decay = profile === 'eight' ? 0.19 : 0.25;
+          imaginary[harmonic] = Math.exp(-harmonic * decay) / Math.sqrt(harmonic);
+          real[harmonic] = imaginary[harmonic] * 0.28;
+        }
+        this.combustionWaves[profile] = this.ctx.createPeriodicWave(real, imaginary);
+      }
+      this.engineLayers = [];
       for (let i = 1; i <= 4; i++) {
         const oscillator = this.source(this.ctx.createOscillator());
-        oscillator.type = i === 1 ? 'triangle' : i === 4 ? 'sine' : 'sine';
-        const gain = this.gain([0, 0.45, 0.2, 0.12, 0.25][i]); // sub-bass at i=4
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(40, this.ctx.currentTime);
+        const gain = this.gain(0);
         oscillator.connect(gain); gain.connect(this.engineGain); oscillator.start();
+        this.engineLayers.push(gain);
         this[`osc${i}`] = oscillator;
       }
-      // Slight detune for realistic engine character
-      this.osc2?.frequency.setValueAtTime(this.osc2.frequency.value * 1.003, this.ctx.currentTime);
-      this.osc3?.frequency.setValueAtTime(this.osc3.frequency.value * 0.997, this.ctx.currentTime);
       const length = this.ctx.sampleRate;
       this.noiseBuffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
       const data = this.noiseBuffer.getChannelData(0);
       for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
       this.createTurboSound(); this.createTireScreech(); this.createWindSound();
       this.noiseChannel('road', 'lowpass', 220, 0.7);
+      this.noiseChannel('intake', 'bandpass', 700, 0.9, this.engineGain);
       this.initialized = true;
       if (this.ctx.state === 'suspended') this.ctx.resume()?.catch(() => {});
     } catch (error) {
@@ -103,12 +117,12 @@ export class CarAudio {
       console.warn('AudioContext failed to initialize', error);
     }
   }
-  noiseChannel(name, type, frequency, q) {
+  noiseChannel(name, type, frequency, q, destination = this.masterGain) {
     const source = this.source(this.ctx.createBufferSource());
     source.buffer = this.noiseBuffer; source.loop = true;
     const filter = this.filterNode(type, frequency, q);
     const gain = this.gain(0);
-    source.connect(filter); filter.connect(gain); gain.connect(this.masterGain); source.start();
+    source.connect(filter); filter.connect(gain); gain.connect(destination); source.start();
     this[`${name}Gain`] = gain; this[`${name}Filter`] = filter;
   }
   createTurboSound() { this.noiseChannel('turbo', 'bandpass', 1800, 2); }
@@ -172,19 +186,43 @@ export class CarAudio {
       this.triggerExhaustPop(); this.triggerBOV(); this.popCooldown = now;
     }
     if (!electric && options.gear != null && this.lastGear != null && options.gear !== this.lastGear && speed > 8 && this.channels.engine) {
+      this.shiftUntil = now + 0.12;
       this.burst({ frequency: 160, endFrequency: 65, volume: 0.07, duration: 0.07 });
     }
     this.lastGear = options.gear ?? null;
     this.lastThrottle = load;
     // Four-stroke firing rate: RPM / 60 × cylinders / 2.
     const fundamental = electric ? 110 + speed * 7 : Math.max(24, rpm * (profile === 'eight' ? 4 : 3) / 60);
-    [this.osc1, this.osc2, this.osc3].forEach((osc, i) => {
-      osc.type = electric || i > 0 ? 'sine' : 'triangle';
-      osc.frequency.setTargetAtTime(fundamental * (i + 1), now, 0.055);
+    if (this.waveProfile !== profile) {
+      this.osc1.type = 'sine';
+      this.osc2.type = 'sine';
+      if (!electric) {
+        this.osc1.setPeriodicWave(this.combustionWaves[profile]);
+        this.osc2.setPeriodicWave(this.combustionWaves[profile]);
+      }
+      this.waveProfile = profile;
+      this.shiftUntil = -Infinity;
+    }
+    // The bottom layer follows crankshaft RPM; never leave a fixed 440 Hz drone.
+    const frequencies = electric
+      ? [fundamental, fundamental * 2, fundamental * 0.5, fundamental * 3]
+      : [fundamental, fundamental * 2.003, fundamental * 0.5, Math.max(12, rpm / 60)];
+    [this.osc1, this.osc2, this.osc3, this.osc4].forEach((osc, i) => {
+      osc.frequency.setTargetAtTime(frequencies[i], now, 0.045);
     });
-    this.filter.frequency.setTargetAtTime(electric ? 2800 : 400 + rpm * 0.15 + load * 1200, now, 0.08);
-    const engineVolume = electric ? Math.min(0.24, speed / 100) * (0.3 + load * 0.7) : 0.16 + load * 0.3 + rpm / 12000 * 0.1;
-    this.engineGain.gain.setTargetAtTime(this.channels.engine ? engineVolume : 0, now, 0.07);
+    const layerVolumes = electric ? [0.32, 0.06, 0.015, 0.025]
+      : [0.50, 0.035 + load * 0.09, profile === 'eight' ? 0.18 : 0.09, 0.08];
+    this.engineLayers.forEach((gain, i) => gain.gain.setTargetAtTime(layerVolumes[i], now, 0.06));
+    this.filter.frequency.setTargetAtTime(electric ? 4200 : 420 + rpm * 0.19 + load * 1600, now, 0.08);
+    // Intake air adds a soft mechanical rasp under load, sharing engine mute.
+    this.intakeGain.gain.setTargetAtTime(electric ? 0 : 0.025 + load * 0.18, now, 0.09);
+    this.intakeFilter.frequency.setTargetAtTime(400 + rpm * 0.14 + load * 450, now, 0.09);
+    const idleAmount = Math.max(0, 1 - rpm / 1800) * (1 - load);
+    const idleVariation = 1 + idleAmount * (Math.sin(now * 19) * 0.045 + Math.sin(now * 31.7) * 0.025);
+    const shiftEnvelope = now < this.shiftUntil ? 0.38 : 1;
+    const engineVolume = electric ? Math.min(0.24, speed / 100) * (0.3 + load * 0.7)
+      : (0.18 + load * 0.38 + rpm / 12000 * 0.08) * idleVariation * shiftEnvelope;
+    this.engineGain.gain.setTargetAtTime(this.channels.engine ? engineVolume : 0, now, 0.025);
     this.turboGain.gain.setTargetAtTime(this.channels.turbo && !electric ? load * Math.min(1, rpm / 5000) * 0.09 : 0, now, 0.18);
     this.turboFilter.frequency.setTargetAtTime(1200 + rpm * 0.25, now, 0.15);
     const slip = clamp(options.slip ?? (isDrifting ? 0.7 : 0), 0, 1);
@@ -201,6 +239,7 @@ export class CarAudio {
     this.sources.clear(); this.nodes.clear();
     if (this.ctx) { try { this.ctx.close()?.catch(() => {}); } catch {} }
     this.ctx = null; this.initialized = false; this.noiseBuffer = null;
+    this.waveProfile = null; this.shiftUntil = -Infinity;
     this.lastThrottle = 0; this.lastGear = null; this.popCooldown = -Infinity; this.hornCooldown = -Infinity;
   }
 }

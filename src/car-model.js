@@ -195,7 +195,7 @@ export function createCarModel(rawModelType = 'm3', colorHex = '#1c3fa8') {
   const seats = [[.39, .25], [-.39, .25], [-.43, -.67], [0, -.67], [.43, -.67]];
   const clothing = ['#e2bd81', '#6592c9', '#c96b60', '#81ac7b', '#a98cc9'];
   seats.forEach(([x, z], index) => {
-    const person = createPerson({ color: clothing[index], seated: true });
+    const person = createPerson({ color: clothing[index], seated: true, female: index !== 0 });
     person.name = index === 0 ? 'driver' : `passenger-${index - 1}`;
     person.position.set(x, .55, z);
     person.visible = index === 0;
