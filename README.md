@@ -148,3 +148,14 @@ Validation sampled 4,306 points along Akanzi with incremental road height and
 streamed district changes: no missing road surfaces or elevation jumps above
 0.1m. Two tight corner centerline samples require different vehicle headings;
 this sampling is not proof of a complete end-to-end driving run.
+
+Pedestrians spawn near ground-level urban streets (maximum 16 active figures).
+Press H or the mobile KORNA button to call people within 55m. They run toward the
+car for up to 18 seconds and board within 2.8m when it is travelling below 8 km/h.
+Capacity includes the visible driver: two seats in the M4 CSL, five in other
+current models. Changing to a smaller car reduces the passenger count to fit.
+Pedestrians avoid mapped buildings; their local steering is not a full sidewalk
+pathfinder. Their body parts use instanced rendering to limit mobile draw calls.
+Ground urban streets have 1.6m climbable sidewalks, with a 14cm rise above asphalt.
+A tighter vehicle collision envelope permits closer maneuvering while buildings,
+bridge/tunnel boundaries and unloaded areas remain blocked.

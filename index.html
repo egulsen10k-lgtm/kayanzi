@@ -741,7 +741,7 @@
       }
       .drive-touch-btn span { display: block; font-size: 11px; margin-top: 5px; }
       .touch-pedals .drive-touch-btn { font-size: 13px; }
-      .touch-pedals .touch-handbrake { grid-column: 1 / -1; width: 132px; height: 48px; min-height: 48px; font-size: 11px; }
+      .touch-pedals .touch-handbrake { grid-column: auto; width: 62px; height: 48px; min-height: 48px; font-size: 11px; }
       .touch-gas { background: #085c66; border-color: #46dce0; }
       .drive-touch-btn[aria-pressed="true"] { background: #177cc7; border-color: white; transform: translateY(2px); }
       #map-container .leaflet-control-attribution { font-size: 7px; line-height: 1.15; }
@@ -774,6 +774,9 @@
       #imagery-attribution { bottom: 8px !important; }
       #akanzi-hud { left: 230px !important; top: 150px !important; }
     }
+    .touch-pedals .touch-horn { height: 48px; min-height: 48px; font-size: 11px; }
+    #hud-passengers { font-size: 9px; margin-top: 6px; color: #9ae6ca; }
+    #passenger-status { font-size: 11px; line-height: 1.5; margin-top: 8px; color: #9ae6ca; }
     [hidden] { display: none !important; }
 
     /* Responsive expedition studio and direct driving controls */
@@ -910,7 +913,7 @@
       }
       .drive-touch-btn span { display: block; font-size: 11px; margin-top: 5px; }
       .touch-pedals .drive-touch-btn { font-size: 13px; }
-      .touch-pedals .touch-handbrake { grid-column: 1 / -1; width: 132px; height: 48px; min-height: 48px; font-size: 11px; }
+      .touch-pedals .touch-handbrake { grid-column: auto; width: 62px; height: 48px; min-height: 48px; font-size: 11px; }
       .touch-gas { background: #085c66; border-color: #46dce0; }
       .drive-touch-btn[aria-pressed="true"] { background: #177cc7; border-color: white; transform: translateY(2px); }
       #map-container .leaflet-control-attribution { font-size: 7px; line-height: 1.15; }
@@ -943,6 +946,9 @@
       #imagery-attribution { bottom: 8px !important; }
       #akanzi-hud { left: 230px !important; top: 150px !important; }
     }
+    .touch-pedals .touch-horn { height: 48px; min-height: 48px; font-size: 11px; }
+    #hud-passengers { font-size: 9px; margin-top: 6px; color: #9ae6ca; }
+    #passenger-status { font-size: 11px; line-height: 1.5; margin-top: 8px; color: #9ae6ca; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -967,6 +973,7 @@
         <div class="hud-card">
           <div class="speedometer-unit">Speed</div>
           <div class="speedometer-val"><span id="hud-speed">0</span> <span style="font-size: 16px; color: var(--text-dim);">km/h</span></div>
+          <div id="hud-passengers">Kişi: 1/5 · Sürücü dahil</div>
           <div class="rpm-container">
             <div class="rpm-bar" id="hud-rpm-bar"></div>
           </div>
@@ -1008,6 +1015,7 @@
           <button class="drive-touch-btn" type="button" data-drive-key="ArrowRight" aria-label="Steer right" aria-pressed="false">→</button>
         </div>
         <div class="touch-pedals">
+          <button id="mobile-horn" class="drive-touch-btn touch-horn" type="button" aria-label="Korna: yayaları çağır">KORNA</button>
           <button class="drive-touch-btn touch-handbrake" type="button" data-drive-key="Space" aria-label="Handbrake" aria-pressed="false">EL FRENİ</button>
           <button class="drive-touch-btn touch-brake" type="button" data-drive-key="ArrowDown" aria-label="Brake or reverse" aria-pressed="false">FREN<span>GERİ</span></button>
           <button class="drive-touch-btn touch-gas" type="button" data-drive-key="ArrowUp" aria-label="Accelerate" aria-pressed="false">GAZ<span>↑</span></button>
@@ -1140,7 +1148,7 @@
           <button class="action-btn" id="audio-toggle-btn" style="padding: 6px 14px;">Mute</button>
         </div>
         <div style="margin-top: 10px; display: flex; gap: 8px;">
-          <button class="action-btn" id="horn-btn" style="flex: 1;">Horn 🔊</button>
+          <button class="action-btn" id="horn-btn" style="flex: 1;">Horn 🔊</button><div id="passenger-status" role="status">Korna çal: yakındaki yayaları çağır</div>
           <button class="action-btn" id="exhaust-pop-btn" style="flex: 1;">Exhaust Pop 💥</button>
         </div>
       </div>

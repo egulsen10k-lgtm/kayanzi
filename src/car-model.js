@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createPerson } from './person-model.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // Original procedural interpretations, not manufacturer CAD or licensed BMW assets.
@@ -22,7 +23,7 @@ export function createCarModel(rawModelType = 'm3', colorHex = '#1c3fa8') {
   const black = new THREE.MeshStandardMaterial({ color: '#101217', roughness: .32, metalness: .5 });
   const rubber = new THREE.MeshStandardMaterial({ color: '#17191c', roughness: .93 });
   const silver = new THREE.MeshStandardMaterial({ color: '#aeb6c2', metalness: .88, roughness: .26 });
-  const glass = new THREE.MeshPhysicalMaterial({ color: '#243943', metalness: .3, roughness: .12, clearcoat: 1 });
+  const glass = new THREE.MeshPhysicalMaterial({ color: '#779aa7', metalness: .05, roughness: .12, clearcoat: 1, transparent: true, opacity: .23, depthWrite: false, side: THREE.DoubleSide });
   const red = new THREE.MeshStandardMaterial({ color: '#820e17', emissive: 0xdc2626, emissiveIntensity: .65 });
   const white = new THREE.MeshStandardMaterial({ color: '#e5f4ff', emissive: '#afddff', emissiveIntensity: 1.5 });
   const caliper = new THREE.MeshStandardMaterial({ color: modelType === 'm5' ? '#d6a84c' : '#2261bc', metalness: .4, roughness: .4 });
@@ -186,6 +187,24 @@ export function createCarModel(rawModelType = 'm3', colorHex = '#1c3fa8') {
     box('wing-plate-l', 0.04, 0.28, 0.25, carbon, 0.84, 1.22, -half + .38, 0.02);
     box('wing-plate-r', 0.04, 0.28, 0.25, black, -0.84, 1.22, -half + .38, 0.02);
   }
+
+  // Hip-local figures sit within the glazing, with their faces pointing +Z.
+  const occupants = new THREE.Group();
+  occupants.name = 'occupants';
+  group.add(occupants);
+  const seats = [[.39, .25], [-.39, .25], [-.43, -.67], [0, -.67], [.43, -.67]];
+  const clothing = ['#e2bd81', '#6592c9', '#c96b60', '#81ac7b', '#a98cc9'];
+  seats.forEach(([x, z], index) => {
+    const person = createPerson({ color: clothing[index], seated: true });
+    person.name = index === 0 ? 'driver' : `passenger-${index - 1}`;
+    person.position.set(x, .55, z);
+    person.visible = index === 0;
+    occupants.add(person);
+    // Seat backs stay beneath shoulder height so occupants remain legible.
+    box('seat-back', .36, .38, .12, black, x, .75, z - .16);
+  });
+  const steeringWheel = mesh(new THREE.TorusGeometry(.14, .022, 6, 16), black, 'steering-wheel', .39, .92, .67);
+  steeringWheel.rotation.x = -.35;
 
   return {group, wheels, bodyMaterials, exhaustFlames};
 }

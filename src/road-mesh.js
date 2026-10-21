@@ -1,8 +1,9 @@
 import * as THREE from 'three';
+import { sidewalkWidth, SIDEWALK_HEIGHT } from './sidewalks.js';
 
 export const ROAD_SURFACE_HEIGHT = 0.08;
 const BASE = -0.035;
-const CURB_HEIGHT = 0.22;
+const CURB_HEIGHT = SIDEWALK_HEIGHT;
 
 function asphaltTexture() {
   // A small repeatable aggregate texture, mapped in meters rather than per road.
@@ -77,11 +78,11 @@ function streetOverlap(network) {
         }
     }
   }
-  return (road, point) => (cells.get(Math.floor(point[0] / size) + ',' + Math.floor(point[2] / size)) ?? []).some(s => {
-    if (s.road === road) return false;
+  return (road, point, includeSelf = false) => (cells.get(Math.floor(point[0] / size) + ',' + Math.floor(point[2] / size)) ?? []).some(s => {
+    if (s.road === road && !includeSelf) return false;
     const dx = s.b[0] - s.a[0], dz = s.b[1] - s.a[1];
     const t = Math.max(0, Math.min(1, ((point[0] - s.a[0]) * dx + (point[2] - s.a[1]) * dz) / (dx * dx + dz * dz)));
-    return Math.abs(point[1] - (s.a[2]+(s.b[2]-s.a[2])*t+ROAD_SURFACE_HEIGHT)) < .5 && Math.hypot(point[0] - s.a[0] - t * dx, point[2] - s.a[1] - t * dz) <= s.radius;
+    return Math.abs(point[1] - (s.a[2]+(s.b[2]-s.a[2])*t+ROAD_SURFACE_HEIGHT)) < .5 && Math.hypot(point[0] - s.a[0] - t * dx, point[2] - s.a[1] - t * dz) <= s.radius - (includeSelf && s.road === road ? .35 : 0);
   });
 }
 
@@ -111,17 +112,29 @@ export function buildRoadMeshes(network) {
     if (!Number.isFinite(road.width) || road.width < 2 || road.width > 40) continue;
     for (const points of cleanFragments(road.points, road.elevations)) {
       const inner = offsets(points, road.width / 2);
-      const outer = offsets(points, road.width / 2 + .22);
+      const pavement = sidewalkWidth(road);
+      const outer = offsets(points, road.width / 2 + (pavement || .22));
       const shoulder = offsets(points, road.width / 2 + .65);
       const at = (i, offset, sign, y) => [points[i][0] + offset[i][0] * sign, y + points[i][2], points[i][1] + offset[i][1] * sign];
       // Curbs are appropriate for urban streets, not motorways or dirt tracks.
-      const hasCurbs = ['residential', 'living_street', 'service', 'unclassified', 'tertiary', 'secondary', 'primary'].includes(road.highway);
+      const hasCurbs = pavement > 0;
       // Rounded node pads match the road union used by collision checks.
       for (const [x,z,height] of points) {
         const radius=road.width/2;
         for(let k=0;k<24;k++) {
           const a=k*Math.PI/12,b=(k+1)*Math.PI/12;
           asphalt.push(x,height+ROAD_SURFACE_HEIGHT,z,x+Math.cos(b)*radius,height+ROAD_SURFACE_HEIGHT,z+Math.sin(b)*radius,x+Math.cos(a)*radius,height+ROAD_SURFACE_HEIGHT,z+Math.sin(a)*radius);
+        }
+      }
+      if (hasCurbs) for (const [x,z,height] of points) {
+        const radius=road.width/2, outerRadius=radius+pavement;
+        for(let k=0;k<64;k++) {
+          const a=k*Math.PI/32,b=(k+1)*Math.PI/32;
+          const point=(angle,r,y=CURB_HEIGHT)=>[x+Math.cos(angle)*r,height+y,z+Math.sin(angle)*r];
+          // Only the outside of a bend/end is exposed; do not cover the street.
+          if ([a,(a+b)/2,b].some(angle=>overlaps(road,point(angle,radius+.00001),true))) continue;
+          quad(curbs,point(a,radius),point(b,radius),point(b,outerRadius),point(a,outerRadius));
+          quad(curbs,point(a,outerRadius,BASE),point(b,outerRadius,BASE),point(b,outerRadius),point(a,outerRadius));
         }
       }
       let travelled = 0;

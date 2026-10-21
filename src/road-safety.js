@@ -1,3 +1,4 @@
+import { sidewalkWidth, SIDEWALK_HEIGHT } from './sidewalks.js';
 import { projectCoordinate } from './road-network.js';
 const R = 6371008.8;
 const indexes = new WeakMap();
@@ -10,8 +11,8 @@ function segmentsFor(network) {
     for(let i=1;i<road.points.length;i++) {
       const a=road.points[i-1], b=road.points[i];
       if (![...a,...b].every(Number.isFinite) || Math.hypot(b[0]-a[0],b[1]-a[1])<.01) continue;
-      const s={a,b,width:road.width,name:road.name,ha:(road.elevations?.[i-1] ?? 0)+.08,hb:(road.elevations?.[i] ?? 0)+.08}; segments.push(s);
-      const margin=road.width/2;
+      const s={a,b,width:road.width,sidewalk:sidewalkWidth(road),name:road.name,ha:(road.elevations?.[i-1] ?? 0)+.08,hb:(road.elevations?.[i] ?? 0)+.08}; segments.push(s);
+      const margin=road.width/2+s.sidewalk;
       for(let x=Math.floor((Math.min(a[0],b[0])-margin)/CELL);x<=Math.floor((Math.max(a[0],b[0])+margin)/CELL);x++)
         for(let y=Math.floor((Math.min(a[1],b[1])-margin)/CELL);y<=Math.floor((Math.max(a[1],b[1])+margin)/CELL);y++) {
           const key=`${x},${y}`; if(!cells.has(key)) cells.set(key,[]); cells.get(key).push(s);
@@ -49,16 +50,19 @@ export function roadSurfaceAt(network,p,referenceRoadHeight=.08) {
   const candidates=segmentsFor(network).cells.get(`${Math.floor(p[0]/CELL)},${Math.floor(p[1]/CELL)}`) ?? [];
   let best=null, distance=Infinity;
   for(const s of candidates) {
-    const q=nearest(p,s), h=surfaceHeight(p,s), delta=Math.abs(h-referenceRoadHeight);
-    const horizontal=Math.hypot(p[0]-q[0],p[1]-q[1]), score=horizontal+delta*.001;
-    if(horizontal<=s.width/2 && delta<=.65 && score<distance) { best=h; distance=score; }
+    const q=nearest(p,s), horizontal=Math.hypot(p[0]-q[0],p[1]-q[1]);
+    const onAsphalt=horizontal<=s.width/2;
+    const h=(onAsphalt ? surfaceHeight(p,s) : SIDEWALK_HEIGHT), delta=Math.abs(h-referenceRoadHeight);
+    // At junctions, asphalt cuts through the raised sidewalk of a crossing road.
+    const score=(onAsphalt ? 0 : 1000)+horizontal+delta*.001;
+    if(horizontal<=s.width/2+s.sidewalk && delta<=.65 && score<distance) { best=h; distance=score; }
   }
   return best;
 }
 function circleOnRoad(network,p,radius,roadHeight) {
   if (Math.hypot(...p)+radius > network.radiusMeters-.5) return false;
   const candidates=segmentsFor(network).cells.get(`${Math.floor(p[0]/CELL)},${Math.floor(p[1]/CELL)}`) ?? [];
-  if (!candidates.some(s=>{const q=nearest(p,s);return Math.abs(surfaceHeight(p,s)-roadHeight)<=.65 && Math.hypot(p[0]-q[0],p[1]-q[1])<=s.width/2-radius+1e-6;})) return false;
+  if (!candidates.some(s=>{const q=nearest(p,s);return Math.abs(surfaceHeight(p,s)-roadHeight)<=.65 && Math.hypot(p[0]-q[0],p[1]-q[1])<=s.width/2+s.sidewalk-radius+1e-6;})) return false;
   for (const building of segmentsFor(network).buildings.get(`${Math.floor(p[0]/CELL)},${Math.floor(p[1]/CELL)}`) ?? []) {
     if (roadHeight+1.5 <= (building.minHeight ?? 0) || roadHeight >= (building.height ?? 10)) continue;
     let inside=false;
@@ -75,10 +79,10 @@ function circleOnRoad(network,p,radius,roadHeight) {
 }
 export function footprintOnRoad(network,point,heading=0,roadHeight=.08) {
   if(!network?.roads?.length || !Number.isFinite(network.radiusMeters) || !Number.isFinite(heading)) return false;
-  // Overlapping safety disks cover the full 5m x 2.2m footprint, including corners.
-  for (const along of [-2,-1,0,1,2]) for (const across of [-.65,0,.65]) {
+  // A tighter 4.5m × 1.8m envelope permits close sidewalk maneuvering.
+  for (const along of [-1.8,-.9,0,.9,1.8]) for (const across of [-.45,0,.45]) {
     if (!circleOnRoad(network,[point[0]+Math.sin(heading)*along+Math.cos(heading)*across,
-      point[1]+Math.cos(heading)*along-Math.sin(heading)*across],.7,roadHeight)) return false;
+      point[1]+Math.cos(heading)*along-Math.sin(heading)*across],.45,roadHeight)) return false;
   }
   return true;
 }

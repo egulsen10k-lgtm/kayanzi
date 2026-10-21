@@ -13,7 +13,12 @@ test('road surfaces have thickness and raised curbs only at their edges', () => 
   assert.equal(asphalt.min.z, -103);
   assert.ok(asphalt.min.y < 0 && Math.abs(asphalt.max.y - ROAD_SURFACE_HEIGHT) < 1e-6);
   const curbs = group.getObjectByName('curbs').geometry.attributes.position;
-  for (let i=0; i<curbs.count; i++) assert.ok(Math.abs(curbs.getX(i)) >= 3, 'curbs must never cover the asphalt center');
+  for (let i=0; i<curbs.count; i++) {
+    const x=curbs.getX(i), z=curbs.getZ(i);
+    const nearestZ=Math.max(-100,Math.min(0,z));
+    assert.ok(Math.hypot(x,z-nearestZ)>=3-1e-5, 'sidewalk stays outside the rounded asphalt surface');
+  }
+  assert.ok(Math.abs(bounds(group.getObjectByName('curbs')).max.x-4.6)<1e-6, 'sidewalk is 1.6m wide');
   assert.ok(bounds(group.getObjectByName('curbs')).max.y > asphalt.max.y);
 });
 
@@ -63,4 +68,16 @@ test('crossings halfway along long segments have no curb walls or crossing lane 
   const marks=group.getObjectByName('markings').geometry.attributes.position;
   for(let i=0;i<marks.count;i++) assert.ok(Math.abs(marks.getX(i))>4.3 || Math.abs(marks.getZ(i))>4.3);
   assert.ok(curbs.count>0, 'curbs should remain along the street away from intersections');
+});
+
+test('sidewalks wrap rounded street ends but do not extend bridge or tunnel decks',()=>{
+  const street=make([[0,0],[0,100]]);
+  const sidewalk=bounds(street.getObjectByName('curbs'));
+  assert.ok(Math.abs(sidewalk.min.z+104.6)<1e-5);
+  assert.ok(Math.abs(sidewalk.max.z-4.6)<1e-5);
+  for(const tag of ['bridge','tunnel']) {
+    const group=buildRoadMeshes({roads:[{width:6,highway:'residential',[tag]:true,points:[[0,0],[0,100]],elevations:[5,5]}]});
+    assert.equal(group.getObjectByName('curbs'),undefined);
+    assert.ok(group.getObjectByName('structures'));
+  }
 });

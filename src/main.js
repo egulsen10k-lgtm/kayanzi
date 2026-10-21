@@ -1,3 +1,5 @@
+import { Pedestrians, seatCapacity } from './pedestrians.js';
+import { PedestrianView } from './pedestrian-view.js';
 import { bindTiltInput } from './tilt-input.js';
 import { bindDrivingInput } from './driving-input.js';
 import { assetUrl } from './resource-urls.js';
@@ -16,6 +18,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const audio = new CarAudio();
   const canvasContainer = document.getElementById('render-canvas-container');
   const visualizer = new CarVisualizer3D(canvasContainer);
+  const pedestrians = new Pedestrians();
+  const pedestrianView = new PedestrianView(visualizer.scene);
+  const soundHorn = () => {
+    audio.triggerHorn();
+    if (!visualizer.previewActive) pedestrians.horn(physics);
+  };
   let routeGuide = null;
   let routeGeneration = 0;
   function endRoute() {
@@ -253,7 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
     calibrate: document.getElementById('tilt-calibrate'), status: document.getElementById('tilt-status') });
 
   bindDrivingInput({ physics, buttons: document.querySelectorAll('[data-drive-key]'),
-    onHorn: () => audio.triggerHorn() });
+    onHorn: soundHorn });
 
   document.querySelectorAll('[data-model]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -346,9 +354,8 @@ document.addEventListener('DOMContentLoaded', () => {
     audioToggleBtn.classList.toggle('active', isMuted);
   });
 
-  document.getElementById('horn-btn').addEventListener('click', () => {
-    audio.triggerHorn();
-  });
+  document.getElementById('horn-btn').addEventListener('click', soundHorn);
+  document.getElementById('mobile-horn').addEventListener('click', soundHorn);
 
   document.getElementById('exhaust-pop-btn').addEventListener('click', () => {
     audio.triggerExhaustPop();
@@ -490,6 +497,13 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('akanzi-next').textContent=guidance.complete?'You drove the full coastal route.':`Next: ${guidance.nextStop}`;
       document.getElementById('akanzi-instruction').textContent=guidance.instruction;
     }
+    if (!visualizer.previewActive) pedestrians.update(physics, dt);
+    pedestrianView.update(pedestrians, physics, visualizer.carGroup, visualizer.previewActive);
+    const occupancy = `Kişi: ${pedestrians.passengers + 1}/${seatCapacity(physics.bmwModel)} · Sürücü dahil`;
+    const passengerHud = document.getElementById('hud-passengers');
+    if (passengerHud.textContent !== occupancy) passengerHud.textContent = occupancy;
+    const passengerStatus = document.getElementById('passenger-status');
+    if (passengerStatus.textContent !== pedestrians.message) passengerStatus.textContent = pedestrians.message;
     visualizer.update(physics, dt);
 
     const headingDeg = (physics.heading * 180) / Math.PI;
