@@ -1,7 +1,9 @@
 import { Pedestrians, seatCapacity } from './pedestrians.js';
 import { PedestrianView } from './pedestrian-view.js';
+import { TrafficManager } from './traffic.js';
 import { bindTiltInput } from './tilt-input.js';
 import { bindDrivingInput } from './driving-input.js';
+import { bindSteeringWheelInput } from './steering-wheel-input.js';
 import { assetUrl } from './resource-urls.js';
 import { CarPhysics } from './physics.js';
 import { CarAudio } from './audio.js';
@@ -19,6 +21,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const canvasContainer = document.getElementById('render-canvas-container');
   const visualizer = new CarVisualizer3D(canvasContainer);
   const pedestrians = new Pedestrians();
+  const trafficManager = new TrafficManager(visualizer.scene);
+
   const pedestrianView = new PedestrianView(visualizer.scene);
   const startHorn = () => {
     audio.startHorn();
@@ -91,11 +95,18 @@ document.addEventListener('DOMContentLoaded', () => {
               if (spawn.name) document.getElementById('hud-location-name').textContent = spawn.name;
             } else {
               physics.setRoadNetwork(null);
+              pedestrians.clearNetwork();
+              trafficManager.clear();
+              visualizer.setRoads({ center: network.center, roads: [], barriers: [] });
               roadStatusText.textContent = 'No suitable road · choose another location';
               break;
             }
           }
           physics.setRoadNetwork(network);
+          if (pedestrians.network !== network) {
+            pedestrians.reset(network, physics, pedestrians.density);
+            trafficManager.reset(network, physics);
+          }
           document.getElementById('world-detail-status').textContent = network.routeApproximate
             ? 'Offline route approximation · elevations unavailable'
             : '3D streets · bridge/tunnel heights estimated';
@@ -105,6 +116,8 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'empty':
         roadStatusDot.style.background = '#00f0ff';
         physics.setRoadNetwork(null);
+        pedestrians.clearNetwork();
+        trafficManager.clear();
         roadStatusText.textContent = 'No mapped roads · choose another location';
         break;
       case 'error': {
@@ -160,8 +173,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const startOverlay = document.getElementById('start-overlay');
   const startBtn = document.getElementById('start-simulation-btn');
 
+  const songButton=document.getElementById('milli-sarki-btn');
+  const song=new Audio(assetUrl('milli-sarki.mp3'));song.preload='none';song.volume=.55;
+  const songState=()=>{songButton.setAttribute('aria-pressed',String(!song.paused));songButton.classList.toggle('playing',!song.paused);songButton.textContent=song.paused?'♫ Milli Akanzi Song':'Ⅱ Milli Akanzi Song';};
+  songButton.addEventListener('click',async()=>{if(!song.paused){song.pause();songState();return;}try{await song.play();songState();}catch{songButton.textContent='Retry Milli Akanzi Song';}});
+  song.addEventListener('ended',songState);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){song.pause();songState();}});
+  const densitySelect = document.getElementById('traffic-density');
+  const nightToggle = document.getElementById('night-mode');
+  const beamsToggle = document.getElementById('high-beams');
+  densitySelect?.addEventListener('change', e => {
+    const density = Number(e.target.value);
+    trafficManager.setDensity(density, physics);
+  });
+  nightToggle?.addEventListener('change', e => visualizer.setNightMode(e.target.checked));
+  beamsToggle?.addEventListener('change', e => visualizer.setHighBeams(e.target.checked));
+
   startBtn.addEventListener('click', () => {
     audio.init();
+    trafficManager.setDensity(Number(densitySelect?.value ?? 1), physics);
     audio.triggerExhaustPop();
     startOverlay.style.opacity = '0';
     setTimeout(() => {
@@ -258,8 +288,53 @@ document.addEventListener('DOMContentLoaded', () => {
     visualizer.loadRoadsAt(physics.lat,physics.lng).catch(()=>{});
   });
 
-  bindTiltInput({ physics, button: document.getElementById('tilt-toggle'),
-    calibrate: document.getElementById('tilt-calibrate'), status: document.getElementById('tilt-status') });
+  // Settings Panel & Driving Style Switching
+  const settingsPanel = document.getElementById('settings-panel');
+  const settingsToggle = document.getElementById('settings-toggle');
+  const settingsClose = document.getElementById('settings-close');
+  const steeringStyleSelect = document.getElementById('steering-style');
+  const showSteeringWheelCheckbox = document.getElementById('show-steering-wheel');
+
+  const steeringWheelInput = bindSteeringWheelInput({ physics });
+
+  const setSettingsOpen = (open) => {
+    settingsPanel.hidden = !open;
+    settingsToggle.setAttribute('aria-expanded', String(open));
+  };
+  setSettingsOpen(false);
+  settingsToggle?.addEventListener('click', () => setSettingsOpen(settingsPanel.hidden));
+  settingsClose?.addEventListener('click', () => setSettingsOpen(false));
+
+  const updateSteeringStyle = () => {
+    const style = steeringStyleSelect.value;
+    document.getElementById('drive-touch-controls').dataset.mode=style;
+    physics.wheelSteering=0;
+    if(style!=='tilt') tiltBinding.stop();
+    else if(document.getElementById('tilt-toggle').getAttribute('aria-pressed')!=='true')document.getElementById('tilt-toggle').click();
+    if (style === 'steering-wheel') {
+      if (showSteeringWheelCheckbox.checked) {
+        steeringWheelInput.start();
+      } else {
+        steeringWheelInput.stop();
+      }
+    } else {
+      steeringWheelInput.stop();
+    }
+  };
+
+  steeringStyleSelect?.addEventListener('change', updateSteeringStyle);
+  showSteeringWheelCheckbox?.addEventListener('change', updateSteeringStyle);
+
+  const tiltBinding = bindTiltInput({
+    physics,
+    button: document.getElementById('tilt-toggle'),
+    calibrate: document.getElementById('tilt-calibrate'),
+    status: document.getElementById('tilt-status'),
+    getOptions: () => ({
+      invertSteering: document.getElementById('invert-tilt-steering')?.checked,
+      invertThrottle: document.getElementById('invert-tilt-throttle')?.checked
+    })
+  });
 
   bindDrivingInput({ physics, buttons: document.querySelectorAll('[data-drive-key]'),
     onHornStart: startHorn, onHornEnd: stopHorn });
@@ -267,8 +342,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('[data-model]').forEach((button) => {
     button.addEventListener('click', () => {
       const model = button.getAttribute('data-model');
+      const boarded = pedestrians.people.filter(person => person.state === 'boarded');
       physics.setModel(model);
       visualizer.setModel(model);
+      pedestrians.passengers = Math.min(boarded.length, Math.max(0, seatCapacity(model) - 1));
+      boarded.forEach((person, index) => { person.state = index < pedestrians.passengers ? 'boarded' : 'idle'; });
       document.querySelectorAll('[data-model]').forEach((item) => {
         const selected = item === button;
         item.classList.toggle('active', selected);
@@ -501,6 +579,9 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('akanzi-instruction').textContent=guidance.instruction;
     }
     if (!visualizer.previewActive) pedestrians.update(physics, dt);
+    for (const car of trafficManager.cars) car.group.visible = !visualizer.previewActive;
+    if (!visualizer.previewActive) trafficManager.update(dt, physics);
+    if (visualizer.highBeams && !visualizer.previewActive) pedestrians.highBeam(physics);
     pedestrianView.update(pedestrians, physics, visualizer.carGroup, visualizer.previewActive);
     const clinging = pedestrians.people.filter(person => person.state === 'clinging').length;
     const occupancy = `Kişi: ${pedestrians.passengers + 1}/${seatCapacity(physics.bmwModel)}${clinging ? ` · Tutunan: ${clinging}` : ' · Sürücü dahil'}`;
@@ -513,7 +594,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const headingDeg = (physics.heading * 180) / Math.PI;
     mapController.updateCarPosition(physics.lat, physics.lng, headingDeg);
 
-    audio.update(physics.rpm, physics.throttle, physics.speed, physics.isDrifting, {model:physics.bmwModel,gear:physics.gear,brake:physics.handbrake || (physics.throttle < 0 && physics.speed > 0)});
+    audio.update(physics.rpm, physics.throttle, physics.speed, physics.isDrifting, {model:physics.bmwModel,gear:physics.gear,slip:physics.driftFactor,brake:physics.handbrake || (physics.throttle < 0 && physics.speed > 0)});
     if (audio.lastThrottle > 0.5 && physics.throttle < 0.1 && physics.rpm > 3000) {
       visualizer.triggerExhaustFlames();
     }

@@ -19,12 +19,15 @@ export class CarPhysics {
     this.gear = 1;
     this.throttle = 0;
     this.handbrake = false;
+    this.drivetrain = 'RWD';
 
     this.bmwModel = 'M3 Competition';
     this.color = '#1c3fa8';
     this.handlingMode = 'Sport+';
 
     this.driftFactor = 0;
+    this.driftAngle = 0;
+    this.driftDirection = 0;
     this.isDrifting = false;
     this.keys = {};
     this.roadConstrained = true;
@@ -108,8 +111,13 @@ export class CarPhysics {
     const previousSpeed = this.speed;
     const stop = (amount) => Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - amount);
     this.throttle = 0;
-    if (this.handbrake || (forward && backward)) {
+    if (forward && backward) {
       this.speed = stop(36 * dt);
+      this.reverseDelay = 0;
+    } else if (this.handbrake) {
+      // Rear-wheel lock initiates the arcade slide in every handling mode.
+      this.speed = stop(10 * dt);
+      this.throttle = forward ? pressure : 0;
       this.reverseDelay = 0;
     } else if ((forward && this.speed < 0) || (backward && this.speed > 0)) {
       // Opposite pedal first brakes to rest. It cannot change direction in one step.
@@ -136,7 +144,7 @@ export class CarPhysics {
 
     const left = !!(this.keys.ArrowLeft || this.keys.KeyA);
     const right = !!(this.keys.ArrowRight || this.keys.KeyD);
-    const target = left || right ? Number(left) - Number(right) : tilt.steering;
+    const target = left || right ? Number(left) - Number(right) : (this.wheelSteering || tilt.steering);
     this.steering += (target - this.steering) * (1 - Math.exp(-7 * dt));
     if (Math.abs(this.steering) < 0.0001) this.steering = 0;
     const speedMs = (previousSpeed + this.speed) / 7.2;
@@ -147,44 +155,53 @@ export class CarPhysics {
     const requestedYaw = -speedMs * Math.tan(wheelAngle) / 2.85;
     const grip = this.handlingMode === 'Drift' ? 4.2 : 8.8;
     const yawLimit = grip / Math.max(absMs, 0.1);
-    const yaw = Math.max(-yawLimit, Math.min(yawLimit, requestedYaw));
+    const normalYaw = Math.max(-yawLimit, Math.min(yawLimit, requestedYaw));
+    const steerDirection = Math.sign(this.steering);
+    const arcadeInput = this.handbrake || (this.throttle > .55 && Math.abs(this.steering) > .35);
+    const canDrift = this.drivetrain === 'RWD' && absMs > 7 && Math.abs(this.steering) > .12 && arcadeInput;
+    const counterSteering = this.driftDirection && steerDirection === -this.driftDirection;
+    const speedSlip = Math.min(1, Math.max(0, (absMs - 7) / 18));
+    const steerSlip = Math.min(1, Math.max(0, (Math.abs(this.steering) - .12) / .55));
+    const driveSlip = this.handbrake ? 1 : .6 + Math.min(.4, Math.max(0, this.throttle));
+    const targetSlip = canDrift ? speedSlip * steerSlip * driveSlip * (counterSteering ? .7 : 1) : 0;
+    const response = 1 - Math.exp(-(targetSlip > this.driftFactor ? 4.0 : 6.0) * dt);
+    this.driftFactor += (targetSlip - this.driftFactor) * response;
+    if (this.driftFactor > .02 && steerDirection && (!this.driftDirection || !counterSteering)) this.driftDirection = steerDirection;
+    if (this.driftFactor < .008) this.driftDirection = 0;
+    this.driftAngle = this.driftDirection * this.driftFactor * (.12 + .52 * speedSlip);
+    this.isDrifting = this.driftFactor > .06;
+    const yaw = normalYaw;
     this.heading = ((oldHeading + yaw * dt) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
-
-    // Drift physics - lateral slide when turning at speed in Drift mode
-    const isFastEnough = absMs > 7;
-    const isTurned = Math.abs(this.steering) > 0.25;
-    const drifting = this.handlingMode === 'Drift' && isFastEnough && isTurned;
-
-    if (drifting) {
-      this.lat += Math.cos(this.heading + Math.PI/2) * this.driftFactor * dt * 0.002;
-      this.lng += Math.sin(this.heading + Math.PI/2) * this.driftFactor * dt * 0.002;
-      this.heading += Math.sign(this.steering) * this.driftFactor * dt * 0.3;
-      this.driftFactor = Math.min(3.5, this.driftFactor + dt * 2);
-      this.isDrifting = true;
-    } else {
-      this.driftFactor = Math.max(0, this.driftFactor - dt * 4);
-      this.isDrifting = false;
-    }
     const distanceMeters = speedMs * dt;
     if (!distanceMeters) return true;
     const latitude = this.lat * Math.PI / 180;
     const longitude = this.lng * Math.PI / 180;
     const distance = distanceMeters / 6371008.8;
-    const travelHeading = oldHeading + yaw * dt / 2;
-    const nextLat = Math.asin(Math.max(-1, Math.min(1,
-      Math.sin(latitude) * Math.cos(distance) + Math.cos(latitude) * Math.sin(distance) * Math.cos(travelHeading)
-    )));
-    const nextLng = longitude + Math.atan2(
-      Math.sin(travelHeading) * Math.sin(distance) * Math.cos(latitude),
-      Math.cos(distance) - Math.sin(latitude) * Math.sin(nextLat)
-    );
-    const destination = { lat: nextLat * 180 / Math.PI, lng: ((nextLng * 180 / Math.PI + 540) % 360) - 180 };
+    const destinationFor = travelHeading => {
+      const nextLat = Math.asin(Math.max(-1, Math.min(1,
+        Math.sin(latitude) * Math.cos(distance) + Math.cos(latitude) * Math.sin(distance) * Math.cos(travelHeading)
+      )));
+      const nextLng = longitude + Math.atan2(
+        Math.sin(travelHeading) * Math.sin(distance) * Math.cos(latitude),
+        Math.cos(distance) - Math.sin(latitude) * Math.sin(nextLat)
+      );
+      return { lat: nextLat * 180 / Math.PI, lng: ((nextLng * 180 / Math.PI + 540) % 360) - 180 };
+    };
+    const prevLat = this.lat, prevLng = this.lng;
+    const destination = destinationFor(oldHeading + normalYaw * dt / 2);
     const motion = this.roadConstrained ? sweepRoadMotionResult(this.roadNetwork,
       { ...this, heading: oldHeading }, { ...destination, heading: this.heading }) : {fraction:1,roadHeight:this.roadHeight};
     if (motion.fraction < 1) {
       const impactSpeed = Math.abs(this.speed);
-      this.speed = 0;
-      this.heading = oldHeading;
+      this.lat = prevLat;
+      this.lng = prevLng;
+      if (motion.fraction > 0.35) {
+        this.speed *= 0.7;
+      } else {
+        const bounceSpeed = -Math.sign(this.speed) * Math.min(16, Math.max(4, impactSpeed * 0.2));
+        this.speed = bounceSpeed;
+        this.heading = oldHeading;
+      }
       this.roadBlocked = true;
       if (!this.impactCooldown && impactSpeed > 2) {
         this.impactEvent = { speed: impactSpeed, timestamp: globalThis.performance?.now() ?? Date.now() };
@@ -215,6 +232,8 @@ export class CarPhysics {
     this.rpm = 800;
     this.gear = 1;
     this.driftFactor = 0;
+    this.driftAngle = 0;
+    this.driftDirection = 0;
     this.isDrifting = false;
     this.handbrake = false;
     this.keys = {};
@@ -234,7 +253,8 @@ export class CarPhysics {
       steering: this.steering,
       roadHeight: this.roadHeight,
       color: this.color,
-      model: this.bmwModel
+      model: this.bmwModel,
+      drivetrain: this.drivetrain
     };
   }
 }

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createPerson } from './person-model.js';
 import { PedestrianRagdoll } from './pedestrian-ragdoll.js';
+import { roadSurfaceAt } from './road-safety.js';
 import { projectCoordinate } from './road-network.js';
 const colors=['#e9c9bd','#91b7cf','#b86476','#7eaa94','#f0e9dc','#ad9ac5'];
 export class PedestrianView {
@@ -17,6 +18,12 @@ export class PedestrianView {
     });
     this.hiddenMatrix=new THREE.Matrix4().makeScale(0,0,0);
     this.ragdolls=new Map();
+    this.bindParts=this.models.map((model,i)=>{model.updateMatrixWorld(true);return this.parts[i].map(part=>{
+      let name='torso',parent=part;
+      while(parent && parent!==model){if(parent.name==='left-arm')name='leftArm';if(parent.name==='right-arm')name='rightArm';if(parent.name==='left-leg')name='leftLeg';if(parent.name==='right-leg')name='rightLeg';parent=parent.parent;}
+      if(['head','nose','smile','eye','eyebrow','blonde-crown','long-blonde-hair','face-framing-hair','hair','neck'].includes(part.name))name='head';
+      return {name,matrix:part.matrixWorld.clone()};
+    });});
   }
   update(sim, car, carGroup, hidden=false) {
     this.group.visible=!hidden;
@@ -29,22 +36,28 @@ export class PedestrianView {
           activeRagdolls.add(person);
           let ragdoll=this.ragdolls.get(person);
           if(!ragdoll) {
-            ragdoll={physics:new PedestrianRagdoll({heading:person.heading,height:0,velocity:person.fall}),origin:{x:person.x,y:person.y,height:person.height}};
+            const floor=roadSurfaceAt(sim.network,[person.x,person.y],person.height)??person.height-.12;
+            ragdoll={physics:new PedestrianRagdoll({heading:person.heading,height:person.height-floor,velocity:person.fall}),origin:{x:person.x,y:person.y,height:floor}};
             this.ragdolls.set(person,ragdoll);
           }
           ragdoll.physics.update(person.fall.age);
           const torso=ragdoll.physics.bodies.torso;
-          const rotation=new THREE.Quaternion(-torso.quaternion.x,-torso.quaternion.y,torso.quaternion.z,torso.quaternion.w);
-          const rootOffset=new THREE.Vector3(0,1.09,0).applyQuaternion(rotation);
-          model.position.set(ragdoll.origin.x-p[0]+torso.position.x-rootOffset.x,ragdoll.origin.height+torso.position.y-rootOffset.y,-(ragdoll.origin.y-p[1])-torso.position.z+rootOffset.z);
-          model.quaternion.copy(rotation);
-          model.userData.legs.forEach(limb=>limb.rotation.set(0,0,0));
-          model.userData.arms.forEach(limb=>limb.rotation.set(0,0,0));
+          const point=[ragdoll.origin.x+torso.position.x,ragdoll.origin.y-torso.position.z];
+          const ground=roadSurfaceAt(sim.network,point,ragdoll.origin.height);
+          person.recoveryPoint={x:ground===null?ragdoll.origin.x:point[0],y:ground===null?ragdoll.origin.y:point[1],height:ground??ragdoll.origin.height};
+          const origin=new THREE.Matrix4().makeTranslation(ragdoll.origin.x-p[0],ragdoll.origin.height,-(ragdoll.origin.y-p[1]));
+          this.batches.forEach((batch,j)=>{
+            const bind=this.bindParts[i][j],body=ragdoll.physics.bodies[bind.name],center=ragdoll.physics.bindCenters[bind.name];
+            const transform=new THREE.Matrix4().compose(new THREE.Vector3(body.position.x,body.position.y,body.position.z),new THREE.Quaternion(body.quaternion.x,body.quaternion.y,body.quaternion.z,body.quaternion.w),new THREE.Vector3(1,1,1));
+            transform.premultiply(origin).multiply(new THREE.Matrix4().makeTranslation(-center[0],-center[1],-center[2])).multiply(bind.matrix);
+            batch.setMatrixAt(i,transform);
+          });
+          return;
         } else {
           model.position.set(person.x-p[0],person.height,-(person.y-p[1]));model.rotation.set(0,Math.PI-person.heading,0);
           const holding=person.state==='clinging';
           const swing=person.state==='chasing'?Math.sin(person.phase)*.65:0;
-          model.rotation.x=holding ? -.18 : 0;
+          model.rotation.x=holding ? -.18 : person.state==='recovering' ? (1-Math.min(1,person.recoveryTime/1.2))*1.3 : 0;
           model.userData.legs.forEach((limb,j)=>{limb.rotation.x=holding ? (j ? -.42 : -.25) : swing*(j%2?1:-1);});
           model.userData.arms.forEach((limb,j)=>{limb.rotation.x=holding ? -1.32+(j ? -.12 : .12) : swing*(j%2?-1:1);});
         }

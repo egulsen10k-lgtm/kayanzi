@@ -159,3 +159,12 @@ pathfinder. Their body parts use instanced rendering to limit mobile draw calls.
 Ground urban streets have 1.6m climbable sidewalks, with a 14cm rise above asphalt.
 A tighter vehicle collision envelope permits closer maneuvering while buildings,
 bridge/tunnel boundaries and unloaded areas remain blocked.
+
+The Controls menu switches between touch buttons, phone tilt and a virtual wheel,
+and adjusts traffic from Off through High while driving. Mobile controls sit above
+the screen edge. Traffic follows road points with lane offsets and proximity
+braking; it is a lightweight local simulation, not traffic-light routing.
+The Milli Akanzi Song button beside Studio plays/pauses the supplied MP3.
+Up to four overflow NPCs can hold onto the outside of a full car. They fall only
+at 80 km/h or above after a left/right steering reversal. Six joined rigid bodies
+produce the ragdoll fall, followed by recovery; seated passenger capacity is unchanged.

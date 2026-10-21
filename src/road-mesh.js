@@ -126,7 +126,9 @@ export function buildRoadMeshes(network) {
           asphalt.push(x,height+ROAD_SURFACE_HEIGHT,z,x+Math.cos(b)*radius,height+ROAD_SURFACE_HEIGHT,z+Math.sin(b)*radius,x+Math.cos(a)*radius,height+ROAD_SURFACE_HEIGHT,z+Math.sin(a)*radius);
         }
       }
-      if (hasCurbs) for (const [x,z,height] of points) {
+      // The swept side curbs already cover corners. Cap only true road ends so
+      // ordinary shape points do not become circular boundary islands.
+      if (hasCurbs) for (const [x,z,height] of [points[0], points.at(-1)]) {
         const radius=road.width/2, outerRadius=radius+pavement;
         for(let k=0;k<64;k++) {
           const a=k*Math.PI/32,b=(k+1)*Math.PI/32;

@@ -24,13 +24,21 @@ test('swept path cannot jump across a narrow off-road gap at high speed',()=>{
   const result=sweepRoadMotion(n,location([-10,0],Math.PI/2),location([10,0],Math.PI/2));
   assert.ok(result>0&&result<.5);
 });
-test('collision stops without reversing automatically; deliberate reversing remains available',()=>{
-  const car=new CarPhysics();car.teleport(0,0);car.setRoadNetwork(road());
-  car.heading=Math.PI/2;car.speed=200;car.keys.KeyW=true;car.update(.1);
-  assert.equal(car.speed, 0);
+test('road remains drivable when car crosses a spatial index cell boundary',()=>{
+  const n=road();
+  assert.notEqual(roadSurfaceAt(n,[0,30.1]),null);
+  assert.equal(footprintOnRoad(n,[0,30.1],0),true);
+});
+test('collision bounces back and slows down smoothly; deliberate reversing remains available',()=>{
+  const car=new CarPhysics();
+  const start=localToCoordinate([0,399], road().center);
+  car.setRoadNetwork(road());
+  car.teleport(start.lat, start.lng);
+  car.setRoadNetwork(road());
+  car.heading=0;car.speed=100;car.keys.KeyW=false;car.update(.1);
   assert.equal(car.roadBlocked,true);
-  assert.ok(footprintOnRoad(road(),projectCoordinate(car.lat,car.lng,{lat:0,lng:0}),car.heading));
-  const impactLng=car.lng;car.keys={KeyS:true};for(let i=0;i<10;i++)car.update(.1);assert.ok(car.lng<impactLng);
+  assert.ok(car.impactEvent !== null);
+  const impactLat=car.lat;car.keys={KeyS:true};for(let i=0;i<10;i++)car.update(.1);assert.ok(car.lat<impactLat);
 });
 test('intersection permits a crossing while unloaded coverage edges block movement',()=>{
   const n=road();n.roads.push({width:8,points:[[-400,0],[400,0]]});

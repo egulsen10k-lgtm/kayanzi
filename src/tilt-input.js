@@ -3,17 +3,21 @@ const axis = degrees => Math.abs(degrees) < 4 ? 0 : Math.sign(degrees) * Math.mi
 const delta = (a, b) => ((a - b + 540) % 360) - 180;
 
 // Rotate sensor axes into the current screen orientation before applying the neutral pose.
-export function tiltAxes(sample, neutral, angle = 0) {
+export function tiltAxes(sample, neutral, angle = 0, options = {}) {
   const radians = angle * Math.PI / 180;
   const pitch = delta(sample.beta, neutral.beta);
   const roll = delta(sample.gamma, neutral.gamma);
+  const throttleRaw = -(pitch * Math.cos(radians) + roll * Math.sin(radians));
+  const steeringRaw = -(roll * Math.cos(radians) - pitch * Math.sin(radians));
+  const invertThrottle = options.invertThrottle ? -1 : 1;
+  const invertSteering = options.invertSteering ? -1 : 1;
   return {
-    throttle: clamp(axis(-(pitch * Math.cos(radians) + roll * Math.sin(radians)))),
-    steering: clamp(axis(-(roll * Math.cos(radians) - pitch * Math.sin(radians)))),
+    throttle: clamp(axis(invertThrottle * throttleRaw)),
+    steering: clamp(axis(invertSteering * steeringRaw)),
   };
 }
 
-export function bindTiltInput({ physics, button, calibrate, status, win = window, doc = document }) {
+export function bindTiltInput({ physics, button, calibrate, status, getOptions = () => ({}), win = window, doc = document }) {
   let enabled = false, neutral = null, lastSample = null, lastAt = 0, generation = 0;
   const zero = () => { physics.tiltInput = { throttle: 0, steering: 0 }; };
   const angle = () => win.screen?.orientation?.angle ?? win.orientation ?? 0;
@@ -51,7 +55,7 @@ export function bindTiltInput({ physics, button, calibrate, status, win = window
     if (angle() !== screenAngle) { stop('Screen rotated. Enable tilt again to calibrate.'); return; }
     lastSample = { beta: event.beta, gamma: event.gamma }; lastAt = Date.now();
     if (!neutral) { neutral = lastSample; zero(); status.textContent = 'Forward: gas · Back: brake / reverse · Left / right: steer'; return; }
-    physics.tiltInput = tiltAxes(lastSample, neutral, screenAngle);
+    physics.tiltInput = tiltAxes(lastSample, neutral, screenAngle, getOptions());
   });
   // Never retain throttle when the sensor stream stops or the app loses focus.
   win.setInterval(() => {

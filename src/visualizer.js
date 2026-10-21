@@ -67,6 +67,12 @@ export class CarVisualizer3D {
 
     this.peerCars = new Map();
     this.roadGroup = new THREE.Group();
+    this.trafficGroup = new THREE.Group();
+    this.scene.add(this.trafficGroup);
+    this.traffic = [];
+    this.nightMode = false;
+    this.highBeams = false;
+    this.trafficDensity = 1;
     this.roadGroup.visible = true;
     this.roadGroup.renderOrder = 1;
     this.scene.add(this.roadGroup);
@@ -94,7 +100,8 @@ export class CarVisualizer3D {
   }
 
   setupLighting() {
-    this.scene.add(new THREE.HemisphereLight(0xeaf3ff, 0x6d7262, 1.4));
+    this.hemiLight = new THREE.HemisphereLight(0xeaf3ff, 0x6d7262, 1.4);
+    this.scene.add(this.hemiLight);
     const sun = new THREE.DirectionalLight(0xfff5df, 2.5);
     sun.position.set(-20, 35, 16);
     sun.castShadow = true;
@@ -102,8 +109,20 @@ export class CarVisualizer3D {
     Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8, near: 1, far: 70 });
     sun.shadow.bias = -0.0002;
     sun.shadow.normalBias = 0.015;
+    this.sunLight = sun;
     this.scene.add(sun);
+    this.headlights = [new THREE.SpotLight(0xffffff, 0, 75, Math.PI / 8, .35, 1.5), new THREE.SpotLight(0xffffff, 0, 75, Math.PI / 8, .35, 1.5)];
+    this.headlights.forEach((light, i) => { light.position.set(i ? -.62 : .62, .7, 2.3); light.target.position.set(i ? -.62 : .62, .2, 35); this.carGroup?.add(light, light.target); });
   }
+
+  setNightMode(enabled) {
+    this.nightMode = Boolean(enabled); const night = this.nightMode;
+    this.scene.background.set(night ? 0x071225 : 0xc4d4df); this.scene.fog.color.set(night ? 0x071225 : 0xc4d4df);
+    this.hemiLight.intensity = night ? .18 : 1.4; this.sunLight.intensity = night ? .12 : 2.5;
+    this.setHighBeams(this.highBeams);
+  }
+
+  setHighBeams(enabled) { this.highBeams = Boolean(enabled); this.headlights?.forEach(light => { light.intensity = this.highBeams ? (this.nightMode ? 8 : 2) : 0; }); }
 
   setupEnvironment() {
     this.environmentGroup = new THREE.Group();
@@ -134,6 +153,8 @@ export class CarVisualizer3D {
     });
     this.carGroup.position.y = ROAD_SURFACE_HEIGHT;
     this.scene.add(this.carGroup);
+    this.headlights?.forEach((light, i) => { light.position.set(i ? -.62 : .62, .7, 2.3); light.target.position.set(i ? -.62 : .62, .2, 35); this.carGroup.add(light, light.target); });
+    this.setHighBeams(this.highBeams);
   }
 
   updateColor(color) {
@@ -155,7 +176,10 @@ export class CarVisualizer3D {
 
   setRoads(network, buildings = null) {
     this.clearRoads();
+    (this.traffic ?? []).forEach(car => disposeModel(car.group)); this.trafficGroup?.clear(); this.traffic = [];
+    this.roadNetwork = network;
     this.roadCenter = network.center;
+
     const surfaces = buildRoadMeshes(network);
     if (surfaces.children.length) this.roadGroup.add(...surfaces.children.slice());
     this.roadGroup.add(buildings ?? buildBuildings(network));
@@ -165,28 +189,20 @@ export class CarVisualizer3D {
     this.waterMeshes = [];
     this.roadGroup.traverse(object => { if(object.userData.animateWater) this.waterMeshes.push(object); });
     if (this.routeData) this.roadGroup.add(buildRouteRibbon(this.routeData, network.center, network));
-    // Render barriers if present
+    // Render only mapped safety barriers; these are visual detail, never map bounds.
     if (network.barriers?.length) {
       const barrierGroup = new THREE.Group();
+      barrierGroup.name = 'road-guardrails';
+      const material = new THREE.LineBasicMaterial({ color: 0x737b80 });
       for (const barrier of network.barriers) {
         for (let i = 1; i < barrier.points.length; i++) {
           const [ax, an] = barrier.points[i - 1], [bx, bn] = barrier.points[i];
-          const az = -an, bz = -bn;
-          const length = Math.hypot(bx - ax, bz - az);
-          if (length < 0.01) continue;
-          const geometry = new THREE.BufferGeometry();
-          const points = [];
-          for (let d = 0; d < length; d += 0.5) {
-            const fraction = d / length;
-            const px = ax + (bx - ax) * fraction;
-            const pz = az + (bz - az) * fraction;
-            points.push(px, 0.01, pz, px, 0.02, pz);
-          }
-          geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-          const material = new THREE.LineBasicMaterial({ color: 0xff3366 });
-          const mesh = new THREE.LineSegments(geometry, material);
-          mesh.position.set(-bx, 0, -bn);
-          barrierGroup.add(mesh);
+          if (Math.hypot(bx - ax, bn - an) < .01) continue;
+          const geometry = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(ax, barrier.type === 'jersey_barrier' ? .72 : .58, -an),
+            new THREE.Vector3(bx, barrier.type === 'jersey_barrier' ? .72 : .58, -bn)
+          ]);
+          barrierGroup.add(new THREE.Line(geometry, material));
         }
       }
       this.roadGroup.add(barrierGroup);
@@ -202,11 +218,9 @@ export class CarVisualizer3D {
     this.roadLoading = true;
     this.lastRoadRequestAt = performance.now();
     this.roadTarget = { lat, lng };
-    if (this.roadCenter) {
-      const offset = geographicOffset(this.roadCenter, lat, lng);
-      if (Math.hypot(offset.east, offset.north) > 1200) this.clearRoads();
-    }
-    this.container.dispatchEvent(new CustomEvent('roadstatus', { detail: { state: 'loading' } }));
+    this.container.dispatchEvent(new CustomEvent('roadstatus', {
+      detail: { state: 'loading', preserveRoadNetwork: streaming }
+    }));
     try {
       const cached = nearbyCachedWorld(this.roadCache, lat, lng);
       const cacheKey = cached?.key ?? `${lat},${lng}`;
@@ -316,7 +330,7 @@ export class CarVisualizer3D {
       const rear=roadSurfaceAt(physics.roadNetwork,[point[0]-forward[0],point[1]-forward[1]],roadHeight);
       if(front!==null && rear!==null) pitch=Math.atan2(front-rear,2.85);
     }
-    this.carGroup.rotation.set(-pitch,Math.PI-physics.heading,0,'YXZ');
+    this.carGroup.rotation.set(-pitch,Math.PI-(physics.heading + (physics.driftAngle ?? 0)),0,'YXZ');
     for (const water of this.waterMeshes ?? []) water.userData.animateWater(performance.now()/1000);
     animateWheels(this.wheels, physics.speed, physics.steering, dt);
     for(const material of this.brakeMaterials) material.emissiveIntensity = physics.throttle < 0 || physics.handbrake ? 2.5 : .65;
@@ -324,6 +338,7 @@ export class CarVisualizer3D {
     if (this.roadCenter) {
       const { east, north } = geographicOffset(this.roadCenter, physics.lat, physics.lng);
       this.roadGroup.position.set(-east, 0, north);
+      this.trafficGroup.position.copy(this.roadGroup.position);
     }
     if (this.roadOverlayEnabled && this.roadTarget && !this.roadLoading && performance.now() > (this.roadRetryAt ?? 0) && performance.now() - this.lastRoadRequestAt > 1500) {
       const p = geographicOffset(this.roadTarget, physics.lat, physics.lng);

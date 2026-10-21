@@ -24,6 +24,17 @@ test('real-road centerlines become drivable-width ground surfaces', () => {
   assert.deepEqual(view.roadCenter, { lat: 10, lng: 10 });
 });
 
+test('mapped guardrails render at their real road coordinates without debug boundaries', () => {
+  const view = Object.create(CarVisualizer3D.prototype);
+  view.roadGroup = new THREE.Group();
+  view.setRoads({ center: { lat: 0, lng: 0 }, roads: [], barriers: [{ type: 'guard_rail', points: [[2, 3], [8, 3]] }] });
+  const guardrail = view.roadGroup.getObjectByName('road-guardrails').children[0];
+  const positions = guardrail.geometry.attributes.position;
+  assert.equal(positions.getX(0), 2);
+  assert.equal(positions.getZ(0), -3);
+  assert.equal(guardrail.material.color.getHex(), 0x737b80);
+});
+
 test('returning to a recently loaded destination reuses road data', async () => {
   const view = Object.create(CarVisualizer3D.prototype);
   view.roadGroup = new THREE.Group();

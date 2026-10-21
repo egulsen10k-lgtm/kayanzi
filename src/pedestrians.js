@@ -1,6 +1,6 @@
 import { projectCoordinate } from './road-network.js';
 import { localToCoordinate, roadSurfaceAt } from './road-safety.js';
-import { sidewalkWidth } from './sidewalks.js';
+import { SIDEWALK_HEIGHT, sidewalkWidth } from './sidewalks.js';
 
 export const seatCapacity = model => /m4|csl/i.test(model) ? 2 : 5;
 function insideBuilding(network, p) {
@@ -15,35 +15,71 @@ function insideBuilding(network, p) {
     return inside;
   });
 }
+function sidewalkSurfaceAt(network, point) {
+  let best = null;
+  for (const road of network.roads ?? []) {
+    for (let i=1;i<road.points.length;i++) {
+      const width = sidewalkWidth({...road, elevations: [0, 0]});
+      const a=road.points[i-1],b=road.points[i],dx=b[0]-a[0],dy=b[1]-a[1],lengthSquared=dx*dx+dy*dy;
+      if(!width || lengthSquared<.01)continue;
+      const t=Math.max(0,Math.min(1,((point[0]-a[0])*dx+(point[1]-a[1])*dy)/lengthSquared));
+      const lateral=Math.hypot(point[0]-a[0]-t*dx,point[1]-a[1]-t*dy);
+      const half=road.width/2;
+      if(lateral<half+.12||lateral>half+width-.08)continue;
+      const elevation=(road.elevations?.[i-1]??0)+((road.elevations?.[i]??0)-(road.elevations?.[i-1]??0))*t;
+      const height=elevation+SIDEWALK_HEIGHT;
+      if(best===null||Math.abs(height-.22)<Math.abs(best-.22))best=height;
+    }
+  }
+  return best;
+}
 export class Pedestrians {
-  constructor() { this.people = []; this.passengers = 0; this.network = null; this.message = 'Korna çal: yakındaki yayaları çağır'; }
-  reset(network, car) {
-    this.network = network; this.people = [];
+  constructor() { this.people = []; this.passengers = 0; this.network = null; this.density = 1; this.message = 'Korna çal: yakındaki yayaları çağır'; }
+  clearNetwork() {
+    this.network = null;
+    this.people = [];
+    this.passengers = 0;
+  }
+  reset(network, car, density = this.density) {
+    this.network = network; this.people = []; this.density = Math.max(0, Math.min(2, Number(density) || 0));
     const p = projectCoordinate(car.lat, car.lng, network.center);
     const candidates = [];
     for (const road of network.roads ?? []) {
       if (!sidewalkWidth(road)) continue;
       for (let i=1;i<road.points.length;i++) {
         const a=road.points[i-1],b=road.points[i],dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);
-        if (length<4 || Math.abs(road.elevations?.[i] ?? 0)>.5) continue;
+        if (length<4 || Math.abs(road.elevations?.[i-1] ?? 0)>.5 || Math.abs(road.elevations?.[i] ?? 0)>.5) continue;
         const t=Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(length*length)));
-        for (const shift of [-24,-12,0,12,24]) for (const side of [-1,1]) {
+        for (const shift of [-70,-35,0,35,70]) for (const side of [-1,1]) {
           const u=t+shift/length;if(u<.02||u>.98)continue;
           const offset=road.width/2+.75;
           const point=[a[0]+dx*u-dy/length*offset*side,a[1]+dy*u+dx/length*offset*side];
           const distance=Math.hypot(point[0]-p[0],point[1]-p[1]);
-          if(distance<7||distance>95||insideBuilding(network,point))continue;
-          const height=roadSurfaceAt(network,point,.08);if(height===null)continue;
+          if(distance<10||distance>145||insideBuilding(network,point))continue;
+          const height=sidewalkSurfaceAt(network,point);if(height===null)continue;
           candidates.push({point,height,distance,heading:Math.atan2(dx,dy)});
         }
       }
     }
     candidates.sort((a,b)=>a.distance-b.distance);
     for (const candidate of candidates) {
-      if(this.people.some(n=>Math.hypot(n.x-candidate.point[0],n.y-candidate.point[1])<5))continue;
+      if(this.people.some(n=>Math.hypot(n.x-candidate.point[0],n.y-candidate.point[1])<11))continue;
       this.people.push({id:this.people.length,x:candidate.point[0],y:candidate.point[1],height:candidate.height,heading:candidate.heading,state:'idle',remaining:0,phase:0});
-      if(this.people.length>=16)break;
+      if(this.people.length>=Math.min(16,Math.round(14 * this.density)))break;
     }
+  }
+  highBeam(car) {
+    if (!this.network || !car || !this.people.length) return 0;
+    const p = projectCoordinate(car.lat, car.lng, this.network.center);
+    const forward = [Math.sin(car.heading), Math.cos(car.heading)]; let count = 0;
+    for (const person of this.people) {
+      const dx = person.x - p[0], dy = person.y - p[1], distance = Math.hypot(dx, dy);
+      if (distance > 42 || dx * forward[0] + dy * forward[1] < 2) continue;
+      const side = Math.abs(dx * forward[1] - dy * forward[0]);
+      if (side < 9) count++;
+    }
+    if (count) this.message = count === 1 ? 'Yaya: Farlarını kısar mısın?' : `${count} yaya farlardan rahatsız oldu.`;
+    return count;
   }
   horn(car) {
     if (!this.network || Math.abs(car.roadHeight ?? .08)>.6) return 0;
@@ -72,12 +108,11 @@ export class Pedestrians {
       this.people=[...attached.map(n=>n.person),...this.people].slice(0,16);
     }
     dt=Math.min(.1,Math.max(0,dt));
-    const acceleration=dt>0 ? (Math.abs(car.speed)-Math.abs(this.previousSpeed ?? car.speed))/(3.6*dt) : 0;
-    const previousHeading=this.previousHeading ?? car.heading ?? 0;
-    const headingDelta=Math.atan2(Math.sin((car.heading ?? 0)-previousHeading),Math.cos((car.heading ?? 0)-previousHeading));
-    const yawRate=dt>0 ? Math.abs(headingDelta)/dt : 0;
-    this.previousSpeed=car.speed;
-    this.previousHeading=car.heading ?? 0;
+    const steer=car.steering ?? 0;
+    const sign=Math.abs(steer)>.25 ? Math.sign(steer) : 0;
+    this.wiggleTime=Math.max(0,(this.wiggleTime??0)-dt);
+    if(sign && this.lastSteerSign && sign!==this.lastSteerSign)this.wiggleTime=1.3;
+    if(sign)this.lastSteerSign=sign;
     for(const person of this.people) {
       if(person.state==='clinging') {
         const heading=car.heading ?? 0, side=person.gripSlot%2 ? 1 : -1, along=person.gripSlot<2 ? .65 : -.8;
@@ -86,11 +121,11 @@ export class Pedestrians {
         person.height=(car.roadHeight??.08)+.12;
         person.heading=heading-side*Math.PI/2;
         const speed=Math.abs(car.speed);
-        if(speed>=28 || (speed>12 && (acceleration>2 || yawRate>1.15))) {
+        if(speed>=80 && this.wiggleTime>0) {
           person.state='ragdoll';
           person.fall={age:0,vx:Math.sin(heading)*car.speed/3.6+Math.cos(heading)*side*2,
             vy:2.5,vz:Math.cos(heading)*car.speed/3.6-Math.sin(heading)*side*2};
-          this.message=yawRate>1.15 ? 'Sert savrulma: tutunanlar düştü!' : 'Tutunanlar düştü! Birazdan ayağa kalkacaklar.';
+          this.message='80 km/sa üstünde savrulma: tutunanlar düştü!';
         }
         continue;
       }

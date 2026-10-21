@@ -165,6 +165,44 @@ test('highway cornering cannot exceed the tire grip acceleration', () => {
   assert.ok(car.heading / 0.1 * before <= 8.8 + 0.01);
 });
 
+test('arcade drift builds a slide pose, holds with counter-steer, then settles', () => {
+  const car = unconstrainedCar();
+  car.setHandling('Drift');
+  assert.equal(car.drivetrain, 'RWD');
+  car.speed = 65;
+  car.keys = { KeyW: true, KeyA: true };
+  advance(car, 1);
+  assert.equal(car.isDrifting, true);
+  assert.ok(car.driftFactor > .08);
+  assert.ok(car.driftAngle > .05, `expected lateral slip, got ${car.driftAngle}`);
+  const slipBeforeCounterSteer = car.driftFactor;
+  car.keys = { KeyW: true, KeyD: true };
+  advance(car, .5);
+  assert.ok(car.driftFactor > .08 && car.driftFactor >= slipBeforeCounterSteer * .45, 'counter-steering should sustain the slide');
+  car.keys = {};
+  advance(car, .7);
+  assert.ok(car.driftFactor < slipBeforeCounterSteer, 'releasing the controls should settle the slide');
+});
+
+test('Sport+ supports power-oversteer without changing the road travel direction', () => {
+  const car = unconstrainedCar();
+  car.speed = 65;
+  car.keys = { KeyW: true, KeyA: true };
+  advance(car, 1);
+  assert.equal(car.handlingMode, 'Sport+');
+  assert.ok(car.isDrifting && car.driftAngle > .05);
+});
+
+test('RWD handbrake initiates a drift without an unrealistic full stop', () => {
+  const car = unconstrainedCar();
+  car.setHandling('Drift');
+  car.speed = 45;
+  car.keys = { Space: true, KeyA: true };
+  advance(car, .5);
+  assert.equal(car.isDrifting, true);
+  assert.ok(car.speed > 35, `rear handbrake stopped too aggressively: ${car.speed}`);
+});
+
 test('steering and acceleration give consistent results at 30, 60, and 120 fps', () => {
   const simulate = fps => {
     const car = unconstrainedCar();

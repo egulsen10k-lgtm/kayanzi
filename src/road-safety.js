@@ -34,6 +34,12 @@ function nearest(p,s) {
   const t=Math.max(0,Math.min(1,((p[0]-s.a[0])*dx+(p[1]-s.a[1])*dy)/(dx*dx+dy*dy)));
   return [s.a[0]+dx*t,s.a[1]+dy*t];
 }
+function nearby(map,p) {
+  const x=Math.floor(p[0]/CELL),y=Math.floor(p[1]/CELL),found=new Set(),result=[];
+  for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++)
+    for(const item of map.get(`${x+dx},${y+dy}`) ?? []) if(!found.has(item)){found.add(item);result.push(item);}
+  return result;
+}
 export function localToCoordinate(point,center) {
   const distance=Math.hypot(...point)/R,bearing=Math.atan2(point[0],point[1]);
   const lat=center.lat*Math.PI/180,lng=center.lng*Math.PI/180;
@@ -47,7 +53,7 @@ function surfaceHeight(p,s) {
 }
 export function roadSurfaceAt(network,p,referenceRoadHeight=.08) {
   if(!network?.roads) return null;
-  const candidates=segmentsFor(network).cells.get(`${Math.floor(p[0]/CELL)},${Math.floor(p[1]/CELL)}`) ?? [];
+  const candidates=nearby(segmentsFor(network).cells,p);
   let best=null, distance=Infinity;
   for(const s of candidates) {
     const q=nearest(p,s), horizontal=Math.hypot(p[0]-q[0],p[1]-q[1]);
@@ -61,9 +67,9 @@ export function roadSurfaceAt(network,p,referenceRoadHeight=.08) {
 }
 function circleOnRoad(network,p,radius,roadHeight) {
   if (Math.hypot(...p)+radius > network.radiusMeters-.5) return false;
-  const candidates=segmentsFor(network).cells.get(`${Math.floor(p[0]/CELL)},${Math.floor(p[1]/CELL)}`) ?? [];
+  const candidates=nearby(segmentsFor(network).cells,p);
   if (!candidates.some(s=>{const q=nearest(p,s);return Math.abs(surfaceHeight(p,s)-roadHeight)<=.65 && Math.hypot(p[0]-q[0],p[1]-q[1])<=s.width/2+s.sidewalk-radius+1e-6;})) return false;
-  for (const building of segmentsFor(network).buildings.get(`${Math.floor(p[0]/CELL)},${Math.floor(p[1]/CELL)}`) ?? []) {
+  for (const building of nearby(segmentsFor(network).buildings,p)) {
     if (roadHeight+1.5 <= (building.minHeight ?? 0) || roadHeight >= (building.height ?? 10)) continue;
     let inside=false;
     for(let i=1;i<building.points.length;i++) {
