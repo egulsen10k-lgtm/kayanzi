@@ -1012,6 +1012,68 @@
       #akanzi-hud { top:100px !important; left:155px !important; max-width:calc(100% - 330px) !important; }
       .hud-overlay .rpm-bar-container, #hud-passengers { display:none; }
     }
+
+    /* Vehicle dynamics: a compact instrument strip and a separate, scrollable setup sheet. */
+    .dynamics-readout { display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:7px; color:#a8c7d7; font-size:10px; letter-spacing:.025em; }
+    .dynamics-readout strong { color:#f5f9fb; font-weight:700; }
+    #drive-dynamics-toggle {
+      position:absolute; z-index:22; top:122px; right:12px; min-height:44px; padding:7px 12px;
+      border:1px solid rgba(121,217,240,.55); border-radius:10px; color:#f3f8fb;
+      background:rgba(9,21,31,.94); font-size:12px; font-weight:750; letter-spacing:.04em;
+      box-shadow:0 6px 20px #0007; cursor:pointer; touch-action:manipulation;
+    }
+    #drive-dynamics-toggle[aria-expanded="true"] { background:#154d72; border-color:#8de7fa; }
+    #drive-dynamics-panel {
+      position:absolute; z-index:32; top:174px; right:12px; width:min(310px,calc(100vw - 24px));
+      max-height:calc(100dvh - 190px); overflow-y:auto; overscroll-behavior:contain;
+      padding:16px; border:1px solid rgba(121,217,240,.58); border-radius:16px;
+      color:#f3f8fb; background:rgba(9,17,26,.97); box-shadow:0 18px 45px #000b;
+      backdrop-filter:blur(20px);
+    }
+    .dynamics-panel-header { display:flex; align-items:start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    .dynamics-panel-kicker { color:#79d9f0; font-size:10px; font-weight:750; letter-spacing:.17em; text-transform:uppercase; }
+    .dynamics-panel-header h2 { font-size:18px; line-height:1.15; margin-top:3px; }
+    #drive-dynamics-close { flex:0 0 40px; width:40px; height:40px; border:1px solid #526979; border-radius:10px; background:#172734; color:white; font-size:23px; cursor:pointer; }
+    .dynamics-field { display:block; margin-top:10px; padding:10px 11px; border:1px solid rgba(255,255,255,.11); border-radius:11px; background:#15232e; }
+    .dynamics-field span { display:block; margin-bottom:6px; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .dynamics-field small { display:block; margin-top:5px; color:#b0c0ca; font-size:10px; line-height:1.3; }
+    .dynamics-field select { width:100%; min-height:44px; padding:0 12px; border:1px solid #647e90; border-radius:8px; color:white; background:#223848; font-size:14px; touch-action:manipulation; }
+    .drive-quickbar { position:absolute; z-index:18; right:24px; bottom:24px; display:flex; align-items:stretch; gap:8px; pointer-events:auto; }
+    #mobile-gear-selector { display:flex; padding:4px; gap:4px; border:1px solid #71899b; border-radius:13px; background:rgba(9,21,31,.94); box-shadow:0 7px 20px #0008; }
+    #mobile-gear-selector button { width:44px; min-height:44px; border:0; border-radius:9px; background:transparent; color:#d6e4eb; font-size:16px; font-weight:800; cursor:pointer; touch-action:manipulation; }
+    #mobile-gear-selector button[aria-pressed="true"] { background:#1671a9; color:white; box-shadow:0 0 0 1px #7dddf1 inset; }
+    #nitro-button { min-width:73px; min-height:52px; padding:4px 10px; border:1px solid #65c9e8; border-radius:13px; background:#125672; color:white; font-size:13px; font-weight:800; letter-spacing:.07em; box-shadow:0 7px 20px #0008; touch-action:none; cursor:pointer; }
+    #nitro-button[aria-pressed="true"] { background:#1d98bf; box-shadow:0 0 18px #31ceff9c; }
+    #nitro-button:disabled { opacity:.48; box-shadow:none; }
+    #gear-shift-status { position:absolute; bottom:calc(100% + 7px); left:50%; transform:translateX(-50%); width:max-content; max-width:80vw; padding:6px 10px; border:1px solid #f5bb69; border-radius:8px; color:#fff1d9; background:#422b18f0; box-shadow:0 5px 17px #0008; font-size:11px; font-weight:700; pointer-events:none; }
+    #hud-nitro { display:inline-flex; align-items:center; gap:4px; }
+    #hud-nitro-meter { display:inline-block; width:40px; height:5px; border-radius:4px; background:linear-gradient(90deg,#58dfff 100%,#364957 100%); }
+    @media (max-width:800px), (any-pointer:coarse), (max-height:500px) and (orientation:landscape) {
+      .drive-quickbar { left:50%; right:auto; bottom:calc(9px + env(safe-area-inset-bottom)); transform:translateX(-50%); }
+      #drive-dynamics-panel { top:174px; bottom:auto; max-height:calc(100dvh - 186px - env(safe-area-inset-bottom)); }
+      #main-viewport:has(#drive-dynamics-panel:not([hidden])) #drive-touch-controls,
+      #main-viewport:has(#drive-dynamics-panel:not([hidden])) .drive-quickbar { visibility:hidden; pointer-events:none; }
+      .dynamics-readout { font-size:9px; gap:3px 7px; }
+      .hud-overlay { width:min(245px,calc(100vw - 134px)); right:auto !important; }
+      .hud-overlay .hud-card:first-child { width:100%; }
+      .hud-overlay .hud-card:nth-child(2) { display:none !important; }
+      #map-container:not(.map-expanded) { top:220px !important; }
+    }
+    @media (max-height:500px) and (orientation:landscape) {
+      #drive-dynamics-toggle { top:70px; }
+      #drive-dynamics-panel { top:121px; bottom:auto; max-height:calc(100dvh - 133px - env(safe-area-inset-bottom)); }
+      .drive-quickbar { left:50%; right:auto; transform:translateX(-50%); bottom:calc(6px + env(safe-area-inset-bottom)); }
+      #map-container:not(.map-expanded) { top:155px !important; left:170px !important; width:112px; height:72px; }
+      #mobile-gear-selector button { width:40px; min-height:40px; }
+      #nitro-button { min-height:48px; }
+    }
+    @media (max-height:620px) and (orientation:portrait) {
+      #drive-dynamics-panel { top:119px; bottom:auto; max-height:calc(100dvh - 131px - env(safe-area-inset-bottom)); }
+      #drive-dynamics-toggle { top:68px; right:67px; }
+    }
+    @media (max-width:360px) and (orientation:portrait) {
+      #drive-dynamics-toggle { top:216px; right:12px; }
+    }
   </style>
 </head>
 <body>
@@ -1025,7 +1087,7 @@
     <label><input id="night-mode" type="checkbox"> Night mode</label>
     <label><input id="high-beams" type="checkbox"> High beams</label>
     <button class="start-btn" id="start-simulation-btn" type="button">Start driving</button>
-    <p class="controls-hint"><span class="keyboard-hint">Keyboard: W/↑ accelerate · S/↓ brake and reverse · A/← and D/→ steer · Space handbrake</span><span class="touch-hint">Sol başparmakla yön ver, sağ başparmakla gaz veya fren yap. Geri gitmek için durduktan sonra freni basılı tut.</span></p>
+    <p class="controls-hint"><span class="keyboard-hint">Keyboard: W/↑ accelerate · S/↓ brake and reverse · A/← and D/→ steer · Space handbrake</span><span class="touch-hint">Yön için sol taraftaki tuşları kullan. D/N/R ile vites seç; R konumunda GAZ ile geri git, FREN ile yavaşla.</span></p>
   </section>
 
   <div id="app-container">
@@ -1045,6 +1107,11 @@
           <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; color: var(--text-dim);">
             <span>Gear: <strong id="hud-gear" style="color: #fff;">1</strong></span>
             <span>RPM: <strong id="hud-rpm" style="color: #fff;">800</strong></span>
+          </div>
+          <div class="dynamics-readout" aria-live="off">
+            <span>MODE <strong id="hud-drive-mode">Comfort</strong></span>
+            <span>DSC <strong id="hud-dsc">On</strong></span>
+            <span id="hud-nitro">NITRO <span id="hud-nitro-meter" aria-hidden="true"></span></span>
           </div>
         </div>
 
@@ -1073,6 +1140,47 @@
       <button id="settings-toggle" type="button" aria-label="Controls and traffic settings" aria-controls="settings-panel" style="position:absolute;bottom:16px;left:16px;z-index:15;background:rgba(9,14,20,.88);color:white;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;">
         ⚙️
       </button>
+      <button id="drive-dynamics-toggle" type="button" aria-controls="drive-dynamics-panel" aria-expanded="false">Drive setup</button>
+      <section id="drive-dynamics-panel" aria-label="Vehicle dynamics settings" hidden>
+        <div class="dynamics-panel-header">
+          <div><div class="dynamics-panel-kicker">Vehicle dynamics</div><h2>Drive setup</h2></div>
+          <button id="drive-dynamics-close" type="button" aria-label="Close drive setup">×</button>
+        </div>
+        <label class="dynamics-field" for="drive-mode-select">
+          <span>Drive mode</span>
+          <select id="drive-mode-select">
+            <option value="comfort" selected>Comfort</option>
+            <option value="sport">Sport</option>
+            <option value="sport-plus">Sport Plus</option>
+          </select>
+          <small>Sets throttle and steering response.</small>
+        </label>
+        <label class="dynamics-field" for="brake-feel-select">
+          <span>Brake response</span>
+          <select id="brake-feel-select">
+            <option value="comfort" selected>Comfort</option>
+            <option value="sport">Sport</option>
+          </select>
+          <small>Changes how sharply the brake pedal reacts.</small>
+        </label>
+        <label class="dynamics-field" for="suspension-select">
+          <span>Suspension</span>
+          <select id="suspension-select">
+            <option value="comfort" selected>Comfort</option>
+            <option value="sport">Sport</option>
+          </select>
+          <small>Changes cornering grip.</small>
+        </label>
+        <label class="dynamics-field" for="dsc-mode-select">
+          <span>Stability control · DSC</span>
+          <select id="dsc-mode-select">
+            <option value="on" selected>On</option>
+            <option value="traction">Traction</option>
+            <option value="off">Off</option>
+          </select>
+          <small>Sets how strongly the car corrects a slide.</small>
+        </label>
+      </section>
       <div id="drive-touch-controls" role="group" aria-label="Touch driving controls">
         <div class="touch-steering">
           <div class="tilt-settings">
@@ -1086,9 +1194,18 @@
         <div class="touch-pedals">
           <button id="mobile-horn" class="drive-touch-btn touch-horn" type="button" aria-label="Korna: yayaları çağır">KORNA</button>
           <button class="drive-touch-btn touch-handbrake" type="button" data-drive-key="Space" aria-label="Handbrake" aria-pressed="false">EL FRENİ</button>
-          <button class="drive-touch-btn touch-brake" type="button" data-drive-key="ArrowDown" aria-label="Brake or reverse" aria-pressed="false">FREN<span>GERİ</span></button>
+          <button class="drive-touch-btn touch-brake" type="button" data-drive-key="ArrowDown" aria-label="Brake" aria-pressed="false">FREN<span>▼</span></button>
           <button class="drive-touch-btn touch-gas" type="button" data-drive-key="ArrowUp" aria-label="Accelerate" aria-pressed="false">GAZ<span>↑</span></button>
         </div>
+      </div>
+      <div class="drive-quickbar" role="group" aria-label="Gear and boost controls">
+        <span id="gear-shift-status" role="status" aria-live="polite" hidden></span>
+        <div id="mobile-gear-selector" role="group" aria-label="Gear selector">
+          <button type="button" data-gear="D" aria-label="Drive" aria-pressed="true">D</button>
+          <button type="button" data-gear="N" aria-label="Neutral" aria-pressed="false">N</button>
+          <button type="button" data-gear="R" aria-label="Reverse" aria-pressed="false">R</button>
+        </div>
+        <button id="nitro-button" type="button" aria-label="Hold for nitro boost" aria-pressed="false">NITRO</button>
       </div>
       <div id="photoreal-attribution" hidden style="position:absolute;bottom:12px;right:12px;z-index:25;background:#101820;color:white;padding:8px;font-size:12px;max-width:85%;">Google Maps</div>
       <div id="imagery-attribution">Imagery © Esri, Vantor, Earthstar Geographics · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">Map © OpenStreetMap contributors</a></div>

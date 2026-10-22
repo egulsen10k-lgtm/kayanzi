@@ -25,6 +25,15 @@ export class CarPhysics {
     this.bmwModel = 'M3 Competition';
     this.color = '#1c3fa8';
     this.handlingMode = 'Sport+';
+    this.driveMode = 'Comfort';
+    this.brakeMode = 'Comfort';
+    this.suspensionMode = 'Comfort';
+    this.dscMode = 'On';
+    this.driveGear = 'auto';
+    this.nitroCharge = 1;
+    this.nitroActive = false;
+    this.nitroEngaged = false;
+    this.nitroDepleted = false;
 
     this.driftFactor = 0;
     this.driftAngle = 0;
@@ -71,6 +80,42 @@ export class CarPhysics {
 
   setHandling(mode) {
     this.handlingMode = mode;
+  }
+
+  setDriveMode(mode) {
+    if (!['Comfort', 'Sport', 'Sport+'].includes(mode)) return false;
+    this.driveMode = mode;
+    return true;
+  }
+
+  setBrakeMode(mode) {
+    if (!['Comfort', 'Sport'].includes(mode)) return false;
+    this.brakeMode = mode;
+    return true;
+  }
+
+  setSuspensionMode(mode) {
+    if (!['Comfort', 'Sport'].includes(mode)) return false;
+    this.suspensionMode = mode;
+    return true;
+  }
+
+  setDscMode(mode) {
+    if (!['On', 'Traction', 'Off'].includes(mode)) return false;
+    this.dscMode = mode;
+    return true;
+  }
+
+  setDriveGear(gear) {
+    if (!['D', 'N', 'R'].includes(gear)) return false;
+    if (gear !== 'N' && gear !== this.driveGear && Math.abs(this.speed) > 3) return false;
+    this.driveGear = gear;
+    this.reverseDelay = 0;
+    return true;
+  }
+
+  setNitroActive(active) {
+    this.nitroActive = Boolean(active);
   }
 
   setRoadNetwork(network) {
@@ -125,15 +170,27 @@ export class CarPhysics {
     const tilt = this.tiltInput || { throttle: 0, steering: 0 };
     // Touch/keyboard pedals override tilt, including an immediate brake override.
     const pedal = keyForward || keyBackward ? Number(keyForward) - Number(keyBackward) : tilt.throttle;
-    const forward = pedal > 0 || (keyForward && keyBackward);
-    const backward = pedal < 0 || (keyForward && keyBackward);
+    const selectedPedal = this.driveGear === 'N' ? 0 : this.driveGear === 'R' ? -Math.max(0, pedal) : pedal;
+    const serviceBrake = this.driveGear !== 'auto' && pedal < 0;
+    const forward = selectedPedal > 0 || (keyForward && keyBackward);
+    const backward = selectedPedal < 0 || (keyForward && keyBackward);
     const pressure = Math.abs(pedal);
     this.handbrake = !!this.keys.Space;
     const oldHeading = this.heading;
     const previousSpeed = this.speed;
     const stop = (amount) => Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - amount);
     this.throttle = 0;
-    if (forward && backward) {
+    if (this.nitroCharge <= 0) this.nitroDepleted = true;
+    if (this.nitroCharge >= .25) this.nitroDepleted = false;
+    this.nitroEngaged = this.nitroActive && !this.nitroDepleted && this.nitroCharge > 0 &&
+      this.driveGear !== 'N' && this.driveGear !== 'R' && forward && this.speed > 5 && !this.handbrake;
+    this.nitroCharge = Math.max(0, Math.min(1, this.nitroCharge +
+      (this.nitroEngaged ? -0.16 : 0.045) * dt));
+    if (serviceBrake) {
+      this.speed = stop(this.braking * (this.brakeMode === 'Sport' ? 1.25 : 1) * pressure * dt);
+      this.throttle = -0.6 * pressure;
+      this.reverseDelay = 0;
+    } else if (forward && backward) {
       this.speed = stop(36 * dt);
       this.reverseDelay = 0;
     } else if (this.handbrake) {
@@ -143,7 +200,7 @@ export class CarPhysics {
       this.reverseDelay = 0;
     } else if ((forward && this.speed < 0) || (backward && this.speed > 0)) {
       // Opposite pedal first brakes to rest. It cannot change direction in one step.
-      this.speed = stop(this.braking * pressure * dt);
+      this.speed = stop(this.braking * (this.brakeMode === 'Sport' ? 1.25 : 1) * pressure * dt);
       this.reverseDelay = 0;
       this.throttle = -0.6 * pressure;
     } else if (backward) {
@@ -155,9 +212,12 @@ export class CarPhysics {
     } else if (forward) {
       this.reverseDelay = 0;
       this.throttle = pressure;
-      const mode = this.handlingMode === 'Sport+' ? 1.2 : 1;
-      const power = Math.max(0, 1 - (this.speed / this.maxSpeed) ** 2);
-      this.speed = Math.min(this.maxSpeed, this.speed + this.acceleration * mode * power * pressure * dt);
+      const mode = this.driveMode === 'Sport+' ? 1.2 : this.driveMode === 'Sport' ? 1.08 : 1;
+      const speedLimit = this.maxSpeed + (this.nitroEngaged ? 40 : 0);
+      const power = Math.max(0, 1 - (this.speed / speedLimit) ** 2);
+      this.speed = this.speed > speedLimit ? Math.max(speedLimit, this.speed - 12 * dt) :
+        Math.min(speedLimit, this.speed +
+          (this.acceleration * mode + (this.nitroEngaged ? 38 : 0)) * power * pressure * dt);
     } else {
       this.reverseDelay = 0;
       // Rolling resistance plus aerodynamic drag; never changes travel direction.
@@ -175,7 +235,9 @@ export class CarPhysics {
     // lateral acceleration, preventing unrealistically rapid highway-speed spins.
     const wheelAngle = this.steering * 0.61 / (1 + (absMs / 18) ** 2);
     const requestedYaw = -speedMs * Math.tan(wheelAngle) / 2.85;
-    const grip = this.handlingMode === 'Drift' ? 4.2 : 8.8;
+    const grip = (this.handlingMode === 'Drift' ? 4.2 : 8.8) +
+      (this.suspensionMode === 'Sport' ? .8 : 0) +
+      (this.dscMode === 'Traction' ? .5 : this.dscMode === 'Off' ? 1.5 : 0);
     const yawLimit = grip / Math.max(absMs, 0.1);
     const normalYaw = Math.max(-yawLimit, Math.min(yawLimit, requestedYaw));
     const steerDirection = Math.sign(this.steering);
@@ -185,7 +247,8 @@ export class CarPhysics {
     const speedSlip = Math.min(1, Math.max(0, (absMs - 7) / 18));
     const steerSlip = Math.min(1, Math.max(0, (Math.abs(this.steering) - .12) / .55));
     const driveSlip = this.handbrake ? 1 : .6 + Math.min(.4, Math.max(0, this.throttle));
-    const targetSlip = canDrift ? speedSlip * steerSlip * driveSlip * (counterSteering ? .7 : 1) : 0;
+    const stability = this.dscMode === 'On' ? .6 : this.dscMode === 'Traction' ? .85 : 1;
+    const targetSlip = canDrift ? speedSlip * steerSlip * driveSlip * stability * (counterSteering ? .7 : 1) : 0;
     const response = 1 - Math.exp(-(targetSlip > this.driftFactor ? 4.0 : 6.0) * dt);
     this.driftFactor += (targetSlip - this.driftFactor) * response;
     if (this.driftFactor > .02 && steerDirection && (!this.driftDirection || !counterSteering)) this.driftDirection = steerDirection;

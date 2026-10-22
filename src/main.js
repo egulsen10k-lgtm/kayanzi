@@ -339,6 +339,69 @@ document.addEventListener('DOMContentLoaded', () => {
   bindDrivingInput({ physics, buttons: document.querySelectorAll('[data-drive-key]'),
     onHornStart: startHorn, onHornEnd: stopHorn });
 
+  const dynamicsToggle = document.getElementById('drive-dynamics-toggle');
+  const dynamicsPanel = document.getElementById('drive-dynamics-panel');
+  const setDynamicsOpen = open => {
+    dynamicsPanel.hidden = !open;
+    dynamicsToggle.setAttribute('aria-expanded', String(open));
+    if (open) setSettingsOpen(false);
+  };
+  dynamicsToggle.addEventListener('click', () => setDynamicsOpen(dynamicsPanel.hidden));
+  document.getElementById('drive-dynamics-close').addEventListener('click', () => setDynamicsOpen(false));
+  const bindDynamicsSelect = (id, apply, values) => {
+    const select = document.getElementById(id);
+    select.addEventListener('change', () => apply(values[select.value]));
+  };
+  bindDynamicsSelect('drive-mode-select', value => physics.setDriveMode(value),
+    {comfort:'Comfort',sport:'Sport','sport-plus':'Sport+'});
+  bindDynamicsSelect('brake-feel-select', value => physics.setBrakeMode(value),
+    {comfort:'Comfort',sport:'Sport'});
+  bindDynamicsSelect('suspension-select', value => physics.setSuspensionMode(value),
+    {comfort:'Comfort',sport:'Sport'});
+  bindDynamicsSelect('dsc-mode-select', value => physics.setDscMode(value),
+    {on:'On',traction:'Traction',off:'Off'});
+
+  const gearButtons = [...document.querySelectorAll('[data-gear]')];
+  const gearShiftStatus = document.getElementById('gear-shift-status');
+  let gearStatusTimer;
+  const syncGearButtons = () => gearButtons.forEach(button =>
+    button.setAttribute('aria-pressed', String(button.dataset.gear === physics.driveGear)));
+  if (window.matchMedia('(max-width:800px), (any-pointer:coarse), (max-height:500px) and (orientation:landscape)').matches) {
+    physics.setDriveGear('D');
+  }
+  syncGearButtons();
+  gearButtons.forEach(button => button.addEventListener('click', () => {
+    if (!physics.setDriveGear(button.dataset.gear)) {
+      gearShiftStatus.textContent = 'Slow down to shift';
+      gearShiftStatus.hidden = false;
+      clearTimeout(gearStatusTimer);
+      gearStatusTimer = setTimeout(() => { gearShiftStatus.textContent = ''; gearShiftStatus.hidden = true; }, 2200);
+      return;
+    }
+    gearShiftStatus.textContent = '';
+    gearShiftStatus.hidden = true;
+    syncGearButtons();
+  }));
+  settingsToggle.addEventListener('click', () => {
+    if (!settingsPanel.hidden) setDynamicsOpen(false);
+  });
+
+  const nitroButton = document.getElementById('nitro-button');
+  const releaseNitro = () => {
+    physics.setNitroActive(false);
+    nitroButton.setAttribute('aria-pressed', 'false');
+  };
+  nitroButton.addEventListener('pointerdown', event => {
+    if (nitroButton.disabled) return;
+    event.preventDefault();
+    nitroButton.setPointerCapture(event.pointerId);
+    physics.setNitroActive(true);
+    nitroButton.setAttribute('aria-pressed', 'true');
+  });
+  for (const type of ['pointerup','pointercancel','lostpointercapture'])
+    nitroButton.addEventListener(type, releaseNitro);
+  window.addEventListener('blur', releaseNitro);
+
   document.querySelectorAll('[data-model]').forEach((button) => {
     button.addEventListener('click', () => {
       const model = button.getAttribute('data-model');
@@ -595,6 +658,9 @@ document.addEventListener('DOMContentLoaded', () => {
     mapController.updateCarPosition(physics.lat, physics.lng, headingDeg);
 
     audio.update(physics.rpm, physics.throttle, physics.speed, physics.isDrifting, {model:physics.bmwModel,gear:physics.gear,slip:physics.driftFactor,brake:physics.handbrake || (physics.throttle < 0 && physics.speed > 0)});
+    if (physics.nitroEngaged && physics.bmwModel !== 'i4 M50 (EV)') {
+      visualizer.triggerExhaustFlames();
+    }
     if (audio.lastThrottle > 0.5 && physics.throttle < 0.1 && physics.rpm > 3000) {
       visualizer.triggerExhaustFlames();
     }
@@ -608,7 +674,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const boundary = document.getElementById('road-boundary-status');
     if (boundary) boundary.textContent = physics.roadBlocked ? (physics.roadNetwork ? 'Road edge · brake / reverse or reset' : 'Waiting for drivable roads') : 'Road boundaries active';
     hudRpm.innerText = Math.round(physics.rpm);
-    hudGear.innerText = physics.bmwModel === 'i4 M50 (EV)' ? 'D' : physics.gear;
+    hudGear.innerText = physics.driveGear === 'auto' ?
+      (physics.bmwModel === 'i4 M50 (EV)' ? 'D' : physics.gear) :
+      (physics.driveGear === 'D' && physics.bmwModel !== 'i4 M50 (EV)' ? `D${physics.gear}` : physics.driveGear);
+    document.getElementById('hud-drive-mode').textContent = physics.driveMode;
+    document.getElementById('hud-dsc').textContent = physics.dscMode;
+    const nitroMeter = document.getElementById('hud-nitro-meter');
+    const charge = Math.round(physics.nitroCharge * 100);
+    nitroMeter.style.background = `linear-gradient(90deg,#58dfff ${charge}%,#364957 ${charge}%)`;
+    nitroButton.disabled = physics.nitroDepleted;
+    if (nitroButton.disabled) releaseNitro();
 
     const rpmPercent = Math.min(100, (physics.rpm / 8500) * 100);
     hudRpmBar.style.width = `${rpmPercent}%`;

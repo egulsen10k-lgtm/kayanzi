@@ -227,3 +227,68 @@ test('impact cooldown expires even while car remains stopped', () => {
   car.update(0.1);
   assert.equal(car.impactEvent, null);
 });
+
+test('mobile D N R selector prevents direction changes at speed and drives in reverse with gas', () => {
+  const car = unconstrainedCar();
+  assert.equal(car.setDriveGear('D'), true);
+  car.keys.KeyW = true;
+  advance(car, 2);
+  assert.ok(car.speed > 0);
+  assert.equal(car.setDriveGear('R'), false);
+  assert.equal(car.setDriveGear('N'), true);
+  const before = car.speed;
+  car.update(.1);
+  assert.ok(car.speed < before);
+  car.speed = 0;
+  assert.equal(car.setDriveGear('R'), true);
+  advance(car, 2);
+  assert.ok(car.speed < 0);
+  assert.equal(car.setDriveGear('D'), false);
+  car.speed = 0;
+  assert.equal(car.setDriveGear('D'), true);
+  car.keys = {KeyS:true};
+  advance(car, 2);
+  assert.equal(car.speed, 0, 'brake must not select reverse while in D');
+});
+
+test('sport brakes stop sooner and nitro boosts only forward driving while consuming charge', () => {
+  const comfort = unconstrainedCar(), sport = unconstrainedCar();
+  for (const car of [comfort,sport]) {car.speed = 70; car.setDriveGear('D'); car.keys={KeyS:true};}
+  sport.setBrakeMode('Sport');
+  advance(comfort, 1); advance(sport, 1);
+  assert.ok(sport.speed < comfort.speed);
+  const normal=unconstrainedCar(), boosted=unconstrainedCar();
+  for(const car of [normal,boosted]) {car.setDriveGear('D');car.speed=40;car.keys={KeyW:true};}
+  boosted.setNitroActive(true);
+  advance(normal, 2); advance(boosted, 2);
+  assert.ok(boosted.speed > normal.speed + 10);
+  assert.ok(boosted.nitroCharge < 1);
+  boosted.setDriveGear('N');boosted.update(.1);
+  assert.equal(boosted.nitroEngaged,false);
+});
+
+test('drive and suspension modes change power and grip; DSC limits sliding', () => {
+  const comfort=unconstrainedCar(),sport=unconstrainedCar();
+  sport.setDriveMode('Sport+');
+  comfort.keys={KeyW:true};sport.keys={KeyW:true};
+  advance(comfort,3);advance(sport,3);
+  assert.ok(sport.speed>comfort.speed);
+  const controlled=unconstrainedCar(),open=unconstrainedCar();
+  for(const car of [controlled,open]) {car.speed=65;car.keys={KeyW:true,KeyA:true};}
+  open.setDscMode('Off');open.setSuspensionMode('Sport');
+  advance(controlled,1);advance(open,1);
+  assert.ok(open.driftFactor>controlled.driftFactor);
+  assert.equal(sport.setDriveMode('Invalid'),false);
+});
+
+test('nitro runs dry, pauses until recharged, then becomes available again', () => {
+  const car = unconstrainedCar();
+  car.setDriveGear('D');car.speed=80;car.keys={KeyW:true};car.setNitroActive(true);
+  advance(car,7);
+  assert.equal(car.nitroDepleted,true);
+  assert.equal(car.nitroEngaged,false);
+  car.setNitroActive(false);
+  advance(car,6);
+  assert.equal(car.nitroDepleted,false);
+  assert.ok(car.nitroCharge>=.25);
+});
