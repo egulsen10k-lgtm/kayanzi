@@ -100,12 +100,13 @@ export function footprintOnRoad(network,point,heading=0,roadHeight=.08) {
   }
   return true;
 }
-export function nearestRoadSpawn(network,lat,lng) {
+export function nearestRoadSpawn(network,lat,lng,referenceHeight=null) {
   const p=projectCoordinate(lat,lng,network.center); if(!p) return null;
   let best=null;
   for(const s of segmentsFor(network).segments) {
     const q=nearest(p,s), heading=Math.atan2(s.b[0]-s.a[0],s.b[1]-s.a[1]);
     const roadHeight=surfaceHeight(q,s);
+    if(referenceHeight !== null && Math.abs(roadHeight-referenceHeight) > .65) continue;
     if(!footprintOnRoad(network,q,heading,roadHeight)) continue;
     const distance=Math.hypot(q[0]-p[0],q[1]-p[1]);
     if(!best || distance<best.distance) best={...localToCoordinate(q,network.center),heading,distance,name:s.name,roadHeight};

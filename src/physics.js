@@ -1,5 +1,6 @@
+import { projectCoordinate } from './road-network.js';
 // Robust BMW Vehicle & Physics Controller with Edge Case Validation
-import { sweepRoadMotionResult } from './road-safety.js';
+import { sweepRoadMotionResult, nearestRoadSpawn, footprintOnRoad } from './road-safety.js';
 
 export class CarPhysics {
   constructor(peerId = 'local-driver') {
@@ -74,6 +75,7 @@ export class CarPhysics {
 
   setRoadNetwork(network) {
     this.roadNetwork = network;
+    this.blockedSeconds = 0;
   }
 
   update(dt) {
@@ -90,11 +92,31 @@ export class CarPhysics {
     for (let step = 0; step < count; step++) {
       if (!this.integrate(dt / count)) break;
     }
+    if (this.roadConstrained && this.roadNetwork) {
+      const point = projectCoordinate(this.lat, this.lng, this.roadNetwork.center);
+      const invalid = !point || !footprintOnRoad(this.roadNetwork, point, this.heading, this.roadHeight);
+      this.blockedSeconds = this.roadBlocked || invalid ? (this.blockedSeconds || 0) + dt : 0;
+      if (invalid || this.blockedSeconds > 1.5) this.recoverToRoad();
+    }
     const absSpeed = Math.abs(this.speed);
     this.gear = this.speed < -0.1 ? -1 : Math.min(6, 1 + Math.floor(absSpeed / 45));
     this.rpm = this.bmwModel === 'i4 M50 (EV)'
       ? 800 + absSpeed / this.maxSpeed * 12000
       : Math.min(8200, 800 + absSpeed / (Math.max(1, this.gear) * 50) * 6400 + Math.abs(this.throttle) * 1300);
+  }
+
+  recoverToRoad() {
+    if (!this.roadNetwork) return false;
+    const spawn = nearestRoadSpawn(this.roadNetwork, this.lat, this.lng, this.roadHeight);
+    if (!spawn) return false;
+    const reverse = Math.cos(spawn.heading - this.heading) < 0;
+    this.lat = spawn.lat; this.lng = spawn.lng;
+    this.heading = spawn.heading + (reverse ? Math.PI : 0);
+    this.roadHeight = spawn.roadHeight;
+    this.speed = 0; this.steering = 0;
+    this.driftFactor = 0; this.driftAngle = 0; this.driftDirection = 0;
+    this.roadBlocked = false; this.blockedSeconds = 0;
+    return true;
   }
 
   integrate(dt) {
@@ -193,8 +215,11 @@ export class CarPhysics {
       { ...this, heading: oldHeading }, { ...destination, heading: this.heading }) : {fraction:1,roadHeight:this.roadHeight};
     if (motion.fraction < 1) {
       const impactSpeed = Math.abs(this.speed);
+      // Reject translation and rotation together: retaining the attempted yaw
+      // can leave the footprint outside the road and lock every subsequent sweep.
       this.lat = prevLat;
       this.lng = prevLng;
+      this.heading = oldHeading;
       if (motion.fraction > 0.35) {
         this.speed *= 0.7;
       } else {

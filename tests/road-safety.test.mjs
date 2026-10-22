@@ -111,3 +111,20 @@ test('ground road edges allow an extra 75cm without bypassing buildings or eleva
   const elevated=road();elevated.roads[0].elevations=[5,5];
   assert.equal(roadSurfaceAt(elevated,[4.5,0],5.08),null);
 });
+
+test('invalid edge footprints recover automatically and can drive again',()=>{
+  const car=new CarPhysics(); const n=road(); car.setRoadNetwork(n);
+  Object.assign(car,location([4,0],Math.PI/2));
+  car.keys.KeyW=true; car.update(.1);
+  assert.ok(footprintOnRoad(n,projectCoordinate(car.lat,car.lng,n.center),car.heading,car.roadHeight));
+  for(let i=0;i<60;i++)car.update(1/60);
+  assert.ok(car.speed>0);
+});
+test('recovery preserves bridge level and chooses a valid centered footprint',()=>{
+  const n=road(); n.roads.push({width:8,points:[[-100,0],[100,0]],elevations:[8,8],bridge:true});
+  const car=new CarPhysics(); car.setRoadNetwork(n);
+  Object.assign(car,location([0,0],0)); car.roadHeight=8.08;
+  assert.equal(car.recoverToRoad(),true);
+  assert.equal(car.roadHeight,8.08);
+  assert.ok(footprintOnRoad(n,projectCoordinate(car.lat,car.lng,n.center),car.heading,car.roadHeight));
+});

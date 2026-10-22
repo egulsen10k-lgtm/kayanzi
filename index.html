@@ -737,7 +737,7 @@
       #drive-touch-controls { gap: 4px; }
     }
     .touch-hint { display: none; }
-    @media (max-width: 800px), (any-pointer: coarse) {
+    @media (max-width: 800px), (any-pointer: coarse), (max-height:500px) and (orientation:landscape) {
       .keyboard-hint { display: none; }
       .touch-hint { display: inline; }
       #drive-touch-controls {
@@ -781,7 +781,7 @@
     .tilt-settings button[aria-pressed="true"] { background: #085c66; }
     .tilt-settings button:disabled { opacity: .5; }
     #tilt-status { font-size: 10px; line-height: 1.35; background: #101e2cee; padding: 4px; border-radius: 4px; }
-    @media (max-width: 800px), (any-pointer: coarse) {
+    @media (max-width: 800px), (any-pointer: coarse), (max-height:500px) and (orientation:landscape) {
       #map-container { bottom: calc(195px + env(safe-area-inset-bottom)); width: 132px; height: 80px; }
       #imagery-attribution { bottom: calc(285px + env(safe-area-inset-bottom)) !important; }
     }
@@ -909,7 +909,7 @@
       *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
     }
     .touch-hint { display: none; }
-    @media (max-width: 800px), (any-pointer: coarse) {
+    @media (max-width: 800px), (any-pointer: coarse), (max-height:500px) and (orientation:landscape) {
       .keyboard-hint { display: none; }
       .touch-hint { display: inline; }
       #drive-touch-controls {
@@ -953,7 +953,7 @@
     .tilt-settings button[aria-pressed="true"] { background: #085c66; }
     .tilt-settings button:disabled { opacity: .5; }
     #tilt-status { font-size: 10px; line-height: 1.35; background: #101e2cee; padding: 4px; border-radius: 4px; }
-    @media (max-width: 800px), (any-pointer: coarse) {
+    @media (max-width: 800px), (any-pointer: coarse), (max-height:500px) and (orientation:landscape) {
       #map-container { bottom: calc(195px + env(safe-area-inset-bottom)); width: 132px; height: 80px; }
       #imagery-attribution { bottom: calc(285px + env(safe-area-inset-bottom)) !important; }
     }
@@ -971,7 +971,7 @@
     #settings-toggle { left:auto !important; position:absolute !important; top:70px !important; right:12px !important; bottom:auto !important; min-height:44px; z-index:22; }
     #settings-panel { bottom:82px !important; max-height:calc(100dvh - 150px); overflow-y:auto !important; z-index:32 !important; }
     #settings-panel select { display:block; width:100%; min-height:44px; margin:6px 0 12px; background:#1b2d3c; color:white; }
-    @media (max-width:800px), (any-pointer:coarse) {
+    @media (max-width:800px), (any-pointer:coarse), (max-height:500px) and (orientation:landscape) {
       #drive-touch-controls { bottom:calc(72px + env(safe-area-inset-bottom)) !important; }
       #map-container { bottom:calc(255px + env(safe-area-inset-bottom)) !important; }
       #imagery-attribution { bottom:calc(341px + env(safe-area-inset-bottom)) !important; }
@@ -988,6 +988,29 @@
       #map-container { bottom:40px !important; left:190px !important; }
       #imagery-attribution { bottom:10px !important; }
       #akanzi-hud { top:150px !important; }
+    }
+    #map-container { transition:none; }
+    .map-toolbar { position:absolute; top:0; left:0; right:0; z-index:1000; display:flex; gap:4px; background:#101e2c; padding:4px; }
+    .map-toolbar button { min-height:36px; background:#182f40; color:white; border:1px solid #8197a6; border-radius:6px; cursor:pointer; }
+    .map-toolbar button[aria-pressed="true"] { background:#0066b1; }
+    #map-container:not(.map-expanded) .map-toolbar button:not(:first-child),
+    #map-container:not(.map-expanded) .leaflet-top { display:none; }
+    #map-container .leaflet-top { top:48px; }
+    #map-container.map-expanded { position:fixed; inset: max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left)) !important; width:auto !important; height:auto !important; z-index:40; }
+    @media (max-width:800px), (any-pointer:coarse), (max-height:500px) and (orientation:landscape) {
+      #map-container:not(.map-expanded) { top:180px !important; bottom:auto !important; left:12px !important; width:148px; height:120px; }
+      .map-toolbar button { min-height:44px; font-size:11px; }
+      .hud-overlay { right:64px !important; }
+      #akanzi-hud { top:180px !important; left:172px !important; max-width:calc(100% - 184px) !important; font-size:10px; }
+      #akanzi-instruction { display:none; }
+      .tilt-settings { display:none; }
+      #settings-panel { max-width:calc(100vw - 24px); }
+      #imagery-attribution, #photoreal-attribution { bottom:8px !important; font-size:7px !important; max-width:calc(100% - 24px); }
+    }
+    @media(max-height:500px) and (orientation:landscape) {
+      #map-container:not(.map-expanded) { top:145px !important; left:12px !important; width:132px; height:96px; }
+      #akanzi-hud { top:100px !important; left:155px !important; max-width:calc(100% - 330px) !important; }
+      .hud-overlay .rpm-bar-container, #hud-passengers { display:none; }
     }
   </style>
 </head>

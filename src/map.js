@@ -75,11 +75,41 @@ export class WorldMapController {
       smoothFactor: 1
     }).addTo(this.map);
 
-    this.map.on('mousedown touchstart', () => {
+    const container = document.getElementById(this.mapContainerId).parentElement;
+    const toolbar = document.createElement('div');
+    toolbar.className = 'map-toolbar';
+    const button = (label, action) => {
+      const el = document.createElement('button');
+      el.type = 'button'; el.textContent = label;
+      el.addEventListener('click', action); toolbar.append(el); return el;
+    };
+    this.expandButton = button('Expand map', () => {
+      const expanded = container.classList.toggle('map-expanded');
+      this.selectLocation = false;
+      this.pickButton.setAttribute('aria-pressed', 'false');
+      this.expandButton.textContent = expanded ? 'Close map' : 'Expand map';
+      this.expandButton.setAttribute('aria-expanded', String(expanded));
+    });
+    button('Follow car', () => {
+      this.followCar = true;
+      this.map.panTo(this.carMarker.getLatLng(), { animate: false });
+    });
+    this.pickButton = button('Choose destination', () => {
+      this.selectLocation = !this.selectLocation;
+      this.pickButton.setAttribute('aria-pressed', String(this.selectLocation));
+    });
+    container.append(toolbar);
+    this.resizeObserver = new ResizeObserver(() => this.map.invalidateSize({ pan: false }));
+    this.resizeObserver.observe(container);
+
+    this.map.on('dragstart', () => {
       this.followCar = false;
     });
 
     this.map.on('click', (e) => {
+      if (!this.selectLocation) return;
+      this.selectLocation = false;
+      this.pickButton.setAttribute('aria-pressed', 'false');
       this.followCar = true;
       if (this.onLocationSelect) {
         this.onLocationSelect(e.latlng.lat, e.latlng.lng);
@@ -153,6 +183,7 @@ export class WorldMapController {
 
   teleport(lat, lng, zoom = 16) {
     this.followCar = true;
+    this.selectLocation = false;
     this.trackCoords = [];
     this.trackLine.setLatLngs([]);
     this.map.setView([lat, lng], zoom);
