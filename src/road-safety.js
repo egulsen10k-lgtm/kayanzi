@@ -105,6 +105,13 @@ export function nearestRoadSpawn(network,lat,lng,referenceHeight=null) {
   let best=null;
   for(const s of segmentsFor(network).segments) {
     const q=nearest(p,s), heading=Math.atan2(s.b[0]-s.a[0],s.b[1]-s.a[1]);
+    // Keep the entire vehicle inside dead ends, not just its center.
+    const length=Math.hypot(s.b[0]-s.a[0],s.b[1]-s.a[1]);
+    const along=Math.hypot(q[0]-s.a[0],q[1]-s.a[1]);
+    const inset=Math.min(2.5,length/2);
+    const safeAlong=Math.max(inset,Math.min(length-inset,along));
+    q[0]=s.a[0]+(s.b[0]-s.a[0])*safeAlong/length;
+    q[1]=s.a[1]+(s.b[1]-s.a[1])*safeAlong/length;
     const roadHeight=surfaceHeight(q,s);
     if(referenceHeight !== null && Math.abs(roadHeight-referenceHeight) > .65) continue;
     if(!footprintOnRoad(network,q,heading,roadHeight)) continue;

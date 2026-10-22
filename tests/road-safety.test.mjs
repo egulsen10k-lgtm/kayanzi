@@ -128,3 +128,9 @@ test('recovery preserves bridge level and chooses a valid centered footprint',()
   assert.equal(car.roadHeight,8.08);
   assert.ok(footprintOnRoad(n,projectCoordinate(car.lat,car.lng,n.center),car.heading,car.roadHeight));
 });
+test('automatic recovery remains available at road dead ends',()=>{
+  const n=road(), car=new CarPhysics(); car.setRoadNetwork(n);
+  Object.assign(car,location([0,401]));
+  assert.equal(car.recoverToRoad(),true);
+  assert.ok(footprintOnRoad(n,projectCoordinate(car.lat,car.lng,n.center),car.heading,car.roadHeight));
+});
