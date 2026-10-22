@@ -16,8 +16,8 @@ test('car is held safely without road data and teleport clears old coverage',()=
 test('whole car footprint blocks nose and corner excursions, not only its center',()=>{
   const n=road();
   assert.ok(footprintOnRoad(n,[0,0],0));
-  assert.equal(footprintOnRoad(n,[2,0],Math.PI/2),false);
-  assert.equal(footprintOnRoad(n,[3.2,0],0),false);
+  assert.equal(footprintOnRoad(n,[3,0],Math.PI/2),false);
+  assert.equal(footprintOnRoad(n,[4,0],0),false);
 });
 test('swept path cannot jump across a narrow off-road gap at high speed',()=>{
   const n=road();n.roads=[{width:6,points:[[-20,0],[-5,0]]},{width:6,points:[[5,0],[20,0]]}];
@@ -73,7 +73,7 @@ test('urban sidewalk is climbable with a tighter footprint and raised car height
   const n=road();n.roads[0].highway='residential';
   assert.equal(roadSurfaceAt(n,[4.5,0]),.22);
   assert.equal(footprintOnRoad(n,[4.5,0],0,.22),true);
-  assert.equal(footprintOnRoad(n,[4.8,0],0,.22),false);
+  assert.equal(footprintOnRoad(n,[5.5,0],0,.22),false);
   const climb=sweepRoadMotionResult(n,location([0,0]),location([4.5,0]));
   assert.equal(climb.fraction,1);assert.equal(climb.roadHeight,.22);
   const descend=sweepRoadMotionResult(n,{...location([4.5,0]),roadHeight:.22},location([0,0]));
@@ -95,4 +95,19 @@ test('crossing asphalt takes precedence over adjacent raised sidewalks',()=>{
   n.roads.push({width:8,highway:'residential',points:[[-100,0],[100,0]]});
   assert.equal(roadSurfaceAt(n,[4.5,0],.22),.08);
   assert.equal(sweepRoadMotionResult(n,location([-20,0],Math.PI/2),location([20,0],Math.PI/2)).fraction,1);
+});
+
+
+test('ground road edges allow an extra 75cm without bypassing buildings or elevated decks',()=>{
+  const n=road();
+  assert.equal(footprintOnRoad(n,[3.8,0],0),true);
+  assert.equal(footprintOnRoad(n,[4,0],0),false);
+  assert.equal(roadSurfaceAt(n,[4.5,0]),.08);
+  assert.equal(sweepRoadMotion(n,location([0,0]),location([3.8,0])),1);
+  const urban=road();urban.roads[0].highway='residential';
+  assert.equal(footprintOnRoad(urban,[5.4,0],0,.22),true);
+  urban.buildings=[{points:[[5,10],[7,10],[7,20],[5,20],[5,10]],height:12}];
+  assert.equal(footprintOnRoad({...urban},[5.4,15],0,.22),false);
+  const elevated=road();elevated.roads[0].elevations=[5,5];
+  assert.equal(roadSurfaceAt(elevated,[4.5,0],5.08),null);
 });

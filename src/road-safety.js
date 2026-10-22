@@ -3,6 +3,9 @@ import { projectCoordinate } from './road-network.js';
 const R = 6371008.8;
 const indexes = new WeakMap();
 const CELL = 30;
+// Extra shoulder clearance outside ground-road edges; retain hard deck/wall limits.
+const EDGE_CLEARANCE = .75;
+const edgeClearance = road => road.bridge || road.tunnel || road.elevations?.some(h => Math.abs(h) > .01) ? 0 : EDGE_CLEARANCE;
 function segmentsFor(network) {
   if (indexes.has(network)) return indexes.get(network);
   const cells = new Map(), segments = [];
@@ -11,8 +14,8 @@ function segmentsFor(network) {
     for(let i=1;i<road.points.length;i++) {
       const a=road.points[i-1], b=road.points[i];
       if (![...a,...b].every(Number.isFinite) || Math.hypot(b[0]-a[0],b[1]-a[1])<.01) continue;
-      const s={a,b,width:road.width,sidewalk:sidewalkWidth(road),name:road.name,ha:(road.elevations?.[i-1] ?? 0)+.08,hb:(road.elevations?.[i] ?? 0)+.08}; segments.push(s);
-      const margin=road.width/2+s.sidewalk;
+      const s={a,b,width:road.width,sidewalk:sidewalkWidth(road),clearance:edgeClearance(road),name:road.name,ha:(road.elevations?.[i-1] ?? 0)+.08,hb:(road.elevations?.[i] ?? 0)+.08}; segments.push(s);
+      const margin=road.width/2+s.sidewalk+s.clearance;
       for(let x=Math.floor((Math.min(a[0],b[0])-margin)/CELL);x<=Math.floor((Math.max(a[0],b[0])+margin)/CELL);x++)
         for(let y=Math.floor((Math.min(a[1],b[1])-margin)/CELL);y<=Math.floor((Math.max(a[1],b[1])+margin)/CELL);y++) {
           const key=`${x},${y}`; if(!cells.has(key)) cells.set(key,[]); cells.get(key).push(s);
@@ -28,6 +31,11 @@ function segmentsFor(network) {
       }
   }
   const result={segments,cells,buildings}; indexes.set(network,result); return result;
+}
+function sideClearance(p,s) {
+  const dx=s.b[0]-s.a[0],dy=s.b[1]-s.a[1];
+  const along=((p[0]-s.a[0])*dx+(p[1]-s.a[1])*dy)/(dx*dx+dy*dy);
+  return along>=0 && along<=1 ? s.clearance : 0;
 }
 function nearest(p,s) {
   const dx=s.b[0]-s.a[0],dy=s.b[1]-s.a[1];
@@ -58,17 +66,17 @@ export function roadSurfaceAt(network,p,referenceRoadHeight=.08) {
   for(const s of candidates) {
     const q=nearest(p,s), horizontal=Math.hypot(p[0]-q[0],p[1]-q[1]);
     const onAsphalt=horizontal<=s.width/2;
-    const h=(onAsphalt ? surfaceHeight(p,s) : SIDEWALK_HEIGHT), delta=Math.abs(h-referenceRoadHeight);
+    const h=(onAsphalt || !s.sidewalk ? surfaceHeight(p,s) : SIDEWALK_HEIGHT), delta=Math.abs(h-referenceRoadHeight);
     // At junctions, asphalt cuts through the raised sidewalk of a crossing road.
     const score=(onAsphalt ? 0 : 1000)+horizontal+delta*.001;
-    if(horizontal<=s.width/2+s.sidewalk && delta<=.65 && score<distance) { best=h; distance=score; }
+    if(horizontal<=s.width/2+s.sidewalk+sideClearance(p,s) && delta<=.65 && score<distance) { best=h; distance=score; }
   }
   return best;
 }
 function circleOnRoad(network,p,radius,roadHeight) {
   if (Math.hypot(...p)+radius > network.radiusMeters-.5) return false;
   const candidates=nearby(segmentsFor(network).cells,p);
-  if (!candidates.some(s=>{const q=nearest(p,s);return Math.abs(surfaceHeight(p,s)-roadHeight)<=.65 && Math.hypot(p[0]-q[0],p[1]-q[1])<=s.width/2+s.sidewalk-radius+1e-6;})) return false;
+  if (!candidates.some(s=>{const q=nearest(p,s);return Math.abs(surfaceHeight(p,s)-roadHeight)<=.65 && Math.hypot(p[0]-q[0],p[1]-q[1])<=s.width/2+s.sidewalk+sideClearance(p,s)-radius+1e-6;})) return false;
   for (const building of nearby(segmentsFor(network).buildings,p)) {
     if (roadHeight+1.5 <= (building.minHeight ?? 0) || roadHeight >= (building.height ?? 10)) continue;
     let inside=false;
