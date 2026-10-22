@@ -168,3 +168,8 @@ The Milli Akanzi Song button beside Studio plays/pauses the supplied MP3.
 Up to four overflow NPCs can hold onto the outside of a full car. They fall only
 at 80 km/h or above after a left/right steering reversal. Six joined rigid bodies
 produce the ragdoll fall, followed by recovery; seated passenger capacity is unchanged.
+
+Traffic impacts use oriented vehicle footprints, mass-based momentum transfer,
+off-centre angular impulses and damped displacement. Cars retain the impact offset
+instead of snapping onto their lane next frame; nearby cars no longer force the
+player's speed to zero. Reversing away remains possible during initial overlap.

@@ -1,3 +1,4 @@
+import { resolveTrafficContact, integrateTrafficImpact } from './traffic-collision.js';
 import * as THREE from 'three';
 import { projectCoordinate } from './road-network.js';
 
@@ -46,18 +47,22 @@ export class TrafficManager {
       if(length<.01)continue;
       const ahead=(x,y)=>(x-car.x)*Math.sin(car.heading)+(y-car.y)*Math.cos(car.heading)>-1;
       const blocked=(Math.abs(car.roadHeight-(player.roadHeight??.08))<1&&Math.hypot(car.x-p[0],car.y-p[1])<12&&ahead(...p)) || this.cars.some(other=>other!==car&&Math.abs(other.roadHeight-car.roadHeight)<1&&Math.hypot(other.x-car.x,other.y-car.y)<10&&ahead(other.x,other.y));
-      car.speed=Math.max(0,Math.min(car.cruise,car.speed+(blocked?-60:12)*dt));
+      integrateTrafficImpact(car,dt,Math.hypot(car.x-p[0],car.y-p[1]));
+      const recovering=car.impactTime<2 || Math.hypot(car.vx,car.vy)>1;
+      car.speed=recovering?0:Math.max(0,Math.min(car.cruise,car.speed+(blocked?-60:12)*dt));
       car.t+=car.direction*car.speed/3.6*dt/length;
       if(car.t>1){if(car.ptIdx<road.points.length-2){car.ptIdx++;car.t=0;}else{car.direction=-1;car.t=1;car.speed=0;}}
       if(car.t<0){if(car.ptIdx>0){car.ptIdx--;car.t=1;}else{car.direction=1;car.t=0;car.speed=0;}}
       a=road.points[car.ptIdx];b=road.points[car.ptIdx+1];dx=b[0]-a[0];dy=b[1]-a[1];length=Math.hypot(dx,dy)||1;
       const lane=Math.min(road.width/4,1.7)*car.direction;
-      car.x=a[0]+dx*car.t+dy/length*lane;car.y=a[1]+dy*car.t-dx/length*lane;
-      car.heading=Math.atan2(dx*car.direction,dy*car.direction);
+      car.x=a[0]+dx*car.t+dy/length*lane+car.offsetX;car.y=a[1]+dy*car.t-dx/length*lane+car.offsetY;
+      car.heading=Math.atan2(dx*car.direction,dy*car.direction)+car.yawOffset;
       car.roadHeight=.08+(road.elevations?.[car.ptIdx]??0)*(1-car.t)+(road.elevations?.[car.ptIdx+1]??0)*car.t;
+      if(dt>0) {
+        const body={x:p[0],y:p[1],heading:player.heading??0,speed:player.speed,roadHeight:player.roadHeight??.08};
+        if(resolveTrafficContact(body,car))player.speed=body.speed;
+      }
       car.group.position.set(car.x-p[0],car.roadHeight,-(car.y-p[1]));car.group.rotation.y=Math.PI-car.heading;
-      // Close contact stops player motion; opposite road levels never collide.
-      if(Math.abs(car.roadHeight-(player.roadHeight??.08))<1&&Math.hypot(car.x-p[0],car.y-p[1])<2.7){player.speed=0;car.speed=0;}
     }
   }
 }
