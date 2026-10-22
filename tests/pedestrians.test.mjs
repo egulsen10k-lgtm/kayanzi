@@ -35,6 +35,13 @@ test('pedestrians cannot board a fast car or chase forever',()=>{
  sim.horn(c);sim.update(c,.1);assert.equal(sim.passengers,0);
  sim.people[0].remaining=.01;sim.update(c,.1);assert.equal(sim.people[0].state,'idle');
 });
+test('chasing pedestrians stay on the sidewalk instead of crossing asphalt',()=>{
+ const sim=new Pedestrians(),c=car();sim.network=network;
+ sim.people=[{...person(4.75),height:.22,state:'chasing',remaining:18,phase:0}];
+ sim.update(c,.1);
+ assert.ok(sim.people[0].x>4.1,'pedestrian must remain beyond the road edge');
+ assert.equal(sim.people[0].height,.22);
+});
 test('overflow passengers require both 80 km/h and a steering reversal to fall',()=>{
  const sim=new Pedestrians(),c=car();sim.network=network;sim.passengers=4;
  sim.people=[person(2)];sim.horn(c);sim.update(c,.1);assert.equal(sim.people[0].state,'clinging');
@@ -63,4 +70,27 @@ test('passengers survive world streaming, while old pedestrians are replaced',()
  const sim=new Pedestrians(),c=car();sim.update(c,.1);sim.passengers=2;
  c.roadNetwork={...network};sim.update(c,.1);assert.equal(sim.passengers,2);assert.equal(sim.network,c.roadNetwork);
  c.roadNetwork=null;sim.update(c,.1);assert.equal(sim.people.length,0);assert.equal(sim.network,null);
+});
+test('vehicle impact launches nearby pedestrians with speed-proportional impulse',()=>{
+ const launch=speed=>{
+  const sim=new Pedestrians(),c=car();sim.network=network;c.speed=speed;c.heading=0;
+  sim.people=[person(1,0)];sim.update(c,.1);return sim.people[0];
+ };
+ const slow=launch(20),fast=launch(80);
+ assert.equal(slow.state,'ragdoll');assert.equal(fast.state,'ragdoll');
+ assert.ok(fast.fall.vy>slow.fall.vy);
+ assert.ok(Math.abs(fast.fall.vz)>Math.abs(slow.fall.vz));
+});
+
+test('pedestrian contact follows the car footprint instead of a broad radius',()=>{
+ const sim=new Pedestrians(),c=car();sim.network=network;c.speed=35;c.heading=0;
+ sim.people=[person(4.75,0),person(1,0)];
+ sim.update(c,.1);
+ assert.equal(sim.people[0].state,'idle');
+ assert.equal(sim.people[1].state,'ragdoll');
+});
+test('a horn-chasing pedestrian can still be struck by a moving car',()=>{
+ const sim=new Pedestrians(),c=car();sim.network=network;sim.people=[person(1,0)];
+ sim.horn(c);c.speed=35;sim.update(c,.1);
+ assert.equal(sim.people[0].state,'ragdoll');
 });
