@@ -71,7 +71,7 @@ export class Pedestrians {
     for (const candidate of candidates) {
       if(this.people.some(n=>Math.hypot(n.x-candidate.point[0],n.y-candidate.point[1])<4.5))continue;
       const id=this.people.length;
-      this.people.push({id,style:['goth','turkish','casual','goth','turkish'][id%5],x:candidate.point[0],y:candidate.point[1],height:candidate.height,heading:candidate.heading,state:'idle',remaining:0,phase:0});
+      this.people.push({id,style:['goth','turkish-headscarf','casual','goth','turkish'][id%5],x:candidate.point[0],y:candidate.point[1],height:candidate.height,heading:candidate.heading,state:'idle',remaining:0,phase:0});
       if(this.people.length>=Math.min(24,Math.round(20 * this.density)))break;
     }
   }

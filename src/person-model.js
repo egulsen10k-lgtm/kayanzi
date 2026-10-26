@@ -1,14 +1,15 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
-export const PERSON_STYLES = Object.freeze(['casual', 'goth', 'turkish', 'turkish-sunroof']);
+export const PERSON_STYLES = Object.freeze(['casual', 'goth', 'turkish', 'turkish-headscarf', 'turkish-sunroof']);
 
 const STYLE_PALETTES = {
-  casual: { shirt:'#d38a43', trousers:'#273343', skin:'#e4b99a', hair:'#e5bd62', shoes:'#f1eae0', eyes:'#427b83', brows:'#826138', lips:'#bb7774', liner:'#705a51', metal:'#d3a65a', trim:'#f5e7d4' },
-  goth: { shirt:'#211f2b', trousers:'#191923', skin:'#dcc1b6', hair:'#15151c', shoes:'#15151b', eyes:'#697d88', brows:'#262029', lips:'#723c59', liner:'#18151d', metal:'#aab1bd', trim:'#554b64' },
-  turkish: { shirt:'#aa313a', trousers:'#252c3b', skin:'#c99575', hair:'#34221e', shoes:'#e8d4ba', eyes:'#604633', brows:'#3f2822', lips:'#ae5555', liner:'#3b2a29', metal:'#d4af62', trim:'#e5ba83' },
-  'turkish-sunroof': { shirt:'#edebe8', trousers:'#31384b', skin:'#c99575', hair:'#34221e', shoes:'#e8d4ba', eyes:'#604633', brows:'#3f2822', lips:'#ae5555', liner:'#3b2a29', metal:'#d4af62', trim:'#b53647' },
-  driver: { shirt:'#d38a43', trousers:'#273343', skin:'#d9af90', hair:'#302824', shoes:'#172027', eyes:'#427b83', brows:'#46352b', lips:'#a8746a', liner:'#604d3f', metal:'#d9af90', trim:'#e5e1d9' },
+  casual: { shirt:'#d38a43', trousers:'#273343', skin:'#e4b99a', hair:'#e5bd62', shoes:'#f1eae0', eyes:'#427b83', brows:'#826138', lips:'#bb7774', liner:'#705a51', metal:'#d3a65a', trim:'#f5e7d4', scarf:'#252127' },
+  goth: { shirt:'#211f2b', trousers:'#191923', skin:'#dcc1b6', hair:'#15151c', shoes:'#15151b', eyes:'#697d88', brows:'#262029', lips:'#723c59', liner:'#18151d', metal:'#aab1bd', trim:'#554b64', scarf:'#252127' },
+  turkish: { shirt:'#aa313a', trousers:'#252c3b', skin:'#c99575', hair:'#34221e', shoes:'#e8d4ba', eyes:'#604633', brows:'#3f2822', lips:'#ae5555', liner:'#3b2a29', metal:'#d4af62', trim:'#e5ba83', scarf:'#252127' },
+  'turkish-headscarf': { shirt:'#f1efec', trousers:'#31384b', skin:'#efc5a9', hair:'#34221e', shoes:'#e8d4ba', eyes:'#604633', brows:'#4a322a', lips:'#ad6661', liner:'#3b2a29', metal:'#d4af62', trim:'#eee8e0', scarf:'#252127' },
+  'turkish-sunroof': { shirt:'#f1efec', trousers:'#31384b', skin:'#efc5a9', hair:'#34221e', shoes:'#e8d4ba', eyes:'#604633', brows:'#4a322a', lips:'#ad6661', liner:'#3b2a29', metal:'#d4af62', trim:'#eee8e0', scarf:'#252127' },
+  driver: { shirt:'#d38a43', trousers:'#273343', skin:'#d9af90', hair:'#302824', shoes:'#172027', eyes:'#427b83', brows:'#46352b', lips:'#a8746a', liner:'#604d3f', metal:'#d9af90', trim:'#e5e1d9', scarf:'#252127' },
 };
 
 // Forward is +Z. Standing people use a ground-level origin; seated people use
@@ -17,12 +18,13 @@ export function createPerson({ color, seated = false, female = true, style = 'ca
   const person = new THREE.Group();
   person.name = 'person';
   const selectedStyle = female && STYLE_PALETTES[style] && style !== 'driver' ? style : female ? 'casual' : 'driver';
+  const wearsHeadscarf = selectedStyle === 'turkish-headscarf' || selectedStyle === 'turkish-sunroof';
   const palette = { ...STYLE_PALETTES[selectedStyle], ...(color ? { shirt: color } : {}) };
   const mat = (key, roughness = .9) => new THREE.MeshStandardMaterial({ color:palette[key], roughness });
   const shirt = mat('shirt'), trousers = mat('trousers', 1), skin = mat('skin');
   const hair = mat('hair', 1), shoes = mat('shoes', .85), eyes = mat('eyes', .6);
   const brows = mat('brows'), lips = mat('lips'), liner = mat('liner');
-  const metal = mat('metal', .4), trim = mat('trim');
+  const metal = mat('metal', .4), trim = mat('trim'), scarf = mat('scarf', 1);
   const softBox = (x,y,z) => new RoundedBoxGeometry(x,y,z,2,Math.min(.035,x/4,y/4,z/4));
   function part(name, geometry, material, x, y, z, parent = person) {
     const mesh = new THREE.Mesh(geometry, material);
@@ -56,13 +58,29 @@ export function createPerson({ color, seated = false, female = true, style = 'ca
     if(selectedStyle.startsWith('turkish')) backHair.scale.set(1.1,1.14,1);
     const fringe=part('fringe',softBox(.22,.055,.06),hair,0,headY+.118,.105);
     fringe.rotation.z=selectedStyle==='goth' ? -.19 : .12;
+    if (wearsHeadscarf) {cap.scale.setScalar(0);backHair.scale.setScalar(0);fringe.scale.setScalar(0);}
     for (const side of [-1,1]) {
       const lock=part('face-framing-hair',new THREE.SphereGeometry(1,8,8),hair,side*.135,headY-.06,-.005);
       lock.scale.set(selectedStyle.startsWith('turkish') ? .056 : .043,selectedStyle==='goth' ? .27 : .23,.065);
       lock.rotation.z=side*(selectedStyle.startsWith('turkish') ? .23 : .12);
       const hoop=part('earring',new THREE.TorusGeometry(.024,.005,4,8),metal,side*.148,headY-.09,.055);
       hoop.rotation.y=side*.45;
+      if (wearsHeadscarf) {lock.scale.setScalar(0);hoop.scale.setScalar(0);}
     }
+    const scarfPart=(name,geometry,x,y,z)=>{
+      const mesh=part(name,geometry,scarf,x,y,z);
+      if(!wearsHeadscarf)mesh.scale.setScalar(0);
+      return mesh;
+    };
+    const crown=scarfPart('scarf-crown',new THREE.SphereGeometry(.196,16,10,0,Math.PI*2,0,Math.PI*.55),0,headY+.035,-.01);
+    if(wearsHeadscarf)crown.scale.set(.96,1.08,1);
+    scarfPart('scarf-back',softBox(.37,.48,.14),0,headY-.18,-.14);
+    for(const side of [-1,1]) {
+      const panel=scarfPart('scarf-side',softBox(.085,.37,.13),side*.16,headY-.125,.055);
+      panel.rotation.z=side*.12;
+    }
+    const drape=scarfPart('scarf-drape',softBox(.39,.18,.13),-.025,headY-.38,.145);
+    drape.rotation.z=-.15;
   } else part('hair',softBox(.29,.10,.28),hair,0,headY+.16,-.015);
   part('nose',new THREE.SphereGeometry(.026,6,6),skin,0,headY-.018,.166);
   part('smile',softBox(.058,.012,.014),lips,0,headY-.072,.154);

@@ -236,7 +236,7 @@ export function createCarModel(rawModelType = 'm3', colorHex = '#1c3fa8') {
   sunroofRider.name = 'sunroof-rider';
   sunroofRider.visible = false;
   sunroofRider.position.set(-.14, p.height - .13, roofCenter);
-  const riderPerson = createPerson({ color: '#c83d48', seated: true, female: true, style: 'turkish-sunroof' });
+  const riderPerson = createPerson({ seated: true, female: true, style: 'turkish-sunroof' });
   riderPerson.name = 'sunroof-rider-person';
   sunroofRider.add(riderPerson);
   group.add(sunroofRider);

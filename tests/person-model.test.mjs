@@ -17,7 +17,7 @@ test('boarded passengers retain blonde appearance while driver stays visible',()
  for(let i=0;i<4;i++) {const p=group.getObjectByName(`passenger-${i}`);assert.equal(p.userData.appearance,'adult-blonde-woman');assert.equal(p.visible,false);}
 });
 test('adult appearance variants keep the same instancing topology and expose tint colors',()=>{
- const variants=['casual','goth','turkish','turkish-sunroof'].map(style=>createPerson({style}));
+ const variants=['casual','goth','turkish','turkish-headscarf','turkish-sunroof'].map(style=>createPerson({style}));
  const meshNames=person=>{const names=[];person.traverse(o=>{if(o.isMesh)names.push(o.name);});return names;};
  for(const person of variants) {
    assert.deepEqual(meshNames(person),meshNames(variants[0]));
@@ -26,7 +26,15 @@ test('adult appearance variants keep the same instancing topology and expose tin
  }
  assert.notEqual(variants[1].userData.partColors['long-blonde-hair'],variants[0].userData.partColors['long-blonde-hair']);
  assert.notEqual(variants[2].userData.partColors.head,variants[0].userData.partColors.head);
- assert.equal(variants[3].userData.style,'turkish-sunroof');
+ for(const person of variants.slice(3)) {
+   assert.ok(person.getObjectByName('scarf-crown').scale.x>0);
+   assert.ok(person.getObjectByName('scarf-drape').scale.x>0);
+   assert.equal(person.getObjectByName('long-blonde-hair').scale.x,0);
+   assert.equal(person.userData.partColors.shirt,'#f1efec');
+   assert.equal(person.userData.partColors['scarf-crown'],'#252127');
+ }
+ assert.equal(variants[4].userData.style,'turkish-sunroof');
+ assert.equal(variants[0].getObjectByName('scarf-crown').scale.x,0);
 });
 
 test('sunroof rider uses a real roof opening and appears only with a passenger at safe speed',async()=>{
@@ -37,6 +45,7 @@ test('sunroof rider uses a real roof opening and appears only with a passenger a
  const rider=group.getObjectByName('sunroof-rider');
  assert.equal(rider.visible,false);
  assert.equal(rider.getObjectByName('sunroof-rider-person').userData.style,'turkish-sunroof');
+ assert.ok(rider.getObjectByName('scarf-crown').scale.x>0);
  const view=new PedestrianView(new THREE.Scene());
  const sim={network:null,people:[],passengers:1};
  const car={lat:0,lng:0,speed:35};
@@ -50,7 +59,7 @@ test('sunroof rider uses a real roof opening and appears only with a passenger a
  assert.equal(group.getObjectByName('passenger-0').visible,false);
 });
 
-test('instanced NPC colors switch between goth and Turkish looks without new draw calls',async()=>{
+test('instanced NPCs switch between goth and headscarf geometry without new draw calls',async()=>{
  const {PedestrianView}=await import('../src/pedestrian-view.js');
  const view=new PedestrianView(new THREE.Scene());
  const {group}=createCarModel('M3 Competition');
@@ -60,8 +69,11 @@ test('instanced NPC colors switch between goth and Turkish looks without new dra
  const shirtIndex=view.parts[0].findIndex(part=>part.name==='shirt');
  view.update(sim,car,group);
  const before=new THREE.Color();view.batches[shirtIndex].getColorAt(0,before);
- npc.style='turkish';view.update(sim,car,group);
+ npc.style='turkish-headscarf';view.update(sim,car,group);
  const after=new THREE.Color();view.batches[shirtIndex].getColorAt(0,after);
  assert.notEqual(before.getHex(),after.getHex());
+ assert.equal(view.models[0].userData.style,'turkish-headscarf');
+ assert.ok(view.models[0].getObjectByName('scarf-crown').scale.x>0);
+ assert.equal(view.models[0].getObjectByName('long-blonde-hair').scale.x,0);
  assert.equal(view.batches[shirtIndex].count,24);
 });

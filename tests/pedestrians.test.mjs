@@ -95,7 +95,7 @@ test('a horn-chasing pedestrian can still be struck by a moving car',()=>{
  assert.equal(sim.people[0].state,'ragdoll');
 });
 
-test('larger street crowds include goth and Turkish style NPCs',()=>{
+test('larger street crowds include goth and Turkish headscarf NPCs',()=>{
  const roads=Array.from({length:6},(_,i)=>({width:8,highway:'residential',points:[[i*15,-100],[i*15,100]]}));
  const city={...network,roads},c={...car(),roadNetwork:city},sim=new Pedestrians();
  sim.reset(city,c,2);
@@ -103,4 +103,5 @@ test('larger street crowds include goth and Turkish style NPCs',()=>{
  assert.ok(sim.people.length<=24);
  assert.ok(sim.people.some(p=>p.style==='goth'));
  assert.ok(sim.people.some(p=>p.style==='turkish'));
+ assert.ok(sim.people.some(p=>p.style==='turkish-headscarf'));
 });
