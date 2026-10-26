@@ -16,6 +16,7 @@ import { setWorldRoute } from './world-data.js';
 import { RunnerGame } from './runner-game.js';
 import { createRobotModel, RobotRunnerView } from './robot-runner-view.js';
 import { animateRobot } from './robot-animation.js';
+import { RobotJump } from './robot-jump.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   const peerId = 'driver-' + Math.random().toString(36).substring(2, 8);
@@ -340,7 +341,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   const driveInput = bindDrivingInput({ physics, buttons: document.querySelectorAll('[data-drive-key]'),
-    onHornStart: startHorn, onHornEnd: stopHorn });
+    onHornStart: startHorn, onHornEnd: stopHorn,
+    isRobotMode: () => robotMode && !runnerActive,
+    onRobotJump: () => robotJump.jump() });
 
   const dynamicsToggle = document.getElementById('drive-dynamics-toggle');
   const dynamicsPanel = document.getElementById('drive-dynamics-panel');
@@ -663,14 +666,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const worldRobot=createRobotModel(visualizer.currentColor);
   worldRobot.visible=false;
   visualizer.scene.add(worldRobot);
+  const robotJump=new RobotJump();
+  const spaceButton=document.querySelector('[data-drive-key="Space"]');
   let robotMode=false,runnerActive=false,runnerGame=null,runnerView=null,hintTimer=0;
   const setRobotMode=enabled=>{
     robotMode=enabled;
+    robotJump.reset();
     worldRobot.visible=enabled;
     visualizer.carGroup.visible=!enabled;
     transformButton.setAttribute('aria-pressed',String(enabled));
     transformButton.textContent=enabled?'⚙ Transformers · Robot':'⚙ Transformers · Car';
     runnerEntry.hidden=!enabled;
+    spaceButton.textContent=enabled?'ZIPLA':'EL FRENİ';
+    spaceButton.setAttribute('aria-label',enabled?'Jump robot':'Handbrake');
     physics.speed=0;
     driveInput.clear();
   };
@@ -687,6 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   runnerEntry.addEventListener('click',()=>{
     if(!robotMode||visualizer.previewActive)return;
+    robotJump.reset();
     driveInput.clear();releaseNitro();stopHorn();physics.speed=0;
     setSidebarOpen(false);setSettingsOpen(false);setDynamicsOpen(false);
     runnerGame=new RunnerGame();
@@ -699,6 +708,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const exitRunner=()=>{
     runnerActive=false;runnerUi.hidden=true;mainViewport.classList.remove('runner-active');
+    robotJump.reset();
     driveInput.clear();lastTime=performance.now();
   };
   document.getElementById('runner-exit').addEventListener('click',exitRunner);
@@ -768,9 +778,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const passengerStatus = document.getElementById('passenger-status');
     if (passengerStatus.textContent !== pedestrians.message) passengerStatus.textContent = pedestrians.message;
     worldRobot.visible=robotMode&&!visualizer.previewActive;
-    worldRobot.position.set(0,physics.roadHeight??.08,0);
+    if(robotMode)robotJump.update(dt);
+    worldRobot.position.set(0,(physics.roadHeight??.08)+robotJump.height,0);
     worldRobot.rotation.y=Math.PI-(physics.heading+(physics.driftAngle??0));
-    if(robotMode)animateRobot(worldRobot,{dt,speed:Math.abs(physics.speed)/3.6,grounded:true,lateral:physics.steering??0});
+    if(robotMode)animateRobot(worldRobot,{dt,speed:Math.abs(physics.speed)/3.6,grounded:robotJump.height<=0,verticalVelocity:robotJump.velocity,lateral:physics.steering??0});
+    visualizer.cameraLift=robotMode?robotJump.height:0;
     visualizer.carGroup.visible=!robotMode;
     visualizer.update(physics, dt);
 

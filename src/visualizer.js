@@ -382,8 +382,9 @@ export class CarVisualizer3D {
       target.set(-Math.sin(heading)*6,2.1,Math.cos(heading)*6);
       lookAt.set(Math.sin(heading)*8,1,-Math.cos(heading)*8);
     }
-    target.y += roadHeight;
-    lookAt.y += roadHeight;
+    const cameraLift=Math.max(0,Math.min(2,Number(this.cameraLift)||0));
+    target.y += roadHeight + cameraLift*.7;
+    lookAt.y += roadHeight + cameraLift*.9;
     this.camera.position.lerp(target, 1 - Math.exp(-6 * dt));
     if (this.cameraMode === 'cockpit' || this.cameraMode === 'hood') {
       this.camera.position.copy(target);

@@ -1,5 +1,5 @@
 // Keep keyboard and individual fingers independent: releasing one cannot cancel another.
-export function bindDrivingInput({ physics, buttons, onHorn = () => {}, onHornStart = onHorn, onHornEnd = () => {}, win = window, doc = document }) {
+export function bindDrivingInput({ physics, buttons, onHorn = () => {}, onHornStart = onHorn, onHornEnd = () => {}, isRobotMode = () => false, onRobotJump = () => {}, win = window, doc = document }) {
   const codes = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space']);
   const keyboard = new Set();
   const held = new Map();
@@ -21,6 +21,12 @@ export function bindDrivingInput({ physics, buttons, onHorn = () => {}, onHornSt
   win.addEventListener('keydown', e => {
     const active = doc.activeElement;
     if (active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)) return;
+    if(e.code==='Space'&&isRobotMode()) {
+      e.preventDefault();
+      physics.keys.Space=false;
+      if(!e.repeat)onRobotJump();
+      return;
+    }
     if (codes.has(e.code)) { e.preventDefault(); keyboard.add(e.code); sync(e.code); }
     if (e.code === 'KeyH' && !e.repeat) onHornStart();
   });
@@ -32,6 +38,12 @@ export function bindDrivingInput({ physics, buttons, onHorn = () => {}, onHornSt
     const code = button.getAttribute('data-drive-key');
     button.addEventListener('pointerdown', e => {
       if (e.button !== 0 || [...held.values()].some(v => v.button === button)) return;
+      if(code==='Space'&&isRobotMode()) {
+        e.preventDefault();
+        physics.keys.Space=false;
+        onRobotJump();
+        return;
+      }
       e.preventDefault();
       button.setPointerCapture(e.pointerId);
       held.set(e.pointerId, { button, code });
