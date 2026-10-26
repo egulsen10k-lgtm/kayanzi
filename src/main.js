@@ -13,6 +13,8 @@ import { nearestRoadSpawn, footprintOnRoad } from './road-safety.js';
 import { projectCoordinate } from './road-network.js';
 import { createRouteGuide } from './route-guide.js';
 import { setWorldRoute } from './world-data.js';
+import { RunnerGame } from './runner-game.js';
+import { createRobotModel, RobotRunnerView } from './robot-runner-view.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   const peerId = 'driver-' + Math.random().toString(36).substring(2, 8);
@@ -21,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const canvasContainer = document.getElementById('render-canvas-container');
   const visualizer = new CarVisualizer3D(canvasContainer);
   const pedestrians = new Pedestrians();
-  const trafficManager = new TrafficManager(visualizer.scene);
+  const trafficManager = new TrafficManager(visualizer.trafficGroup ?? visualizer.scene);
 
   const pedestrianView = new PedestrianView(visualizer.scene);
   const startHorn = () => {
@@ -336,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
     })
   });
 
-  bindDrivingInput({ physics, buttons: document.querySelectorAll('[data-drive-key]'),
+  const driveInput = bindDrivingInput({ physics, buttons: document.querySelectorAll('[data-drive-key]'),
     onHornStart: startHorn, onHornEnd: stopHorn });
 
   const dynamicsToggle = document.getElementById('drive-dynamics-toggle');
@@ -620,6 +622,107 @@ document.addEventListener('DOMContentLoaded', () => {
   const hudGear = document.getElementById('hud-gear');
   const hudRpmBar = document.getElementById('hud-rpm-bar');
 
+  const mainViewport = document.getElementById('main-viewport');
+  const modeStyle = document.createElement('style');
+  modeStyle.textContent = `
+    #transform-controls{position:absolute;right:12px;top:158px;z-index:18;display:grid;gap:7px;width:146px}
+    #transform-controls button,#runner-ui button{border:1px solid #75dce9;border-radius:12px;background:#102634e8;color:white;font:700 12px system-ui;padding:11px 9px;cursor:pointer;box-shadow:0 6px 18px #0007;touch-action:manipulation}
+    #transform-controls button[aria-pressed="true"]{background:#136384;border-color:#a5f5ff}
+    #transform-controls button[hidden]{display:none}
+    #runner-ui[hidden]{display:none}
+    #main-viewport.runner-active > :not(#render-canvas-container):not(#runner-ui){display:none!important}
+    #runner-ui{position:absolute;inset:0;z-index:30;pointer-events:none;color:white;font-family:system-ui}
+    #runner-ui button{pointer-events:auto;min-height:48px}
+    .runner-top{display:flex;align-items:start;justify-content:space-between;gap:10px;padding:max(12px,env(safe-area-inset-top)) 12px 0}
+    .runner-stats{background:#102634dc;border:1px solid #75dce9;border-radius:12px;padding:10px 13px;font-weight:800;font-size:14px;line-height:1.5}
+    .runner-hint{position:absolute;top:24%;left:50%;transform:translateX(-50%);width:min(90vw,390px);text-align:center;background:#102634db;border:1px solid #75dce9;border-radius:14px;padding:14px;font-weight:700;font-size:15px}
+    .runner-hint[hidden]{display:none}
+    .runner-controls{position:absolute;bottom:calc(20px + env(safe-area-inset-bottom));left:0;right:0;display:flex;justify-content:center;gap:14px;padding:0 12px}
+    .runner-controls button{min-width:76px;min-height:68px!important;font-size:17px!important;background:#0c5068e8!important}
+    @media(max-width:800px){#transform-controls{top:168px;right:10px;width:112px}#transform-controls button{font-size:11px;padding:8px 5px}.runner-controls button{flex:1;max-width:120px}}
+    @media(max-height:500px){#transform-controls{top:108px}.runner-hint{top:17%}.runner-controls{bottom:8px}.runner-controls button{min-height:52px!important}}
+  `;
+  document.head.appendChild(modeStyle);
+  mainViewport.insertAdjacentHTML('beforeend', `
+    <div id="transform-controls" role="group" aria-label="Transformers mode">
+      <button id="transform-button" type="button" aria-pressed="false">⚙ Transformers · Car</button>
+      <button id="runner-entry" type="button" hidden>Truck Run ↗</button>
+    </div>
+    <div id="runner-ui" hidden>
+      <div class="runner-top"><div class="runner-stats" aria-live="polite"><div>TRUCK RUN · ROBOT</div><div id="runner-score">0 m · 0 rescued</div><div id="runner-lives">♥ ♥ ♥</div></div><button id="runner-exit" type="button">↩ Return to world</button></div>
+      <div class="runner-hint" id="runner-hint">Jump onto truck roofs and meet the blonde adults.<br>← → change lanes · Space / ↑ jump</div>
+      <div class="runner-controls" role="group" aria-label="Truck run controls"><button type="button" data-runner-action="left" aria-label="Move left">←</button><button type="button" data-runner-action="jump" aria-label="Jump">JUMP</button><button type="button" data-runner-action="right" aria-label="Move right">→</button></div>
+    </div>`);
+  const transformButton=document.getElementById('transform-button');
+  const runnerEntry=document.getElementById('runner-entry');
+  const runnerUi=document.getElementById('runner-ui');
+  const runnerHint=document.getElementById('runner-hint');
+  const runnerScore=document.getElementById('runner-score');
+  const runnerLives=document.getElementById('runner-lives');
+  const worldRobot=createRobotModel(visualizer.currentColor);
+  worldRobot.visible=false;
+  visualizer.scene.add(worldRobot);
+  let robotMode=false,runnerActive=false,runnerGame=null,runnerView=null,hintTimer=0;
+  const setRobotMode=enabled=>{
+    robotMode=enabled;
+    worldRobot.visible=enabled;
+    visualizer.carGroup.visible=!enabled;
+    transformButton.setAttribute('aria-pressed',String(enabled));
+    transformButton.textContent=enabled?'⚙ Transformers · Robot':'⚙ Transformers · Car';
+    runnerEntry.hidden=!enabled;
+    physics.speed=0;
+    driveInput.clear();
+  };
+  transformButton.addEventListener('click',()=>{
+    if(visualizer.previewActive)return;
+    setRobotMode(!robotMode);
+  });
+  const runnerAction=action=>{
+    if(!runnerActive)return;
+    if(runnerGame.over){runnerGame.reset();runnerHint.hidden=true;return;}
+    if(action==='left')runnerGame.move(-1);
+    if(action==='right')runnerGame.move(1);
+    if(action==='jump')runnerGame.jump();
+  };
+  runnerEntry.addEventListener('click',()=>{
+    if(!robotMode||visualizer.previewActive)return;
+    driveInput.clear();releaseNitro();stopHorn();physics.speed=0;
+    setSidebarOpen(false);setSettingsOpen(false);setDynamicsOpen(false);
+    runnerGame=new RunnerGame();
+    runnerView??=new RobotRunnerView(visualizer.renderer,canvasContainer,visualizer.currentColor);
+    runnerView.reset();
+    runnerActive=true;runnerUi.hidden=false;mainViewport.classList.add('runner-active');
+    runnerHint.hidden=false;runnerHint.textContent='Jump onto truck roofs and meet the blonde adults. ← → change lanes · Space / ↑ jump';
+    hintTimer=3.5;
+    audio.update(800,0,0,false,{model:physics.bmwModel,gear:1});
+  });
+  const exitRunner=()=>{
+    runnerActive=false;runnerUi.hidden=true;mainViewport.classList.remove('runner-active');
+    driveInput.clear();lastTime=performance.now();
+  };
+  document.getElementById('runner-exit').addEventListener('click',exitRunner);
+  document.querySelectorAll('[data-runner-action]').forEach(button=>button.addEventListener('pointerdown',event=>{
+    event.preventDefault();runnerAction(button.dataset.runnerAction);
+  }));
+  window.addEventListener('keydown',event=>{
+    if(!runnerActive)return;
+    if(event.code==='Escape'){event.preventDefault();event.stopImmediatePropagation();exitRunner();return;}
+    const action=event.code==='ArrowLeft'||event.code==='KeyA'?'left':event.code==='ArrowRight'||event.code==='KeyD'?'right':event.code==='Space'||event.code==='ArrowUp'||event.code==='KeyW'?'jump':null;
+    if(action){event.preventDefault();event.stopImmediatePropagation();if(!event.repeat)runnerAction(action);}
+  },true);
+  window.addEventListener('keyup',event=>{
+    if(runnerActive&&['ArrowLeft','ArrowRight','ArrowUp','KeyA','KeyD','KeyW','Space'].includes(event.code)){event.preventDefault();event.stopImmediatePropagation();}
+  },true);
+  let swipeStart=null;
+  visualizer.renderer.domElement.addEventListener('pointerdown',event=>{if(runnerActive)swipeStart={x:event.clientX,y:event.clientY};});
+  visualizer.renderer.domElement.addEventListener('pointerup',event=>{
+    if(!runnerActive||!swipeStart)return;
+    const dx=event.clientX-swipeStart.x,dy=event.clientY-swipeStart.y;
+    if(Math.abs(dx)>35&&Math.abs(dx)>Math.abs(dy))runnerAction(dx<0?'left':'right');
+    else if(dy< -30)runnerAction('jump');
+    swipeStart=null;
+  });
+
   let lastTime = performance.now();
   let syncTimer = 0;
   let routeTimer = 0;
@@ -627,6 +730,17 @@ document.addEventListener('DOMContentLoaded', () => {
   function gameLoop(currentTime) {
     const dt = Math.min(0.1, (currentTime - lastTime) / 1000);
     lastTime = currentTime;
+
+    if(runnerActive){
+      runnerGame.update(dt);
+      runnerView.update(runnerGame,dt);
+      runnerScore.textContent=`${Math.floor(runnerGame.distance)} m · ${runnerGame.collected} met`;
+      runnerLives.textContent='♥ '.repeat(runnerGame.lives).trim()||'No hearts';
+      if(runnerGame.over){runnerHint.hidden=false;runnerHint.textContent='Run over · tap a control to restart';}
+      else if(hintTimer>0){hintTimer-=dt;if(hintTimer<=0)runnerHint.hidden=true;}
+      requestAnimationFrame(gameLoop);
+      return;
+    }
 
     if (!visualizer.previewActive) physics.update(dt);
     if (physics.impactEvent && physics.impactEvent.timestamp) {
@@ -652,6 +766,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (passengerHud.textContent !== occupancy) passengerHud.textContent = occupancy;
     const passengerStatus = document.getElementById('passenger-status');
     if (passengerStatus.textContent !== pedestrians.message) passengerStatus.textContent = pedestrians.message;
+    worldRobot.visible=robotMode&&!visualizer.previewActive;
+    worldRobot.position.set(0,physics.roadHeight??.08,0);
+    worldRobot.rotation.y=Math.PI-(physics.heading+(physics.driftAngle??0));
+    if(robotMode){
+      const stride=Math.sin(currentTime*.008)*Math.min(.45,Math.abs(physics.speed)*.012);
+      const limbs=worldRobot.userData.limbs;
+      limbs.leftArm.rotation.x=stride;limbs.rightArm.rotation.x=-stride;
+      limbs.leftLeg.rotation.x=-stride;limbs.rightLeg.rotation.x=stride;
+    }
+    visualizer.carGroup.visible=!robotMode;
     visualizer.update(physics, dt);
 
     const headingDeg = (physics.heading * 180) / Math.PI;
