@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createPerson } from './person-model.js';
 import { RUNNER_LANES, TRUCK_ROOF_HEIGHT } from './runner-game.js';
+import { animateRobot } from './robot-animation.js';
 
 const paint = (color, metalness = .2) => new THREE.MeshStandardMaterial({ color, metalness, roughness:.45 });
 
@@ -9,31 +10,42 @@ export function createRobotModel(color = '#1c3fa8') {
   robot.name = 'transformer-robot';
   const body = paint(color,.65), steel = paint('#a9bfce',.8), dark = paint('#172432',.55);
   const cyan = new THREE.MeshStandardMaterial({color:'#67eaff',emissive:'#15a5cc',emissiveIntensity:1.5});
+  const motion = new THREE.Group();motion.name='robot-motion';robot.add(motion);
+  const torso = new THREE.Group();torso.name='robot-torso';torso.position.y=1.25;motion.add(torso);
   function box(parent,name,w,h,d,x,y,z,material) {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);
     mesh.name=name;mesh.position.set(x,y,z);mesh.castShadow=true;parent.add(mesh);return mesh;
   }
-  box(robot,'waist',.85,.35,.48,0,1.25,0,dark);
-  box(robot,'chest',1.18,.82,.58,0,1.92,0,body);
-  box(robot,'windshield-chest',.82,.28,.035,0,2.06,.31,dark);
-  box(robot,'chest-light',.34,.08,.04,0,1.81,.33,cyan);
-  box(robot,'neck',.25,.18,.24,0,2.43,0,steel);
-  box(robot,'head',.48,.47,.4,0,2.72,0,steel);
-  box(robot,'helmet',.6,.16,.46,0,2.98,-.02,body);
+  box(motion,'waist',.85,.35,.48,0,1.25,0,dark);
+  box(torso,'chest',1.18,.82,.58,0,.67,0,body);
+  box(torso,'windshield-chest',.82,.28,.035,0,.81,.31,dark);
+  box(torso,'chest-light',.34,.08,.04,0,.56,.33,cyan);
+  const head=new THREE.Group();head.name='robot-head';head.position.y=1.18;torso.add(head);
+  box(head,'neck',.25,.18,.24,0,0,0,steel);
+  box(head,'head',.48,.47,.4,0,.29,0,steel);
+  box(head,'helmet',.6,.16,.46,0,.55,-.02,body);
+  const rig={motion,torso,head};
   for(const side of [-1,1]) {
-    box(robot,'eye',.16,.075,.035,side*.12,2.76,.217,cyan);
-    const arm = new THREE.Group();arm.name=side<0?'robot-left-arm':'robot-right-arm';arm.position.set(side*.82,2.28,0);robot.add(arm);
+    const label=side<0?'left':'right';
+    box(head,'eye',.16,.075,.035,side*.12,.33,.217,cyan);
+    const arm = new THREE.Group();arm.name=`robot-${label}-arm`;arm.position.set(side*.82,1.03,0);torso.add(arm);
     box(arm,'shoulder',.38,.38,.45,0,0,0,body);
-    box(arm,'forearm',.3,.72,.32,side*.04,-.53,.02,steel);
-    box(arm,'fist',.32,.24,.32,side*.04,-.98,.02,dark);
-    const leg = new THREE.Group();leg.name=side<0?'robot-left-leg':'robot-right-leg';leg.position.set(side*.31,1.16,0);robot.add(leg);
-    box(leg,'thigh',.39,.72,.46,0,-.34,0,body);
-    box(leg,'shin',.4,.6,.48,0,-.88,.04,steel);
-    box(leg,'foot',.48,.22,.7,0,-1.16,.16,dark);
+    box(arm,'upper-arm',.3,.38,.35,side*.03,-.35,0,body);
+    const elbow=new THREE.Group();elbow.name=`robot-${label}-elbow`;elbow.position.set(side*.03,-.55,.02);arm.add(elbow);
+    box(elbow,'forearm',.3,.54,.32,0,-.26,0,steel);
+    box(elbow,'fist',.32,.24,.32,0,-.63,0,dark);
+    const leg = new THREE.Group();leg.name=`robot-${label}-leg`;leg.position.set(side*.31,1.16,0);motion.add(leg);
+    box(leg,'thigh',.39,.68,.46,0,-.32,0,body);
+    const knee=new THREE.Group();knee.name=`robot-${label}-knee`;knee.position.y=-.66;leg.add(knee);
+    box(knee,'shin',.4,.54,.48,0,-.26,.04,steel);
+    const ankle=new THREE.Group();ankle.name=`robot-${label}-ankle`;ankle.position.y=-.39;knee.add(ankle);
+    box(ankle,'foot',.48,.22,.7,0,-.10,.16,dark);
     const wheel = new THREE.Mesh(new THREE.CylinderGeometry(.23,.23,.13,16),dark);
-    wheel.rotation.z=Math.PI/2;wheel.position.set(side*.9,1.25,-.24);wheel.castShadow=true;wheel.name='folded-wheel';robot.add(wheel);
+    wheel.rotation.z=Math.PI/2;wheel.position.set(side*.9,1.25,-.24);wheel.castShadow=true;wheel.name='folded-wheel';motion.add(wheel);
+    rig[`${label}Arm`]=arm;rig[`${label}Elbow`]=elbow;
+    rig[`${label}Leg`]=leg;rig[`${label}Knee`]=knee;rig[`${label}Ankle`]=ankle;
   }
-  robot.userData.limbs={leftArm:robot.getObjectByName('robot-left-arm'),rightArm:robot.getObjectByName('robot-right-arm'),leftLeg:robot.getObjectByName('robot-left-leg'),rightLeg:robot.getObjectByName('robot-right-leg')};
+  robot.userData.rig=rig;
   return robot;
 }
 
@@ -100,7 +112,7 @@ export class RobotRunnerView {
     for(const group of this.trucks.values())disposeGroup(group);
     for(const group of this.pickups.values())disposeGroup(group);
     this.trucks.clear();this.pickups.clear();
-    this.camera.position.set(0,6.7,13);
+    this.camera.position.set(0,5.7,10.5);
   }
 
   update(game,dt) {
@@ -119,14 +131,11 @@ export class RobotRunnerView {
     }
     this.robot.position.set(game.x,game.y,0);
     this.robot.visible=game.over||game.invulnerable<=0||Math.floor(game.invulnerable*10)%2===0;
-    const swing=game.y>.05 ? .25 : Math.sin(game.distance*.8)*.38;
-    const limbs=this.robot.userData.limbs;
-    limbs.leftArm.rotation.x=swing;limbs.rightArm.rotation.x=-swing;
-    limbs.leftLeg.rotation.x=-swing;limbs.rightLeg.rotation.x=swing;
+    animateRobot(this.robot,{dt,speed:game.over?0:Math.min(25,14+game.distance/500),grounded:game.y<=.03||Boolean(game.roof),verticalVelocity:game.vy,lateral:RUNNER_LANES[game.lane]-game.x});
     this.camera.aspect=this.container.clientWidth/Math.max(1,this.container.clientHeight);
     this.camera.updateProjectionMatrix();
-    this.camera.position.lerp(new THREE.Vector3(game.x*.35,6.7,13),Math.min(1,dt*5));
-    this.camera.lookAt(game.x*.45,1.4,-12);
+    this.camera.position.lerp(new THREE.Vector3(game.x*.35,5.7,10.5),Math.min(1,dt*5));
+    this.camera.lookAt(game.x*.45,1.4,-9);
     this.renderer.render(this.scene,this.camera);
   }
 }

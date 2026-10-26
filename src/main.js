@@ -15,6 +15,7 @@ import { createRouteGuide } from './route-guide.js';
 import { setWorldRoute } from './world-data.js';
 import { RunnerGame } from './runner-game.js';
 import { createRobotModel, RobotRunnerView } from './robot-runner-view.js';
+import { animateRobot } from './robot-animation.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   const peerId = 'driver-' + Math.random().toString(36).substring(2, 8);
@@ -769,12 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
     worldRobot.visible=robotMode&&!visualizer.previewActive;
     worldRobot.position.set(0,physics.roadHeight??.08,0);
     worldRobot.rotation.y=Math.PI-(physics.heading+(physics.driftAngle??0));
-    if(robotMode){
-      const stride=Math.sin(currentTime*.008)*Math.min(.45,Math.abs(physics.speed)*.012);
-      const limbs=worldRobot.userData.limbs;
-      limbs.leftArm.rotation.x=stride;limbs.rightArm.rotation.x=-stride;
-      limbs.leftLeg.rotation.x=-stride;limbs.rightLeg.rotation.x=stride;
-    }
+    if(robotMode)animateRobot(worldRobot,{dt,speed:Math.abs(physics.speed)/3.6,grounded:true,lateral:physics.steering??0});
     visualizer.carGroup.visible=!robotMode;
     visualizer.update(physics, dt);
 
