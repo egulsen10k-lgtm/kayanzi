@@ -54,7 +54,7 @@ test('overflow passengers require both 80 km/h and a steering reversal to fall',
  d.speed=50;d.heading=.25;wiggling.update(d,.1);assert.equal(wiggling.people[0].state,'clinging');
 });
 test('spawn budget is bounded and places people on ground streets only',()=>{
- const sim=new Pedestrians(),c=car();sim.update(c,.1);assert.ok(sim.people.length>0);assert.ok(sim.people.length<=16);
+ const sim=new Pedestrians(),c=car();sim.update(c,.1);assert.ok(sim.people.length>0);assert.ok(sim.people.length<=24);
  for(const p of sim.people)assert.ok(Math.abs(p.x)>4);
  sim.reset({...network,roads:[{...network.roads[0],bridge:true,elevations:[5,5]}]},c);assert.equal(sim.people.length,0);
 });
@@ -93,4 +93,14 @@ test('a horn-chasing pedestrian can still be struck by a moving car',()=>{
  const sim=new Pedestrians(),c=car();sim.network=network;sim.people=[person(1,0)];
  sim.horn(c);c.speed=35;sim.update(c,.1);
  assert.equal(sim.people[0].state,'ragdoll');
+});
+
+test('larger street crowds include goth and Turkish style NPCs',()=>{
+ const roads=Array.from({length:6},(_,i)=>({width:8,highway:'residential',points:[[i*15,-100],[i*15,100]]}));
+ const city={...network,roads},c={...car(),roadNetwork:city},sim=new Pedestrians();
+ sim.reset(city,c,2);
+ assert.ok(sim.people.length>16);
+ assert.ok(sim.people.length<=24);
+ assert.ok(sim.people.some(p=>p.style==='goth'));
+ assert.ok(sim.people.some(p=>p.style==='turkish'));
 });

@@ -3,17 +3,20 @@ import { createPerson } from './person-model.js';
 import { PedestrianRagdoll } from './pedestrian-ragdoll.js';
 import { roadSurfaceAt } from './road-safety.js';
 import { projectCoordinate } from './road-network.js';
-const colors=['#e9c9bd','#91b7cf','#b86476','#7eaa94','#f0e9dc','#ad9ac5'];
+const styles=['goth','turkish','casual','goth','turkish'];
 export class PedestrianView {
   constructor(scene) {
     this.group=new THREE.Group();this.group.name='pedestrians';scene.add(this.group);
     // One instanced draw per body part, rather than a draw for each pedestrian.
-    this.models=Array.from({length:16},()=>createPerson({color:'#ffffff'}));
+    this.models=Array.from({length:24},(_,i)=>createPerson({style:styles[i%styles.length]}));
+    this.styleColors=Object.fromEntries(['casual','goth','turkish'].map(style=>[style,createPerson({style}).userData.partColors]));
+    this.currentStyles=Array(24).fill(null);
     this.parts=this.models.map(model=>{const parts=[];model.traverse(o=>{if(o.isMesh)parts.push(o);});return parts;});
     this.batches=this.parts[0].map(part=>{
-      const batch=new THREE.InstancedMesh(part.geometry,part.material,16);
+      const material=part.material.clone();
+      material.color.set('#ffffff');
+      const batch=new THREE.InstancedMesh(part.geometry,material,24);
       batch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);batch.frustumCulled=false;batch.castShadow=true;
-      if(['shirt','sleeve'].includes(part.name))for(let i=0;i<16;i++)batch.setColorAt(i,new THREE.Color(colors[i%colors.length]));
       this.group.add(batch);return batch;
     });
     this.hiddenMatrix=new THREE.Matrix4().makeScale(0,0,0);
@@ -21,7 +24,7 @@ export class PedestrianView {
     this.bindParts=this.models.map((model,i)=>{model.updateMatrixWorld(true);return this.parts[i].map(part=>{
       let name='torso',parent=part;
       while(parent && parent!==model){if(parent.name==='left-arm')name='leftArm';if(parent.name==='right-arm')name='rightArm';if(parent.name==='left-leg')name='leftLeg';if(parent.name==='right-leg')name='rightLeg';parent=parent.parent;}
-      if(['head','nose','smile','eye','eyebrow','blonde-crown','long-blonde-hair','face-framing-hair','hair','neck'].includes(part.name))name='head';
+      if(['head','nose','smile','eye','eyebrow','eyeliner','earring','fringe','blonde-crown','long-blonde-hair','face-framing-hair','hair','neck'].includes(part.name))name='head';
       return {name,matrix:part.matrixWorld.clone()};
     });});
   }
@@ -32,6 +35,14 @@ export class PedestrianView {
     this.models.forEach((model,i)=>{
       const person=sim.people[i],visible=!!person&&person.state!=='boarded';
       if(visible){
+        const style=this.styleColors[person.style] ? person.style : 'casual';
+        if(this.currentStyles[i]!==style) {
+          this.batches.forEach((batch,j)=>{
+            batch.setColorAt(i,new THREE.Color(this.styleColors[style][this.parts[i][j].name]));
+            batch.instanceColor.needsUpdate=true;
+          });
+          this.currentStyles[i]=style;
+        }
         if(person.state==='ragdoll') {
           activeRagdolls.add(person);
           let ragdoll=this.ragdolls.get(person);
@@ -67,6 +78,12 @@ export class PedestrianView {
     });
     for(const [person,ragdoll] of this.ragdolls) if(!activeRagdolls.has(person)) {ragdoll.physics.dispose();this.ragdolls.delete(person);}
     this.batches.forEach(batch=>{batch.instanceMatrix.needsUpdate=true;});
-    for(let i=0;i<4;i++) {const passenger=carGroup.getObjectByName(`passenger-${i}`);if(passenger)passenger.visible=i<sim.passengers;}
+    const roofRider=carGroup.getObjectByName('sunroof-rider');
+    const riderOut=Boolean(roofRider && sim.passengers>0 && Math.abs(car.speed)<80);
+    if(roofRider) roofRider.visible=riderOut;
+    for(let i=0;i<4;i++) {
+      const passenger=carGroup.getObjectByName(`passenger-${i}`);
+      if(passenger) passenger.visible=i<sim.passengers && !(riderOut && i===0);
+    }
   }
 }

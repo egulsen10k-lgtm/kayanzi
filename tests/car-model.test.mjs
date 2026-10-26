@@ -49,7 +49,7 @@ test('supports distinct model silhouettes and full UI names (M3 Competition, M4 
 test('each car has a visible cabin, kidney grilles, lights and stable finite geometry', () => {
   for (const model of ['m3', 'm4', 'm5', 'i4']) {
     const { group, bodyMaterials, wheels } = createCarModel(model);
-    for (const name of ['glazed-cabin', 'roof', 'kidney-grille', 'headlamp-housing', 'tail-light', 'brake-caliper']) {
+    for (const name of ['glazed-cabin', 'sunroof-side-rail', 'sunroof-rider', 'kidney-grille', 'headlamp-housing', 'tail-light', 'brake-caliper']) {
       assert.ok(group.getObjectByName(name), `${model} has ${name}`);
     }
     assert.equal(group.userData.modelSource, 'original-procedural');

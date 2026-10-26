@@ -68,13 +68,37 @@ export function createCarModel(rawModelType = 'm3', colorHex = '#1c3fa8') {
     -.83,.83,-1.5, .83,.83,-1.5, .83,.83,1.04, -.83,.83,1.04,
     -.67,p.height,p.roofRear, .67,p.height,p.roofRear, .67,p.height,p.roofFront, -.67,p.height,p.roofFront
   ], 3));
-  cabin.setIndex([0,1,5,0,5,4, 1,2,6,1,6,5, 2,3,7,2,7,6, 3,0,4,3,4,7, 4,5,6,4,6,7]);
+  // Leave the top open; the separate roof frame below has a real aperture.
+  cabin.setIndex([0,1,5,0,5,4, 1,2,6,1,6,5, 2,3,7,2,7,6, 3,0,4,3,4,7]);
   for (let i = 0; i < cabin.index.count; i += 3) {
     const b = cabin.index.array[i + 1]; cabin.index.array[i + 1] = cabin.index.array[i + 2]; cabin.index.array[i + 2] = b;
   }
   cabin.computeVertexNormals();
   mesh(cabin, glass, 'glazed-cabin');
-  box('roof', 1.39, .055, p.roofFront - p.roofRear + .1, modelType === 'm4' ? black : paint, 0, p.height + .015, (p.roofRear + p.roofFront) / 2);
+  const roofLength = p.roofFront - p.roofRear + .1;
+  const roofCenter = (p.roofRear + p.roofFront) / 2;
+  const roofWidth = 1.39;
+  const openingWidth = .82;
+  const openingLength = Math.min(.69, roofLength - .32);
+  const roofMaterial = modelType === 'm4' ? black : paint;
+  const sideRailWidth = (roofWidth - openingWidth) / 2;
+  const endRailLength = (roofLength - openingLength) / 2;
+  const roofY = p.height + .015;
+  for (const side of [-1, 1]) {
+    box('sunroof-side-rail', sideRailWidth, .055, roofLength, roofMaterial,
+      side * (openingWidth + sideRailWidth) / 2, roofY, roofCenter);
+    box('sunroof-rubber-seal', .022, .016, openingLength, black,
+      side * (openingWidth / 2 + .008), roofY + .024, roofCenter);
+  }
+  for (const end of [-1, 1]) {
+    box('sunroof-end-rail', openingWidth, .055, endRailLength, roofMaterial,
+      0, roofY, roofCenter + end * (openingLength + endRailLength) / 2);
+    box('sunroof-rubber-seal', openingWidth, .016, .022, black,
+      0, roofY + .024, roofCenter + end * (openingLength / 2 + .008));
+  }
+  // The dark glass panel is slid beneath the rear roof section when open.
+  box('sunroof-retracted-glass', openingWidth - .07, .012, endRailLength - .05,
+    glass, 0, roofY + .032, roofCenter - (openingLength + endRailLength) / 2);
   function strut(name, from, to, radius, material) {
     const a = new THREE.Vector3(...from), b = new THREE.Vector3(...to), delta = b.clone().sub(a);
     const part = mesh(new THREE.CylinderGeometry(radius, radius, delta.length(), 8), material, name);
@@ -205,6 +229,17 @@ export function createCarModel(rawModelType = 'm3', colorHex = '#1c3fa8') {
   });
   const steeringWheel = mesh(new THREE.TorusGeometry(.14, .022, 6, 16), black, 'steering-wheel', .39, .92, .67);
   steeringWheel.rotation.x = -.35;
+
+  // Shown by PedestrianView only while a passenger uses the open roof.
+  // Hip/legs stay inside the cabin, with head and shoulders above the aperture.
+  const sunroofRider = new THREE.Group();
+  sunroofRider.name = 'sunroof-rider';
+  sunroofRider.visible = false;
+  sunroofRider.position.set(-.14, p.height - .13, roofCenter);
+  const riderPerson = createPerson({ color: '#c83d48', seated: true, female: true, style: 'turkish-sunroof' });
+  riderPerson.name = 'sunroof-rider-person';
+  sunroofRider.add(riderPerson);
+  group.add(sunroofRider);
 
   return {group, wheels, bodyMaterials, exhaustFlames};
 }

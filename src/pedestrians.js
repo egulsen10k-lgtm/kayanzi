@@ -56,7 +56,7 @@ export class Pedestrians {
         const a=road.points[i-1],b=road.points[i],dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);
         if (length<4 || Math.abs(road.elevations?.[i-1] ?? 0)>.5 || Math.abs(road.elevations?.[i] ?? 0)>.5) continue;
         const t=Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/(length*length)));
-        for (const shift of [-70,-35,0,35,70]) for (const side of [-1,1]) {
+        for (const shift of [-70,-52,-35,-18,0,18,35,52,70]) for (const side of [-1,1]) {
           const u=t+shift/length;if(u<.02||u>.98)continue;
           const offset=road.width/2+.75;
           const point=[a[0]+dx*u-dy/length*offset*side,a[1]+dy*u+dx/length*offset*side];
@@ -69,9 +69,10 @@ export class Pedestrians {
     }
     candidates.sort((a,b)=>a.distance-b.distance);
     for (const candidate of candidates) {
-      if(this.people.some(n=>Math.hypot(n.x-candidate.point[0],n.y-candidate.point[1])<11))continue;
-      this.people.push({id:this.people.length,x:candidate.point[0],y:candidate.point[1],height:candidate.height,heading:candidate.heading,state:'idle',remaining:0,phase:0});
-      if(this.people.length>=Math.min(16,Math.round(14 * this.density)))break;
+      if(this.people.some(n=>Math.hypot(n.x-candidate.point[0],n.y-candidate.point[1])<4.5))continue;
+      const id=this.people.length;
+      this.people.push({id,style:['goth','turkish','casual','goth','turkish'][id%5],x:candidate.point[0],y:candidate.point[1],height:candidate.height,heading:candidate.heading,state:'idle',remaining:0,phase:0});
+      if(this.people.length>=Math.min(24,Math.round(20 * this.density)))break;
     }
   }
   highBeam(car) {
@@ -111,7 +112,7 @@ export class Pedestrians {
         const point=projectCoordinate(coordinate.lat,coordinate.lng,this.network.center);
         person.x=point[0];person.y=point[1];
       }
-      this.people=[...attached.map(n=>n.person),...this.people].slice(0,16);
+      this.people=[...attached.map(n=>n.person),...this.people].slice(0,24);
     }
     const previous=this.lastCarPoint && this.lastCarPoint.network===car.roadNetwork ? this.lastCarPoint.point : p;
     this.lastCarPoint={network:car.roadNetwork,point:p};
