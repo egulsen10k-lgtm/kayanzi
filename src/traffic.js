@@ -1,104 +1,190 @@
-import { resolveTrafficContact, integrateTrafficImpact } from './traffic-collision.js';
 import * as THREE from 'three';
 import { projectCoordinate } from './road-network.js';
 import { footprintOnRoad } from './road-safety.js';
-
-// Bounded local traffic; each vehicle follows connected points on its own road.
+import { resolveTrafficContact, integrateTrafficImpact } from './traffic-collision.js';
+import { buildTrafficGraph, lanePose, nextTrafficEdge, makeTrafficTurn } from './traffic-routes.js';
+import { createTrafficVehicle, disposeTrafficObject, TRAFFIC_TYPES } from './traffic-vehicle.js';
+import { TrafficControls } from './traffic-controls.js';
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const poseFields=['x','y','heading','roadHeight'];
 export class TrafficManager {
-  constructor(parent) { this.scene=parent;this.cars=[];this.network=null;this.maxCars=8; }
-  setDensity(value,player) {
-    this.maxCars=Math.round(Math.max(0,Math.min(2,Number(value)||0))*8);
-    if(this.network)this.reset(this.network,player);
+  constructor(parent,{camera=null}={}) {
+    this.scene=parent;this.root=new THREE.Group();this.root.name='persistent-road-traffic';parent.add(this.root);
+    this.camera=camera;this.cars=[];this.maxCars=8;this.network=null;this.origin=null;
+    this.roads=new Map();this.buildings=new Map();this.time=0;this.nextId=0;this.spawnClock=0;
+    this.controls=new TrafficControls(this.root);this.frustum=new THREE.Frustum();
   }
+  setDensity(value) {this.maxCars=Math.round(clamp(Number(value)||0,0,2)*8);}
   reset(network,player) {
-    this.clear();this.network=network;if(!network)return;
-    const p=projectCoordinate(player.lat,player.lng,network.center);
-    const candidates=[];
-    for(const road of network.roads??[]) {
-      if(road.width<6)continue;
-      for(let i=0;i<road.points.length-1;i++) {
-        const a=road.points[i],b=road.points[i+1],dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);
-        const distance=Math.hypot((a[0]+b[0])/2-p[0],(a[1]+b[1])/2-p[1]);
-        if(length<=15||distance<=18||distance>=280)continue;
-        const lane=Math.min(road.width/4,1.7),heading=Math.atan2(dx,dy);
-        const position=[(a[0]+b[0])/2+dy/length*lane,(a[1]+b[1])/2-dx/length*lane];
-        const roadHeight=.08+((road.elevations?.[i]??0)+(road.elevations?.[i+1]??0))*.5;
-        if(footprintOnRoad(network,position,heading,roadHeight))candidates.push({road,i,distance});
+    if(!network){this.clear();return;}
+    if(this.origin&&Math.hypot(...projectCoordinate(network.center.lat,network.center.lng,this.origin))>2000)this.clear();
+    const first=!this.origin;if(first)this.origin={...network.center};
+    this.network=network;
+    const shift=projectCoordinate(network.center.lat,network.center.lng,this.origin);
+    this.shift=shift;this.root.position.set(-shift[0],0,shift[1]);
+    for(const source of network.roads??[]) {
+      const points=source.points.map(p=>[p[0]+shift[0],p[1]+shift[1]]);
+      const id=String(source.id??source.highway??'road')+':'+points[0]?.map(v=>Math.round(v)).join(',')+':'+points.at(-1)?.map(v=>Math.round(v)).join(',');
+      this.roads.set(id,{...source,points});
+    }
+    for(const source of network.buildings??[]) {
+      const points=source.points.map(p=>[p[0]+shift[0],p[1]+shift[1]]),id=source.id??points.map(p=>p.map(v=>Math.round(v)).join(',')).join(':');
+      this.buildings.set(id,{...source,points});
+    }
+    const p=this.playerPoint(player);
+    for(const [id,road] of this.roads)if(road.points.every(q=>Math.hypot(q[0]-p.x,q[1]-p.y)>1400)&&!this.cars.some(c=>c.edge.road===road||c.turn?.next.road===road))this.roads.delete(id);
+    for(const [id,building] of this.buildings)if(building.points.every(q=>Math.hypot(q[0]-p.x,q[1]-p.y)>1400))this.buildings.delete(id);
+    let radius=500;for(const road of this.roads.values())for(const q of road.points)radius=Math.max(radius,Math.hypot(...q)+30);
+    this.world={center:this.origin,radiusMeters:radius,roads:[...this.roads.values()],buildings:[...this.buildings.values()]};
+    this.graph=buildTrafficGraph(this.world);this.controls.rebuild(this.graph);
+    if(first)for(let i=0;i<this.maxCars;i++)if(!this.spawn(p,true))break;
+    // Streaming preserves vehicle identities, exact world positions, and routes.
+    for(const car of this.cars)if(car.group.parent!==this.root)this.root.add(car.group);
+  }
+  playerPoint(player) {
+    const p=projectCoordinate(player.lat,player.lng,this.origin);
+    return {x:p[0],y:p[1],heading:player.heading??0,speed:player.speed??0,roadHeight:player.roadHeight??.08};
+  }
+  refreshFrustum() {
+    if(!this.camera)return;
+    this.camera.updateMatrixWorld();this.root.updateWorldMatrix(true,false);
+    this.frustum.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(this.camera.projectionMatrix,this.camera.matrixWorldInverse));
+  }
+  offscreen(p) {
+    if(!this.camera)return true;
+    const center=this.root.localToWorld(new THREE.Vector3(p.x,p.roadHeight??.08,-p.y));
+    return !this.frustum.intersectsSphere(new THREE.Sphere(center,22));
+  }
+  spawn(player,initial=false) {
+    if(!this.graph||this.cars.length>=this.maxCars)return false;
+    this.refreshFrustum();const candidates=[];
+    for(const edge of this.graph.edges) {
+      if(edge.length<16)continue;
+      const count=Math.max(1,Math.floor(edge.length/65));
+      for(let i=0;i<count;i++) {
+        const s=edge.length*(i+.5)/count,pose=lanePose(edge,s),d=distance(pose,player);
+        if(d<(initial&&!this.camera?18:180)||d>500||!this.offscreen(pose))continue;
+        if(this.cars.some(other=>distance(pose,other)<18))continue;
+        if(!footprintOnRoad(this.world,[pose.x,pose.y],pose.heading,pose.roadHeight))continue;
+        candidates.push({edge,s,pose,d});
       }
     }
-    candidates.sort((a,b)=>a.distance-b.distance);
-    for(let i=0;i<Math.min(this.maxCars,candidates.length);i++) {
-      const candidate=candidates[i],group=new THREE.Group();
-      const paint=new THREE.MeshStandardMaterial({color:[0x7399b5,0xce6d55,0xe4ded0,0x446357][i%4],roughness:.4,metalness:.3});
-      const dark=new THREE.MeshStandardMaterial({color:0x1a2630,roughness:.5});
-      const part=(w,h,d,material,x,y,z)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);m.position.set(x,y,z);group.add(m);};
-      part(1.8,.55,4.2,paint,0,.55,0);part(1.5,.55,2.1,dark,0,1.1,-.1);
-      for(const x of [-.92,.92])for(const z of [-1.3,1.3])part(.18,.55,.65,dark,x,.32,z);
-      this.scene.add(group);
-      this.cars.push({group,road:candidate.road,ptIdx:candidate.i,t:.5,direction:1,speed:0,cruise:22+(i%4)*5,x:0,y:0,offsetX:0,offsetY:0,yawOffset:0,roadHeight:.08,heading:0,impactTime:Infinity,vx:0,vy:0});
-    }
-    this.update(0,player);
+    candidates.sort((a,b)=>a.d-b.d||a.edge.id.localeCompare(b.edge.id));
+    let candidate=candidates[0];if(!candidate)return false;
+    const id=this.nextId++,requested=TRAFFIC_TYPES[id%TRAFFIC_TYPES.length];
+    const type=['firetruck','bus'].includes(requested)&&candidate.edge.road.width<7?'sedan':requested;
+    const model=createTrafficVehicle(type,id),materials=new Set();
+    candidate=candidates.find(c=>c.edge.road.width>=(model.width>2?7:6)&&this.safe(model,c.pose));
+    if(!candidate){disposeTrafficObject(model.group);return false;}
+    model.group.traverse(o=>{if(o.material)materials.add(o.material);});
+    const car={...model,id,edge:candidate.edge,s:candidate.s,turn:null,...candidate.pose,speed:0,
+      cruise:Math.min(candidate.edge.limit,type==='bus'||type==='firetruck'?36:46),
+      offsetX:0,offsetY:0,yawOffset:0,impactTime:Infinity,vx:0,vy:0,angularVelocity:0,
+      opacity:0,materials:[...materials],alertUntil:0,noticeAt:0};
+    this.root.add(car.group);this.cars.push(car);this.renderCar(car,0);return true;
   }
-  clear() {
-    for(const car of this.cars){const materials=new Set();car.group.traverse(o=>{o.geometry?.dispose();if(o.material)materials.add(o.material);});materials.forEach(m=>m.dispose());car.group.removeFromParent();}
-    this.cars=[];this.network=null;
+  safe(car,pose) {
+    const extra=Math.max(0,(car.length-4.5)/2),forward=[Math.sin(pose.heading),Math.cos(pose.heading)];
+    return [-extra,extra].every(along=>footprintOnRoad(this.world,[pose.x+forward[0]*along,pose.y+forward[1]*along],pose.heading,pose.roadHeight));
+  }
+  nextEdge(car,player) {
+    if(car.type==='police'&&car.alertUntil>this.time) {
+      const candidates=(this.graph.nodes.get(car.edge.to.id)?.out??[]).filter(e=>e.to.id!==car.edge.from.id&&Math.abs(e.ha-car.roadHeight)<.6);
+      candidates.sort((a,b)=>Math.hypot(a.end[0]-player.x,a.end[1]-player.y)-Math.hypot(b.end[0]-player.x,b.end[1]-player.y));
+      if(candidates.length)return candidates[0];
+    }
+    return nextTrafficEdge(this.graph,car.edge,car.id+Math.floor(this.time/44));
+  }
+  targetSpeed(car,player) {
+    let target=Math.min(car.cruise,car.edge.limit)/3.6;
+    if(car.turn)target=Math.min(target,5);
+    const forward=[Math.sin(car.heading),Math.cos(car.heading)];
+    for(const other of [player,...this.cars]) {
+      if(other===car||Math.abs(other.roadHeight-car.roadHeight)>.7)continue;
+      const dx=other.x-car.x,dy=other.y-car.y,along=dx*forward[0]+dy*forward[1],side=Math.abs(dx*forward[1]-dy*forward[0]);
+      if(along<=0||side>(car.width+(other.width??1.86))/2+.25)continue;
+      const gap=along-(car.length+(other.length??4.5))/2-2.5;
+      target=Math.min(target,Math.sqrt(Math.max(0,2*3.5*gap)));
+    }
+    if(!car.turn) {
+      const next=this.nextEdge(car,player),remaining=car.edge.length-car.s;
+      if(next&&next.tangent[0]*car.edge.tangent[0]+next.tangent[1]*car.edge.tangent[1]<.95)target=Math.min(target,Math.sqrt(25+2*3.5*Math.max(0,remaining)));
+      const red=!this.controls.allows(car.edge,this.time),stopBuffer=red?car.length/2+.6:.3;
+      if(!next||red)target=Math.min(target,Math.sqrt(Math.max(0,2*4*(remaining-stopBuffer))));
+      if(remaining<12&&next&&car.edge.to.neighbors.size>=3&&this.cars.some(other=>other!==car&&other.turn&&Math.abs(other.roadHeight-car.roadHeight)<.7&&distance(other,{x:car.edge.to.p[0],y:car.edge.to.p[1]})<9))target=Math.min(target,Math.sqrt(Math.max(0,2*4*(remaining-.4))));
+    }
+    if(car.impactTime<1.5||Math.hypot(car.vx,car.vy)>1)target=0;
+    return target;
+  }
+  advance(car,meters,player) {
+    let remaining=meters;
+    for(let step=0;step<8&&remaining>0;step++) {
+      const length=car.turn?.length??car.edge.length,available=Math.max(0,length-car.s);
+      if(!car.turn&&!this.controls.allows(car.edge,this.time)) {
+        const stopAt=Math.max(car.s,length-car.length/2-.6);
+        if(car.s+remaining>=stopAt){car.s=stopAt;car.speed=0;return;}
+      }
+      if(remaining<available){car.s+=remaining;return;}
+      if(!car.turn) {
+        const next=this.nextEdge(car,player);
+        if(!next||!this.controls.allows(car.edge,this.time)){car.s=Math.max(car.s,length-.3);car.speed=0;return;}
+        car.turn=makeTrafficTurn(car.edge,next);car.s=0;
+      } else {car.edge=car.turn.next;car.turn=null;car.s=0;}
+      remaining-=available;
+    }
+  }
+  renderCar(car,dt) {
+    car.group.position.set(car.x,car.roadHeight,-car.y);car.group.rotation.y=Math.PI-car.heading;
+    const opacity=clamp(car.opacity+(car.retiring?-dt:dt)/1.5,0,1);car.opacity=opacity;
+    for(const material of car.materials)if(material.opacity!==opacity){material.transparent=opacity<1;material.opacity=opacity;material.depthWrite=opacity>.9;}
+    for(const wheel of car.wheels)wheel.rotation.x+=car.speed/3.6*dt/.32;
+    for(const lamp of car.brakeLamps)lamp.emissiveIntensity=car.braking?2:.25;
+    car.beacons.forEach((lamp,i)=>{lamp.emissiveIntensity=(car.type!=='police'||car.alertUntil>this.time)&&Math.floor(this.time*5+i)%2===0?3:.15;});
   }
   update(dt,player) {
     if(!this.network)return;
-    dt=Math.max(0,Math.min(.1,dt));const p=projectCoordinate(player.lat,player.lng,this.network.center);
+    dt=clamp(Number(dt)||0,0,.1);this.time+=dt;this.spawnClock+=dt;
+    const p=this.playerPoint(player);this.controls.update(this.time,p);
+    if(this.spawnClock>=1.5){this.spawnClock=0;this.spawn(p);}
+    this.refreshFrustum();
+    let retireBudget=Math.max(0,this.cars.length-this.maxCars-this.cars.filter(car=>car.retiring).length);
     for(const car of this.cars) {
-      const road=car.road;
-      const previous={x:car.x,y:car.y,t:car.t,ptIdx:car.ptIdx,direction:car.direction,
-        heading:car.heading,roadHeight:car.roadHeight,offsetX:car.offsetX,offsetY:car.offsetY,
-        yawOffset:car.yawOffset,angularVelocity:car.angularVelocity};
-      let a=road.points[car.ptIdx],b=road.points[car.ptIdx+1],dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);
-      if(length<.01)continue;
-      const ahead=(x,y)=>(x-car.x)*Math.sin(car.heading)+(y-car.y)*Math.cos(car.heading)>-1;
-      const blocked=(Math.abs(car.roadHeight-(player.roadHeight??.08))<1&&Math.hypot(car.x-p[0],car.y-p[1])<12&&ahead(...p)) || this.cars.some(other=>other!==car&&Math.abs(other.roadHeight-car.roadHeight)<1&&Math.hypot(other.x-car.x,other.y-car.y)<10&&ahead(other.x,other.y));
-      integrateTrafficImpact(car,dt,Math.hypot(car.x-p[0],car.y-p[1]));
-      const recovering=car.impactTime<2 || Math.hypot(car.vx,car.vy)>1;
-      car.speed=recovering?0:Math.max(0,Math.min(car.cruise,car.speed+(blocked?-60:12)*dt));
-      car.t+=car.direction*car.speed/3.6*dt/length;
-      if(car.t>1){if(car.ptIdx<road.points.length-2){car.ptIdx++;car.t=0;}else{car.direction=-1;car.t=1;car.speed=0;}}
-      if(car.t<0){if(car.ptIdx>0){car.ptIdx--;car.t=1;}else{car.direction=1;car.t=0;car.speed=0;}}
-      a=road.points[car.ptIdx];b=road.points[car.ptIdx+1];dx=b[0]-a[0];dy=b[1]-a[1];length=Math.hypot(dx,dy)||1;
-      const lane=Math.min(road.width/4,1.7)*car.direction;
-      const normalX=dy/length,normalY=-dx/length;
-      const laneRoom=Math.max(0,road.width/2-Math.abs(lane)-1.1);
-      const sideOffset=car.offsetX*normalX+car.offsetY*normalY;
-      const boundedSide=Math.max(-laneRoom,Math.min(laneRoom,sideOffset));
-      if(sideOffset!==boundedSide) {
-        car.offsetX+=(boundedSide-sideOffset)*normalX;
-        car.offsetY+=(boundedSide-sideOffset)*normalY;
-        const outwardVelocity=car.vx*normalX+car.vy*normalY;
-        if(Math.sign(outwardVelocity)===Math.sign(sideOffset)) {
-          car.vx-=outwardVelocity*normalX;car.vy-=outwardVelocity*normalY;
-        }
+      if(car.retiring&&!this.offscreen(car))car.retiring=false;
+      if(!car.retiring&&(retireBudget>0||(!car.turn&&!this.nextEdge(car,p)&&car.edge.length-car.s<1)||distance(car,p)>650)&&distance(car,p)>180&&this.offscreen(car)){car.retiring=true;if(retireBudget>0)retireBudget--;}
+      if(car.type==='police'&&distance(car,p)<40&&Math.abs(car.roadHeight-p.roadHeight)<1&&Math.abs(p.speed)>car.edge.limit+10&&this.time>car.noticeAt) {
+        car.alertUntil=this.time+8;car.noticeAt=this.time+20;this.controls.tickets++;
+        this.controls.message='Police · speeding '+Math.round(Math.abs(p.speed))+' / '+car.edge.limit+' km/h · Ticket '+this.controls.tickets;this.controls.messageUntil=this.time+6;
       }
-      const roadHeight=.08+(road.elevations?.[car.ptIdx]??0)*(1-car.t)+(road.elevations?.[car.ptIdx+1]??0)*car.t;
-      const heading=Math.atan2(dx*car.direction,dy*car.direction)+car.yawOffset;
-      const candidate=[a[0]+dx*car.t+dy/length*lane+car.offsetX,a[1]+dy*car.t-dx/length*lane+car.offsetY];
-      if(footprintOnRoad(this.network,candidate,heading,roadHeight)) {
-        car.x=candidate[0];car.y=candidate[1];car.heading=heading;car.roadHeight=roadHeight;
-      } else {
-        // The proposed lane position is blocked. Restore the last valid state;
-        // never fall back to an unvalidated base lane at the same progress.
-        Object.assign(car,previous);
-        car.speed=0;car.vx=0;car.vy=0;car.angularVelocity=0;
-      }
-      if(dt>0) {
-        const body={x:p[0],y:p[1],heading:player.heading??0,speed:player.speed,roadHeight:player.roadHeight??.08};
-        const beforeContact={x:car.x,y:car.y,speed:car.speed,offsetX:car.offsetX,offsetY:car.offsetY,
-          impactTime:car.impactTime,vx:car.vx,vy:car.vy,angularVelocity:car.angularVelocity};
+      const previous={edge:car.edge,turn:car.turn,s:car.s,x:car.x,y:car.y,heading:car.heading,roadHeight:car.roadHeight};
+      integrateTrafficImpact(car,dt,distance(car,p));
+      const desired=this.targetSpeed(car,p),speed=car.speed/3.6;
+      car.braking=desired<speed-.3;
+      const nextSpeed=speed+clamp(desired-speed,-4.5*dt,2*dt);car.speed=nextSpeed*3.6;
+      this.advance(car,(speed+nextSpeed)/2*dt,p);
+      const pose=car.turn?car.turn.pose(car.s):lanePose(car.edge,car.s);
+      const normal=[Math.cos(pose.heading),-Math.sin(pose.heading)],forward=[Math.sin(pose.heading),Math.cos(pose.heading)];
+      const side=clamp(car.offsetX*normal[0]+car.offsetY*normal[1],-.35,.35),along=clamp(car.offsetX*forward[0]+car.offsetY*forward[1],-.5,.5);
+      car.offsetX=side*normal[0]+along*forward[0];car.offsetY=side*normal[1]+along*forward[1];
+      pose.x+=car.offsetX;pose.y+=car.offsetY;pose.heading+=clamp(car.yawOffset,-.12,.12);
+      if(this.safe(car,pose))for(const field of poseFields)car[field]=pose[field];
+      else {Object.assign(car,previous);car.speed=0;car.vx=0;car.vy=0;}
+      if(dt>0&&distance(car,p)<(car.length+4.5)/2+1) {
+        const before={x:car.x,y:car.y,speed:car.speed,offsetX:car.offsetX,offsetY:car.offsetY,impactTime:car.impactTime,vx:car.vx,vy:car.vy,angularVelocity:car.angularVelocity};
+        const body={...p};
         if(resolveTrafficContact(body,car)) {
-          const contactSide=car.offsetX*normalX+car.offsetY*normalY;
-          if(Math.abs(contactSide)<=laneRoom+1e-6 && footprintOnRoad(this.network,[car.x,car.y],car.heading,car.roadHeight)) player.speed=body.speed;
-          else Object.assign(car,beforeContact);
+          const lateral=car.offsetX*normal[0]+car.offsetY*normal[1];
+          if(Math.abs(lateral)<=.35&&this.safe(car,car))player.speed=body.speed;
+          else Object.assign(car,before);
         }
       }
-      // The traffic parent shares the road group's player-relative transform.
-      // Keep children in network coordinates so the player's movement is not applied twice.
-      car.group.position.set(car.x,car.roadHeight,-car.y);car.group.rotation.y=Math.PI-car.heading;
+      this.renderCar(car,dt);
     }
+    this.cars=this.cars.filter(car=>{if(car.retiring&&car.opacity<=0){disposeTrafficObject(car.group);return false;}return true;});
+  }
+  get status(){return this.controls.messageUntil>this.time?this.controls.message:'';}
+  clear() {
+    for(const car of this.cars)disposeTrafficObject(car.group);this.cars=[];this.controls.clear();
+    this.network=null;this.origin=null;this.graph=null;this.world=null;this.roads.clear();this.buildings.clear();this.root.position.set(0,0,0);
   }
 }

@@ -161,7 +161,8 @@ function decodeRoads(elements, lat, lng, radiusMeters) {
       const bridge = active(element.tags.bridge), tunnel = active(element.tags.tunnel) || element.tags.location === 'underground';
       const layer = Number(element.tags.layer) || (bridge ? 1 : tunnel && element.tags.tunnel !== 'building_passage' ? -1 : 0);
       return { id: `way/${element.id}/${index}`, name: typeof element.tags.name === 'string' ? element.tags.name.slice(0, 200) : '',
-        highway: element.tags.highway, width: roadWidth(element.tags), points, bridge, tunnel, layer };
+        highway: element.tags.highway, oneway: element.tags.oneway ?? (element.tags.junction === 'roundabout' ? 'yes' : 'no'),
+        maxspeed: element.tags.maxspeed, width: roadWidth(element.tags), points, bridge, tunnel, layer };
     });
   // Layer is ordering, not a surveyed height. Give structures approximate clearance
   // and connect only shared geometry vertices, never spatial crossings.

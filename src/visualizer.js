@@ -191,7 +191,7 @@ export class CarVisualizer3D {
 
   setRoads(network, buildings = null) {
     this.clearRoads();
-    (this.traffic ?? []).forEach(car => disposeModel(car.group)); this.trafficGroup?.clear(); this.traffic = [];
+    // TrafficManager owns persistent vehicles and junction props across district loads.
     this.roadNetwork = network;
     this.roadCenter = network.center;
 

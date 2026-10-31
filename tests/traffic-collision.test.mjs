@@ -33,13 +33,13 @@ test('oriented bodies permit passing beside a car without proximity locks',()=>{
  const car=traffic(),player={x:2,y:0,heading:0,speed:30,roadHeight:.08};
  assert.equal(vehicleContact(player,car),null);assert.equal(resolveTrafficContact(player,car),false);assert.equal(player.speed,30);
 });
-test('traffic route update preserves pushed position and player can back out',()=>{
+test('traffic route update bounds collision displacement and player can back out',()=>{
  const manager=new TrafficManager(new THREE.Scene()),center={lat:0,lng:0};
  const network={center,radiusMeters:500,roads:[{width:10,points:[[0,20],[0,120]],elevations:[0,0]}]};
  const player={lat:0,lng:0,heading:Math.PI/2,speed:36,roadHeight:.08};manager.reset(network,player);
  const car=manager.cars[0],before=car.x;
  Object.assign(player,localToCoordinate([car.x-2,car.y],center));manager.update(.016,player);
- assert.ok(car.x>before);const pushed=car.x;
- player.speed=-5;manager.update(.016,player);assert.ok(player.speed<0);assert.ok(car.x>=pushed);
+ assert.ok(Math.abs(car.x-before)<=.35);
+ player.speed=-5;manager.update(.016,player);assert.ok(player.speed<0);
  manager.clear();
 });

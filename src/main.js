@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const canvasContainer = document.getElementById('render-canvas-container');
   const visualizer = new CarVisualizer3D(canvasContainer);
   const pedestrians = new Pedestrians();
-  const trafficManager = new TrafficManager(visualizer.trafficGroup ?? visualizer.scene);
+  const trafficManager = new TrafficManager(visualizer.trafficGroup ?? visualizer.scene, {camera:visualizer.camera});
 
   const pedestrianView = new PedestrianView(visualizer.scene);
   const startHorn = () => {
@@ -825,8 +825,10 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('akanzi-instruction').textContent=guidance.instruction;
     }
     if (!visualizer.previewActive) pedestrians.update(physics, dt);
-    for (const car of trafficManager.cars) car.group.visible = !visualizer.previewActive;
+    trafficManager.root.visible = !visualizer.previewActive;
     if (!visualizer.previewActive) trafficManager.update(dt, physics);
+    const trafficStatus=document.getElementById('traffic-status');
+    if(trafficStatus.textContent!==trafficManager.status)trafficStatus.textContent=trafficManager.status;
     if (visualizer.highBeams && !visualizer.previewActive) pedestrians.highBeam(physics);
     pedestrianView.update(pedestrians, physics, visualizer.carGroup, visualizer.previewActive);
     const clinging = pedestrians.people.filter(person => person.state === 'clinging').length;

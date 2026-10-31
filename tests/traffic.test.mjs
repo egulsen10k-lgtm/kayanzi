@@ -2,142 +2,103 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { TrafficManager } from '../src/traffic.js';
-import { footprintOnRoad } from '../src/road-safety.js';
+import { lanePose } from '../src/traffic-routes.js';
+import { footprintOnRoad,localToCoordinate } from '../src/road-safety.js';
+const network=(roads,buildings=[])=>({center:{lat:0,lng:0},radiusMeters:800,roads,buildings});
+const street=(points,extra={})=>({width:8,highway:'residential',points,elevations:points.map(()=>0),...extra});
+const player=()=>({lat:-.002,lng:-.002,heading:0,speed:0,roadHeight:.08});
+function setup(world,camera=null){const manager=new TrafficManager(new THREE.Group(),{camera});manager.setDensity(.125);manager.reset(world,player());return manager;}
+function place(car,edge,s){car.edge=edge;car.turn=null;car.s=s;Object.assign(car,lanePose(edge,s));car.offsetX=car.offsetY=car.yawOffset=0;car.group.position.set(car.x,car.roadHeight,-car.y);}
 
-test('TrafficManager initializes, spawns cars on road network, and updates positions', () => {
-  const scene = new THREE.Scene();
-  const traffic = new TrafficManager(scene);
-
-  const mockNetwork = {
-    center: { lat: 48.1764, lng: 11.5583 },
-    radiusMeters: 500,
-    roads: [
-      {
-        points: [
-          [0, 0],
-          [0, 100],
-          [50, 100]
-        ],
-        elevations: [0, 0, 0],
-        width: 8
-      }
-    ]
-  };
-
-  const playerCar = {
-    lat: 48.1764,
-    lng: 11.5583,
-    heading: 0,
-    speed: 0
-  };
-
-  traffic.reset(mockNetwork, playerCar);
-  assert.ok(traffic.cars.length > 0, 'Should spawn traffic cars');
-
-  traffic.update(0.1, playerCar);
-
-  const spawned=traffic.cars[0];
-  assert.ok([spawned.x,spawned.y,spawned.roadHeight,spawned.heading,spawned.offsetX,spawned.offsetY,spawned.yawOffset,spawned.vx,spawned.vy].every(Number.isFinite), 'traffic state must stay finite after first update');
-  assert.ok(Number.isFinite(spawned.group.position.x) && Number.isFinite(spawned.group.position.z), 'traffic transform must stay finite');
-  assert.equal(spawned.group.parent, scene, 'traffic cars should use the manager parent for world offsets');
-  scene.position.set(17, 0, -23);
-  assert.equal(spawned.group.getWorldPosition(new THREE.Vector3()).x, spawned.group.position.x + 17);
-  traffic.clear();
-  assert.equal(traffic.cars.length, 0, 'Should clear all traffic cars');
-});
-
-test('traffic remains road-contained after repeated side-impact updates', () => {
-  const traffic = new TrafficManager(new THREE.Scene());
-  const network = {
-    center: { lat: 48.1764, lng: 11.5583 },
-    radiusMeters: 500,
-    roads: [{ points: [[0, 0], [0, 120]], elevations: [0, 0], width: 8 }],
-    buildings: []
-  };
-  const player = { lat: 48.1764, lng: 11.5583, heading: 0, speed: 18 };
-  traffic.reset(network, player);
-  assert.ok(traffic.cars.length > 0);
-  const car = traffic.cars[0];
-  car.offsetX = 1.5;
-  car.vx = 8;
-  for (let frame = 0; frame < 30; frame++) {
-    traffic.update(1 / 30, player);
-    assert.ok(footprintOnRoad(network, [car.x, car.y], car.heading, car.roadHeight), `traffic left road at frame ${frame}`);
-    assert.ok(Math.abs(car.offsetX) < 2.1, `impact drift escaped lane at frame ${frame}`);
-  }
-});
-
-test('traffic impact stays in its lane and settles back promptly',()=>{
- const manager=new TrafficManager(new THREE.Scene());
- const network={center:{lat:0,lng:0},radiusMeters:500,
-  roads:[{width:8,points:[[0,0],[0,120]],elevations:[0,0]}],buildings:[]};
- const player={lat:0,lng:0,speed:0,roadHeight:.08};manager.reset(network,player);
- const car=manager.cars[0],laneCenter=car.x;
- car.offsetX=.5;car.vx=10;car.impactTime=0;
- manager.update(.1,player);
- assert.ok(Math.abs(car.x-laneCenter)<=1.2+1e-6,'impact pushed traffic outside its lane');
- car.impactTime=2;car.vx=0;car.vy=0;
- for(let i=0;i<30;i++)manager.update(.1,player);
- assert.ok(Math.abs(car.x-laneCenter)<.1,'traffic failed to return to its lane');
- manager.clear();
-});
-
-test('traffic density rebuilds immediately and cars use road-group coordinates',()=>{
- const parent=new THREE.Group(),traffic=new TrafficManager(parent);
- const roads=Array.from({length:20},(_,i)=>({width:8,points:[[20+i*8,20],[20+i*8,100]],elevations:[0,0]}));
- const network={center:{lat:0,lng:0},radiusMeters:500,roads};const player={lat:0,lng:0,speed:0,roadHeight:.08};
- traffic.reset(network,player);assert.equal(traffic.cars.length,8);
- traffic.setDensity(2,player);assert.equal(traffic.cars.length,16);
- const car=traffic.cars[0],before=car.group.position.x;player.lng=.0001;traffic.update(0,player);
- assert.equal(car.group.position.x,before,'moving the player must not move traffic within its road-group parent');
- parent.position.x=-11;
- assert.equal(car.group.getWorldPosition(new THREE.Vector3()).x,before-11);
- assert.equal(car.group.position.y,.08);
- traffic.setDensity(0,player);assert.equal(traffic.cars.length,0);
-});
-
-test('traffic stops at the last valid point before a building blocks its route', () => {
-  const traffic = new TrafficManager(new THREE.Scene());
-  const network = {
-    center: { lat: 48.1764, lng: 11.5583 },
-    radiusMeters: 500,
-    roads: [{ points: [[0, 20], [0, 120]], elevations: [0, 0], width: 8 }],
-    buildings: [{ points: [[-4, 90], [4, 90], [4, 110], [-4, 110], [-4, 90]] }]
-  };
-  const player = { lat: 48.1764, lng: 11.5583, heading: 0, speed: 0 };
-  traffic.reset(network, player);
-  assert.equal(traffic.cars.length, 1);
-  const car = traffic.cars[0];
-  car.t = .68;
-  traffic.update(0, player);
-  const lastValid = { x: car.x, y: car.y, t: car.t };
-  car.speed = car.cruise;
-  traffic.update(.1, player);
-  assert.deepEqual({ x: car.x, y: car.y, t: car.t }, lastValid);
-  assert.equal(footprintOnRoad(network, [car.x, car.y], car.heading, car.roadHeight), true);
-});
-
-test('traffic skips road segments whose vehicle footprint is inside a mapped building',()=>{
- const traffic=new TrafficManager(new THREE.Scene());
- const network={center:{lat:0,lng:0},radiusMeters:500,roads:[{width:8,points:[[0,20],[0,120]],elevations:[0,0]}],buildings:[{minHeight:0,points:[[-4,45],[4,45],[4,95],[-4,95],[-4,45]]}]};
- traffic.reset(network,{lat:0,lng:0,speed:0,roadHeight:.08});
- assert.equal(traffic.cars.length,0);
-});
-
-test('traffic stops at a building encountered after a valid spawn',()=>{
- const traffic=new TrafficManager(new THREE.Scene());
- const network={center:{lat:0,lng:0},radiusMeters:500,
-  roads:[{width:8,points:[[0,20],[0,120]],elevations:[0,0]}],
-  buildings:[{minHeight:0,points:[[-4,90],[4,90],[4,110],[-4,110],[-4,90]]}]};
- const player={lat:0,lng:0,speed:0,roadHeight:.08};
- traffic.reset(network,player);
- assert.equal(traffic.cars.length,1);
- const car=traffic.cars[0];
- car.cruise=60;
- for(let frame=0;frame<150;frame++) {
-  traffic.update(.1,player);
-  assert.ok(footprintOnRoad(network,[car.x,car.y],car.heading,car.roadHeight),`traffic entered building at frame ${frame}`);
+test('traffic stays on connected lanes without jumps at segment boundaries',()=>{
+ const m=setup(network([street([[0,-200],[0,0],[80,100],[200,100]])]));
+ const car=m.cars[0];assert.ok(car);let turnSeen=false;
+ place(car,m.graph.edges.find(e=>e.from.p[1]<0&&Math.abs(e.to.p[1])<.1),50);
+ for(let i=0;i<1500;i++){
+  const before={x:car.x,y:car.y};m.update(.05,player());turnSeen ||= !!car.turn;
+  assert.ok(Math.hypot(car.x-before.x,car.y-before.y)<1,'vehicle teleported at a route transition');
+  assert.ok(footprintOnRoad(m.world,[car.x,car.y],car.heading,car.roadHeight));
  }
- assert.ok(car.y<90,'traffic should not cross the building');
- traffic.clear();
+ assert.ok(turnSeen,'car never traversed the connected bend');
+});
+
+test('a dead-end stops the vehicle instead of reversing or changing lanes',()=>{
+ const m=setup(network([street([[0,20],[0,120]])]));const car=m.cars[0];
+ const edge=m.graph.edges.find(e=>e.tangent[1]>0);place(car,edge,edge.length-8);car.speed=18;
+ const x=car.x;
+ for(let i=0;i<200;i++)m.update(.05,player());
+ assert.equal(car.edge.id,edge.id);assert.equal(car.turn,null);assert.ok(car.speed<.2);assert.equal(car.x,x);assert.ok(car.s<=edge.length);
+});
+
+test('district streaming preserves the same car and exact world position',()=>{
+ const world=network([street([[0,-200],[0,200]],{id:'main'})]);const m=setup(world);const car=m.cars[0];m.update(.1,player());
+ const before={x:car.x,y:car.y,s:car.s,speed:car.speed,heading:car.heading,group:car.group,id:car.id};
+ const renderedBefore=car.group.getWorldPosition(new THREE.Vector3());
+ const center=localToCoordinate([30,0],world.center);
+ m.reset({...world,center,roads:[street([[-30,-200],[-30,200]],{id:'main'})]},player());
+ assert.equal(m.cars[0],car);for(const key of Object.keys(before))assert.equal(car[key],before[key]);
+ assert.equal(car.group.parent,m.root);assert.equal(car.group.position.x,car.x);
+ m.scene.position.set(m.shift[0],0,-m.shift[1]);
+ assert.ok(car.group.getWorldPosition(new THREE.Vector3()).distanceTo(renderedBefore)<1e-6,'district rebase moved the rendered car');
+});
+
+test('density changes never rebuild or immediately remove visible traffic',()=>{
+ const world=network(Array.from({length:8},(_,i)=>street([[i*15-60,-400],[i*15-60,400]])));
+ const m=setup(world),car=m.cars[0];m.setDensity(2);assert.equal(m.cars.length,1);assert.equal(m.cars[0],car);
+ m.setDensity(0);assert.equal(m.cars[0],car);assert.equal(car.retiring,undefined);
+});
+
+test('new traffic enters only far away and outside the expanded camera view',()=>{
+ const camera=new THREE.PerspectiveCamera(65,1,.1,1000);camera.position.set(0,4,6);camera.lookAt(0,0,-100);camera.updateMatrixWorld();
+ const m=new TrafficManager(new THREE.Group(),{camera});
+ const p={lat:0,lng:0,heading:0,speed:0,roadHeight:.08};
+ m.reset(network([street([[0,-500],[0,500]]),street([[-400,-300],[400,-300]])]),p);
+ assert.ok(m.cars.length);
+ m.refreshFrustum();for(const car of m.cars){assert.ok(Math.hypot(car.x,car.y)>=180);assert.ok(m.offscreen(car));}
+});
+
+test('traffic queues at red and proceeds when its light becomes green',()=>{
+ const m=setup(network([street([[-150,0],[150,0]]),street([[0,-150],[0,150]])]));const car=m.cars[0];
+ const edge=m.graph.edges.find(e=>e.tangent[1]>.9&&Math.abs(e.to.p[1])<.1);
+ place(car,edge,edge.length-12);car.speed=18;
+ assert.ok(m.controls.signals.has(edge.to.id));
+ for(let i=0;i<150;i++)m.update(.05,player());
+ assert.equal(car.turn,null);assert.equal(car.edge.id,edge.id);assert.ok(car.speed<.5,'car failed to stop at red');
+ assert.ok(car.s+car.length/2<edge.length,'front bumper crossed the stop line');
+ m.time=22;
+ for(let i=0;i<100;i++)m.update(.05,player());
+ assert.ok(car.turn||car.edge.id!==edge.id,'car did not proceed on green');
+});
+
+test('traffic follows a stopped car without overlapping',()=>{
+ const m=setup(network([street([[0,-200],[0,200]])]));m.maxCars=2;m.spawn(m.playerPoint(player()),true);
+ assert.equal(m.cars.length,2);const [front,back]=m.cars,edge=m.graph.edges.find(e=>e.tangent[1]>.9);
+ place(front,edge,150);front.cruise=0;place(back,edge,130);back.speed=25;
+ for(let i=0;i<200;i++)m.update(.05,player());
+ assert.ok(front.y-back.y>=6,'traffic drove into the queued car');assert.ok(back.speed<.2);
+});
+
+test('a building blocks traffic movement without an unsafe fallback',()=>{
+ const world=network([street([[0,20],[0,120]])],[{points:[[-4,90],[4,90],[4,110],[-4,110],[-4,90]]}]);
+ const m=setup(world),car=m.cars[0];assert.ok(car);
+ const edge=m.graph.edges.find(e=>e.tangent[1]>0);place(car,edge,edge.length*.45);
+ for(let i=0;i<250;i++){m.update(.05,player());assert.ok(footprintOnRoad(m.world,[car.x,car.y],car.heading,car.roadHeight));}
+ assert.ok(car.y<90);
+});
+
+test('police observe speeding and cameras issue one ticket per pass',()=>{
+ const m=setup(network([street([[0,-300],[0,300]],{maxspeed:40})]));const car=m.cars[0];car.type='police';
+ const p={...localToCoordinate([car.x+8,car.y],m.origin),heading:0,speed:80,roadHeight:.08};
+ m.update(.1,p);assert.ok(car.alertUntil>m.time);assert.match(m.status,/Police/);
+ const radar=[...m.controls.radars.values()][0];assert.ok(radar);
+ const observed={x:radar.x,y:radar.y,speed:80,roadHeight:.08};const before=m.controls.tickets;
+ m.controls.update(m.time,observed);m.controls.update(m.time+.1,observed);
+ assert.equal(m.controls.tickets,before+1);assert.match(m.status,/Speed camera/);
+});
+
+test('all service vehicles have visible models and release resources on clear',()=>{
+ const m=new TrafficManager(new THREE.Group());m.setDensity(2);
+ m.reset(network(Array.from({length:10},(_,i)=>street([[i*20-100,-400],[i*20-100,400]]))),player());
+ const types=new Set(m.cars.map(c=>c.type));for(const type of ['police','firetruck','ambulance','bus','van'])assert.ok(types.has(type));
+ const groups=m.cars.map(c=>c.group);m.clear();assert.equal(m.cars.length,0);assert.ok(groups.every(g=>g.parent===null));assert.equal(m.controls.signals.size,0);
 });

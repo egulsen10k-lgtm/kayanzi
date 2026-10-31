@@ -6,12 +6,12 @@ const dot = (a,b) => a[0]*b[0]+a[1]*b[1];
 export function vehicleContact(player, car) {
   if (Math.abs((player.roadHeight ?? .08)-car.roadHeight)>.8) return null;
   const delta=[car.x-player.x,car.y-player.y];
-  if(Math.hypot(...delta)>5)return null;
+  if(Math.hypot(...delta)>(car.length??4.2)/2+3.3)return null;
   const a=axes(player.heading??0),b=axes(car.heading??0);
   let depth=Infinity,normal=null;
   for(const axis of [...a,...b]) {
     const radiusA=.93*Math.abs(dot(a[0],axis))+2.25*Math.abs(dot(a[1],axis));
-    const radiusB=.92*Math.abs(dot(b[0],axis))+2.1*Math.abs(dot(b[1],axis));
+    const radiusB=(car.width??1.84)/2*Math.abs(dot(b[0],axis))+(car.length??4.2)/2*Math.abs(dot(b[1],axis));
     const overlap=radiusA+radiusB-Math.abs(dot(delta,axis));
     if(overlap<=0)return null;
     if(overlap<depth){depth=overlap;const sign=dot(delta,axis)>=0?1:-1;normal=axis.map(n=>n*sign);}
@@ -32,7 +32,7 @@ export function resolveTrafficContact(player, car) {
   car.x+=nx*separation;car.y+=ny*separation;
   car.impactTime=0;
   if(relative<=0)return true; // Reversing/moving away must stay possible.
-  const massPlayer=1750,massTraffic=1550,inertia=massTraffic*(4.2**2+1.84**2)/12;
+  const massPlayer=1750,massTraffic=car.mass??1550,inertia=massTraffic*((car.length??4.2)**2+(car.width??1.84)**2)/12;
   const right=axes(car.heading)[0],along=axes(car.heading)[1];
   const delta=[player.x-car.x,player.y-car.y];
   const side=clamp(dot(delta,right),-.92,.92),front=clamp(dot(delta,along),-2.1,2.1);
