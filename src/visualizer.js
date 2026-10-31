@@ -111,18 +111,32 @@ export class CarVisualizer3D {
     sun.shadow.normalBias = 0.015;
     this.sunLight = sun;
     this.scene.add(sun);
-    this.headlights = [new THREE.SpotLight(0xffffff, 0, 75, Math.PI / 8, .35, 1.5), new THREE.SpotLight(0xffffff, 0, 75, Math.PI / 8, .35, 1.5)];
-    this.headlights.forEach((light, i) => { light.position.set(i ? -.62 : .62, .7, 2.3); light.target.position.set(i ? -.62 : .62, .2, 35); this.carGroup?.add(light, light.target); });
+    // Forward beams target the mapped road surface, not just the horizon.
+    this.headlights = [
+      new THREE.SpotLight(0xfff4d6, 0, 95, Math.PI / 7, .5, 1.25),
+      new THREE.SpotLight(0xfff4d6, 0, 95, Math.PI / 7, .5, 1.25)
+    ];
+    this.headlights.forEach((light, i) => {
+      light.position.set(i ? -.62 : .62, .7, 2.3);
+      light.target.position.set(i ? -.72 : .72, .05, 42);
+      light.castShadow = false;
+      this.carGroup?.add(light, light.target);
+    });
   }
 
   setNightMode(enabled) {
     this.nightMode = Boolean(enabled); const night = this.nightMode;
-    this.scene.background.set(night ? 0x071225 : 0xc4d4df); this.scene.fog.color.set(night ? 0x071225 : 0xc4d4df);
-    this.hemiLight.intensity = night ? .18 : 1.4; this.sunLight.intensity = night ? .12 : 2.5;
+    this.scene.background.set(night ? 0x071225 : 0xc4d4df);
+    if (this.scene.fog) this.scene.fog.color.set(night ? 0x071225 : 0xc4d4df);
+    this.hemiLight.intensity = night ? .12 : 1.4; this.sunLight.intensity = night ? .08 : 2.5;
     this.setHighBeams(this.highBeams);
   }
 
-  setHighBeams(enabled) { this.highBeams = Boolean(enabled); this.headlights?.forEach(light => { light.intensity = this.highBeams ? (this.nightMode ? 8 : 2) : 0; }); }
+  setHighBeams(enabled) {
+    this.highBeams = Boolean(enabled);
+    const intensity = this.nightMode ? (this.highBeams ? 14 : 5.5) : (this.highBeams ? 1.5 : 0);
+    this.headlights?.forEach(light => { light.intensity = intensity; });
+  }
 
   setupEnvironment() {
     this.environmentGroup = new THREE.Group();
@@ -267,7 +281,7 @@ export class CarVisualizer3D {
     this.roadGroup.visible = !enabled;
     this.environmentGroup.visible = !enabled;
     this.satellite.group.visible = !enabled;
-    this.scene.fog = enabled ? null : new THREE.Fog(0xc4d4df, 100, 650);
+    this.scene.fog = enabled ? null : new THREE.Fog(this.nightMode ? 0x071225 : 0xc4d4df, 100, 650);
     this.camera.far = enabled ? 100000 : 2000;
     this.camera.updateProjectionMatrix();
     if (enabled) {

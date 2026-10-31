@@ -39,8 +39,10 @@ export function resolveTrafficContact(player, car) {
   const rx=right[0]*side+along[0]*front,ry=right[1]*side+along[1]*front;
   const torque=rx*ny-ry*nx;
   const impulse=1.08*relative/(1/massPlayer+1/massTraffic+torque*torque/inertia);
-  car.vx=tv[0]+nx*impulse/massTraffic;car.vy=tv[1]+ny*impulse/massTraffic;
-  car.angularVelocity=clamp((car.angularVelocity??0)-torque*impulse/inertia,-2.5,2.5);
+  const impactVelocity=[tv[0]+nx*impulse/massTraffic,tv[1]+ny*impulse/massTraffic];
+  const impactSpeed=Math.hypot(...impactVelocity),impactScale=Math.min(1,3/Math.max(impactSpeed,.001));
+  car.vx=impactVelocity[0]*impactScale;car.vy=impactVelocity[1]*impactScale;
+  car.angularVelocity=clamp((car.angularVelocity??0)-torque*impulse/inertia,-.65,.65);
   car.speed=0;
   player.speed-=impulse/massPlayer*(nx*forward[0]+ny*forward[1])*3.6;
   return true;
@@ -50,14 +52,14 @@ export function integrateTrafficImpact(car,dt,distanceToPlayer) {
   car.impactTime=(car.impactTime??100)+dt;
   car.offsetX=(car.offsetX??0)+(car.vx??0)*dt;
   car.offsetY=(car.offsetY??0)+(car.vy??0)*dt;
-  car.yawOffset=(car.yawOffset??0)+(car.angularVelocity??0)*dt;
+  car.yawOffset=clamp((car.yawOffset??0)+(car.angularVelocity??0)*dt,-.18,.18);
   const friction=Math.exp(-1.7*dt);
   car.vx=(car.vx??0)*friction;car.vy=(car.vy??0)*friction;
   car.angularVelocity=(car.angularVelocity??0)*Math.exp(-3*dt);
   // The AI gradually rejoins its lane only once the impact settles and the
   // player is clear. Displacement is not overwritten by the next route update.
-  if(car.impactTime>4 && distanceToPlayer>12) {
-    const recover=Math.exp(-.35*dt);
+  if(car.impactTime>1.5 && distanceToPlayer>8) {
+    const recover=Math.exp(-1.2*dt);
     car.offsetX*=recover;car.offsetY*=recover;car.yawOffset*=recover;
   }
 }

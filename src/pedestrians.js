@@ -24,7 +24,7 @@ function sidewalkSurfaceAt(network, point) {
   let best = null;
   for (const road of network.roads ?? []) {
     for (let i=1;i<road.points.length;i++) {
-      const width = sidewalkWidth({...road, elevations: [0, 0]});
+      const width = sidewalkWidth(road);
       const a=road.points[i-1],b=road.points[i],dx=b[0]-a[0],dy=b[1]-a[1],lengthSquared=dx*dx+dy*dy;
       if(!width || lengthSquared<.01)continue;
       const t=Math.max(0,Math.min(1,((point[0]-a[0])*dx+(point[1]-a[1])*dy)/lengthSquared));
@@ -33,6 +33,16 @@ function sidewalkSurfaceAt(network, point) {
       if(lateral<half+.12||lateral>half+width-.08)continue;
       const elevation=(road.elevations?.[i-1]??0)+((road.elevations?.[i]??0)-(road.elevations?.[i-1]??0))*t;
       const height=elevation+SIDEWALK_HEIGHT;
+      const asphaltOverlap=(network.roads ?? []).some(other => other.points.some((_, index) => {
+        if(index===0 || !Number.isFinite(other.width))return false;
+        const oa=other.points[index-1],ob=other.points[index],odx=ob[0]-oa[0],ody=ob[1]-oa[1],olen=odx*odx+ody*ody;
+        if(olen<.01)return false;
+        const ot=Math.max(0,Math.min(1,((point[0]-oa[0])*odx+(point[1]-oa[1])*ody)/olen));
+        const lateral=Math.hypot(point[0]-oa[0]-ot*odx,point[1]-oa[1]-ot*ody);
+        const otherHeight=(other.elevations?.[index-1]??0)+((other.elevations?.[index]??0)-(other.elevations?.[index-1]??0))*ot+.08;
+        return lateral<=other.width/2 && Math.abs(otherHeight-height)<=.65;
+      }));
+      if(asphaltOverlap)continue;
       if(best===null||Math.abs(height-.22)<Math.abs(best-.22))best=height;
     }
   }
@@ -47,6 +57,11 @@ export class Pedestrians {
     this.lastCarPoint = null;
   }
   reset(network, car, density = this.density) {
+    const pursuers=this.network ? this.people.filter(person=>person.state==='chasing').map(person=>{
+      const coordinate=localToCoordinate([person.x,person.y],this.network.center);
+      const [x,y]=projectCoordinate(coordinate.lat,coordinate.lng,network.center);
+      return {...person,x,y};
+    }) : [];
     this.network = network; this.people = []; this.lastCarPoint = null; this.density = Math.max(0, Math.min(2, Number(density) || 0));
     const p = projectCoordinate(car.lat, car.lng, network.center);
     const candidates = [];
@@ -71,9 +86,10 @@ export class Pedestrians {
     for (const candidate of candidates) {
       if(this.people.some(n=>Math.hypot(n.x-candidate.point[0],n.y-candidate.point[1])<4.5))continue;
       const id=this.people.length;
-      this.people.push({id,style:['goth','turkish-headscarf','casual','goth','turkish'][id%5],x:candidate.point[0],y:candidate.point[1],height:candidate.height,heading:candidate.heading,state:'idle',remaining:0,phase:0});
+      this.people.push({id,style:['goth','turkish-headscarf','casual','goth','turkish'][id%5],x:candidate.point[0],y:candidate.point[1],height:candidate.height,heading:candidate.heading,state:'idle',phase:0});
       if(this.people.length>=Math.min(24,Math.round(20 * this.density)))break;
     }
+    this.people=[...pursuers,...this.people].slice(0,24);
   }
   highBeam(car) {
     if (!this.network || !car || !this.people.length) return 0;
@@ -89,25 +105,33 @@ export class Pedestrians {
     return count;
   }
   horn(car) {
-    if (!this.network || Math.abs(car.roadHeight ?? .08)>.6) return 0;
+    if (!this.network) return 0;
     const p=projectCoordinate(car.lat,car.lng,this.network.center);
     let count=0;
     for(const person of this.people) {
-      if(!['idle','chasing'].includes(person.state)||Math.hypot(person.x-p[0],person.y-p[1])>55)continue;
-      person.state='chasing';person.remaining=18;count++;
+      if(!['idle','chasing'].includes(person.state)||Math.hypot(person.x-p[0],person.y-p[1])>150)continue;
+      person.state='chasing';count++;
     }
     this.message=count ? `${count} kişi geliyor! Binmeleri için yavaşla.` : 'Yakında korna duyacak yaya yok.';
     return count;
   }
   update(car, dt) {
     const capacity=seatCapacity(car.bmwModel);
-    this.passengers=Math.min(this.passengers,capacity-1);
-    if(!car.roadNetwork) {this.people=[];this.network=null;this.lastCarPoint=null;return;}
+    if(!car.roadNetwork) {this.people=[];this.network=null;this.passengers=0;this.lastCarPoint=null;return;}
+    const boarded=this.people.filter(person=>person.state==='boarded');
+    if(boarded.length) {
+      this.passengers=Math.min(boarded.length,capacity-1);
+      boarded.slice(this.passengers).forEach(person=>{person.state='idle';});
+    } else {
+      this.passengers=Math.min(this.passengers,capacity-1);
+    }
     const p=projectCoordinate(car.lat,car.lng,car.roadNetwork.center);
-    const far=this.network===car.roadNetwork && this.people.length && this.people.every(n=>Math.hypot(n.x-p[0],n.y-p[1])>130);
+    const far=this.network===car.roadNetwork && this.people.length && !this.people.some(n=>n.state==='chasing') && this.people.every(n=>Math.hypot(n.x-p[0],n.y-p[1])>130);
     if(this.network!==car.roadNetwork||far) {
       const attached=this.network ? this.people.filter(n=>n.state==='clinging').map(n=>({person:n,coordinate:localToCoordinate([n.x,n.y],this.network.center)})) : [];
+      const carriedPassengers=this.passengers;
       this.reset(car.roadNetwork,car);
+      this.passengers=Math.min(carriedPassengers,capacity-1);
       for(const {person,coordinate} of attached) {
         const point=projectCoordinate(coordinate.lat,coordinate.lng,this.network.center);
         person.x=point[0];person.y=point[1];
@@ -172,11 +196,17 @@ export class Pedestrians {
         if(person.recoveryTime>=1.2){person.state='idle';person.fall=null;person.recoveryPoint=null;}
         continue;
       }
+      if(person.state==='idle') {
+        person.heading ??= 0;
+        person.x+=Math.sin(person.heading)*1.2*dt;
+        person.y+=Math.cos(person.heading)*1.2*dt;
+        person.height=sidewalkSurfaceAt(this.network,[person.x,person.y]) ?? .08;
+        person.phase+=dt*5;
+        continue;
+      }
       if(person.state!=='chasing')continue;
-      person.remaining-=dt;
-      if(person.remaining<=0||Math.abs(person.height-(car.roadHeight??.08))>.6){person.state='idle';continue;}
       const dx=p[0]-person.x,dy=p[1]-person.y,distance=Math.hypot(dx,dy);
-      if(distance<5.4 && Math.abs(car.speed)<8 && ![.25,.5,.75].some(t=>insideBuilding(this.network,[person.x+dx*t,person.y+dy*t]))) {
+      if(distance<2.3 && Math.abs(car.speed)<8) {
         if(this.passengers<capacity-1){this.passengers++;person.state='boarded';this.message=`Yolcu bindi · ${this.passengers+1}/${capacity} kişi`;} 
         else {
           const occupied=new Set(this.people.filter(n=>n.state==='clinging').map(n=>n.gripSlot));
@@ -187,14 +217,13 @@ export class Pedestrians {
         }
         continue;
       }
-      const direction=Math.atan2(dx,dy),step=Math.min(4.3*dt,Math.max(0,distance-2.1));
-      for(const turn of [0,.5,-.5,1,-1]) {
-        const heading=direction+turn, next=[person.x+Math.sin(heading)*step,person.y+Math.cos(heading)*step];
-        const height=sidewalkSurfaceAt(this.network,next);
-        if(height===null)continue;
-        if(height===null||insideBuilding(this.network,next)||this.people.some(other=>other!==person&&other.state!=='boarded'&&Math.hypot(other.x-next[0],other.y-next[1])<.55))continue;
-        person.x=next[0];person.y=next[1];person.height=height;person.heading=heading;person.phase+=dt*11;break;
-      }
+      const direction=Math.atan2(dx,dy),step=Math.min(4.3*dt,Math.max(0,distance-1.2));
+      const next=[person.x+Math.sin(direction)*step,person.y+Math.cos(direction)*step];
+      const height=sidewalkSurfaceAt(this.network,next);
+      // Active walkers follow the car directly, regardless of mapped walls,
+      // road edges, sidewalk gaps, or nearby NPCs.
+      person.x=next[0];person.y=next[1];person.height=height ?? person.height;
+      person.heading=direction;person.phase+=dt*11;
     }
   }
 }

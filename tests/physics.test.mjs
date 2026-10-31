@@ -8,6 +8,20 @@ const advance = (car, seconds) => {
   for (let frame = 0; frame < seconds * 60; frame++) car.update(1 / 60);
 };
 
+test('drive modes accept Normal and provide distinct acceleration mapping', () => {
+  const normal = unconstrainedCar();
+  const sport = unconstrainedCar();
+  const sportPlus = unconstrainedCar();
+  assert.equal(normal.setDriveMode('Normal'), true);
+  assert.equal(sport.setDriveMode('Sport'), true);
+  assert.equal(sportPlus.setDriveMode('Sport+'), true);
+  for (const car of [normal, sport, sportPlus]) car.keys.KeyW = true;
+  advance(normal, 2); advance(sport, 2); advance(sportPlus, 2);
+  assert.ok(normal.speed < sport.speed && sport.speed < sportPlus.speed);
+  assert.equal(normal.setDriveMode('Comfort'), true, 'legacy Comfort maps to Normal');
+  assert.equal(normal.driveMode, 'Normal');
+});
+
 test('accelerating moves the car north and respects its speed limit', () => {
   const car = unconstrainedCar();
   const start = car.lat;
@@ -203,6 +217,17 @@ test('RWD handbrake initiates a drift without an unrealistic full stop', () => {
   assert.ok(car.speed > 35, `rear handbrake stopped too aggressively: ${car.speed}`);
 });
 
+test('slamming the handbrake creates lateral traction loss even without throttle', () => {
+  const car = unconstrainedCar();
+  car.speed = 80;
+  car.keys = { Space: true, KeyA: true };
+  advance(car, .35);
+  assert.equal(car.handbrake, true);
+  assert.equal(car.isDrifting, true);
+  assert.ok(car.driftFactor > .12, `rear lock did not build slip: ${car.driftFactor}`);
+  assert.ok(Math.abs(car.driftAngle) > .08, `expected visible yaw slip: ${car.driftAngle}`);
+});
+
 test('steering and acceleration give consistent results at 30, 60, and 120 fps', () => {
   const simulate = fps => {
     const car = unconstrainedCar();
@@ -228,12 +253,14 @@ test('impact cooldown expires even while car remains stopped', () => {
   assert.equal(car.impactEvent, null);
 });
 
-test('mobile D N R selector prevents direction changes at speed and drives in reverse with gas', () => {
+test('mobile Auto D N R selector switches forward modes and guards reverse shifts', () => {
   const car = unconstrainedCar();
   assert.equal(car.setDriveGear('D'), true);
   car.keys.KeyW = true;
   advance(car, 2);
   assert.ok(car.speed > 0);
+  assert.equal(car.setDriveGear('auto'), true);
+  assert.equal(car.setDriveGear('D'), true);
   assert.equal(car.setDriveGear('R'), false);
   assert.equal(car.setDriveGear('N'), true);
   const before = car.speed;
@@ -249,6 +276,10 @@ test('mobile D N R selector prevents direction changes at speed and drives in re
   car.keys = {KeyS:true};
   advance(car, 2);
   assert.equal(car.speed, 0, 'brake must not select reverse while in D');
+  car.speed = 0;
+  assert.equal(car.setDriveGear('auto'), true);
+  advance(car, 2);
+  assert.ok(car.speed < 0, 'Automatic should reverse after braking to a stop');
 });
 
 test('sport brakes stop sooner and nitro boosts only forward driving while consuming charge', () => {

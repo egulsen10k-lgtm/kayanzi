@@ -75,13 +75,16 @@ export class RobotRunnerView {
       const line=new THREE.Mesh(new THREE.BoxGeometry(.12,.015,5.2),paint('#d5e4e7'));
       line.position.set(x,.01,z);this.root.add(line);
     }
+    this.buildings=[];
     for(const side of [-1,1])for(let i=0;i<9;i++) {
       const height=8+(i*11%17),depth=11+(i%3)*3;
       const building=new THREE.Mesh(new THREE.BoxGeometry(8,height,depth),paint(i%2?'#668294':'#56748a'));
-      building.position.set(side*14,height/2,-i*20);this.root.add(building);
+      const initialZ=-i*20;
+      building.position.set(side*14,height/2,initialZ);this.root.add(building);
+      this.buildings.push({mesh:building, depth, initialZ});
     }
     this.robot=createRobotModel(color);this.root.add(this.robot);
-    this.trucks=new Map();this.pickups=new Map();
+    this.trucks=new Map();this.pickups=new Map();this.lowObstacles=new Map();this.roadsters=new Map();
   }
 
   createTruck(item) {
@@ -93,10 +96,26 @@ export class RobotRunnerView {
     add(3.18,.16,7.12,0,TRUCK_ROOF_HEIGHT-.08,-.55,paint('#d8e4e4',.45));
     add(2.75,1.65,1.8,0,1.1,3.3,shell);
     add(2.2,.53,.05,0,1.55,4.23,glass);
+    add(2.35,.58,.08,0,.93,4.25,paint('#26333b',.35));
+    add(.34,.16,.1,-.88,1.32,4.3,paint('#ff4b42'));
+    add(.34,.16,.1,.88,1.32,4.3,paint('#ff4b42'));
+    add(.28,.12,.18,-.55,.38,4.26,rubber);
+    add(.28,.12,.18,.55,.38,4.26,rubber);
+    group.userData.wheels=[];
     for(const x of [-1.25,1.25])for(const z of [-2.8,2.75]) {
       const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.45,.45,.22,12),rubber);
-      wheel.rotation.z=Math.PI/2;wheel.position.set(x,.47,z);group.add(wheel);
+      wheel.rotation.z=Math.PI/2;wheel.position.set(x,.47,z);wheel.name='runner-wheel';group.add(wheel);group.userData.wheels.push(wheel);
     }
+    this.root.add(group);return group;
+  }
+
+  createRoadster(item) {
+    const group=new THREE.Group();group.name='runner-roadster';
+    const body=paint('#c94a35',.55),dark=paint('#17232d',.4);
+    const add=(w,h,d,x,y,z,material)=>{const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);mesh.position.set(x,y,z);mesh.castShadow=true;group.add(mesh);};
+    add(2.3,.42,4.4,0,1.25,0,body);
+    add(1.55,.34,1.8,0,1.62,-.15,dark);
+    add(.18,.12,3.4,-1.05,.9,0,dark);add(.18,.12,3.4,1.05,.9,0,dark);
     this.root.add(group);return group;
   }
 
@@ -111,27 +130,58 @@ export class RobotRunnerView {
   reset() {
     for(const group of this.trucks.values())disposeGroup(group);
     for(const group of this.pickups.values())disposeGroup(group);
-    this.trucks.clear();this.pickups.clear();
+    for(const group of this.lowObstacles.values())disposeGroup(group);
+    for(const group of this.roadsters.values())disposeGroup(group);
+    this.trucks.clear();this.pickups.clear();this.lowObstacles.clear();this.roadsters.clear();
+    for(const building of this.buildings) building.mesh.position.z=building.initialZ;
     this.camera.position.set(0,5.7,10.5);
   }
 
   update(game,dt) {
+    if (!(this.roadsters instanceof Map)) this.roadsters=new Map();
+    if (!(this.lowObstacles instanceof Map)) this.lowObstacles=new Map();
+    const speed=game.over?0:Math.min(25,14+game.distance/500);
+    for(const building of this.buildings) {
+      building.mesh.position.z += speed*dt;
+      if(building.mesh.position.z - building.depth/2 > 18) building.mesh.position.z -= 180;
+    }
     const visibleTrucks=new Set(game.trucks.map(item=>item.id));
     const visiblePickups=new Set(game.pickups.map(item=>item.id));
+    const visibleObstacles=new Set((game.lowObstacles??[]).map(item=>item.id));
+    const visibleRoadsters=new Set((game.roadsters??[]).map(item=>item.id));
+    for(const [id,group] of this.roadsters) if(!visibleRoadsters.has(id)){disposeGroup(group);this.roadsters.delete(id);}
+    for(const [id,group] of this.lowObstacles) if(!visibleObstacles.has(id)){disposeGroup(group);this.lowObstacles.delete(id);}
     for(const [id,group] of this.trucks)if(!visibleTrucks.has(id)){disposeGroup(group);this.trucks.delete(id);}
     for(const [id,group] of this.pickups)if(!visiblePickups.has(id)){disposeGroup(group);this.pickups.delete(id);}
     for(const item of game.trucks) {
       const group=this.trucks.get(item.id)??this.createTruck(item);
-      this.trucks.set(item.id,group);group.position.set(RUNNER_LANES[item.lane],0,item.z);
+      this.trucks.set(item.id,group);group.position.set(RUNNER_LANES[item.lane],0,item.z);group.rotation.z=Number.isFinite(item.roll)?item.roll:0;
+      for(const wheel of group.userData.wheels ?? []) wheel.rotation.x-=dt*7.5;
     }
     for(const item of game.pickups) {
       const group=this.pickups.get(item.id)??this.createPickup();
-      this.pickups.set(item.id,group);group.position.set(RUNNER_LANES[item.lane],item.y,item.z);
+      this.pickups.set(item.id,group);group.position.set(RUNNER_LANES[item.lane],item.y+Math.sin((game.distance+item.id)*2.2)*.08,item.z);
       group.rotation.y+=dt*1.2;
+      group.rotation.z=Math.sin((game.distance+item.id)*1.5)*.04;
+    }
+    for(const item of game.roadsters??[]) {
+      const group=this.roadsters.get(item.id)??this.createRoadster(item);
+      this.roadsters.set(item.id,group);
+      group.position.set(RUNNER_LANES[item.lane],item.height??2.8,item.z);
+      group.rotation.x=Number.isFinite(item.roll)?item.roll:0;
+    }
+    for(const item of game.lowObstacles??[]) {
+      let group=this.lowObstacles.get(item.id);
+      if(!group) {
+        group=new THREE.Mesh(new THREE.BoxGeometry(3.1,item.height,1.8),paint('#b86b43'));
+        group.name='runner-low-obstacle';this.root.add(group);this.lowObstacles.set(item.id,group);
+      }
+      group.position.set(RUNNER_LANES[item.lane],item.height/2,item.z);
     }
     this.robot.position.set(game.x,game.y,0);
     this.robot.visible=game.over||game.invulnerable<=0||Math.floor(game.invulnerable*10)%2===0;
-    animateRobot(this.robot,{dt,speed:game.over?0:Math.min(25,14+game.distance/500),grounded:game.y<=.03||Boolean(game.roof),verticalVelocity:game.vy,lateral:RUNNER_LANES[game.lane]-game.x});
+    this.robot.scale.y += ((game.sliding?.72:1)-this.robot.scale.y)*Math.min(1,dt*14);
+    animateRobot(this.robot,{dt,speed,grounded:game.y<=.03||Boolean(game.roof),verticalVelocity:game.vy,lateral:RUNNER_LANES[game.lane]-game.x});
     this.camera.aspect=this.container.clientWidth/Math.max(1,this.container.clientHeight);
     this.camera.updateProjectionMatrix();
     this.camera.position.lerp(new THREE.Vector3(game.x*.35,5.7,10.5),Math.min(1,dt*5));

@@ -359,54 +359,111 @@ document.addEventListener('DOMContentLoaded', () => {
     select.addEventListener('change', () => apply(values[select.value]));
   };
   bindDynamicsSelect('drive-mode-select', value => physics.setDriveMode(value),
-    {comfort:'Comfort',sport:'Sport','sport-plus':'Sport+'});
+    {normal:'Normal',sport:'Sport','sport-plus':'Sport+'});
   bindDynamicsSelect('brake-feel-select', value => physics.setBrakeMode(value),
     {comfort:'Comfort',sport:'Sport'});
   bindDynamicsSelect('suspension-select', value => physics.setSuspensionMode(value),
     {comfort:'Comfort',sport:'Sport'});
   bindDynamicsSelect('dsc-mode-select', value => physics.setDscMode(value),
     {on:'On',traction:'Traction',off:'Off'});
+  const driveModeSelect = document.getElementById('drive-mode-select');
+  const dscModeSelect = document.getElementById('dsc-mode-select');
+  const driveModeButtons = [...document.querySelectorAll('[data-drive-mode]')];
+  const mobileDscButton = document.getElementById('mobile-dsc-button');
+  const syncDynamicsButtons = () => {
+    driveModeButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.driveMode === driveModeSelect.value)));
+    const label = dscModeSelect.selectedOptions[0].textContent;
+    mobileDscButton.textContent = `DSC ${label.toUpperCase()}`;
+    mobileDscButton.setAttribute('aria-label', `Stability control ${label}; tap to change`);
+    mobileDscButton.setAttribute('aria-pressed', String(dscModeSelect.value !== 'off'));
+  };
+  driveModeSelect.addEventListener('change', syncDynamicsButtons);
+  dscModeSelect.addEventListener('change', syncDynamicsButtons);
+  driveModeButtons.forEach(button => button.addEventListener('click', () => {
+    driveModeSelect.value = button.dataset.driveMode;
+    driveModeSelect.dispatchEvent(new Event('change', { bubbles:true }));
+  }));
+  mobileDscButton.addEventListener('click', () => {
+    const modes = ['on', 'traction', 'off'];
+    dscModeSelect.value = modes[(modes.indexOf(dscModeSelect.value) + 1) % modes.length];
+    dscModeSelect.dispatchEvent(new Event('change', { bubbles:true }));
+  });
+  syncDynamicsButtons();
 
   const gearButtons = [...document.querySelectorAll('[data-gear]')];
   const gearShiftStatus = document.getElementById('gear-shift-status');
+  const transmissionSelect = document.getElementById('transmission-select');
+  const transmissionStatus = document.getElementById('transmission-status');
   let gearStatusTimer;
-  const syncGearButtons = () => gearButtons.forEach(button =>
-    button.setAttribute('aria-pressed', String(button.dataset.gear === physics.driveGear)));
-  if (window.matchMedia('(max-width:800px), (any-pointer:coarse), (max-height:500px) and (orientation:landscape)').matches) {
-    physics.setDriveGear('D');
-  }
+  const syncGearButtons = () => {
+    gearButtons.forEach(button =>
+      button.setAttribute('aria-pressed', String(button.dataset.gear === physics.driveGear)));
+    transmissionSelect.value = physics.driveGear;
+  };
   syncGearButtons();
-  gearButtons.forEach(button => button.addEventListener('click', () => {
-    if (!physics.setDriveGear(button.dataset.gear)) {
+  const selectGear = gear => {
+    clearTimeout(gearStatusTimer);
+    if (!physics.setDriveGear(gear)) {
       gearShiftStatus.textContent = 'Slow down to shift';
       gearShiftStatus.hidden = false;
-      clearTimeout(gearStatusTimer);
-      gearStatusTimer = setTimeout(() => { gearShiftStatus.textContent = ''; gearShiftStatus.hidden = true; }, 2200);
+      transmissionStatus.textContent = 'Slow down to shift';
+      gearStatusTimer = setTimeout(() => {
+        gearShiftStatus.textContent = '';
+        gearShiftStatus.hidden = true;
+        transmissionStatus.textContent = '';
+      }, 2200);
+      syncGearButtons();
       return;
     }
     gearShiftStatus.textContent = '';
     gearShiftStatus.hidden = true;
+    transmissionStatus.textContent = '';
     syncGearButtons();
-  }));
+  };
+  gearButtons.forEach(button => button.addEventListener('click', () => selectGear(button.dataset.gear)));
+  transmissionSelect.addEventListener('change', () => selectGear(transmissionSelect.value));
   settingsToggle.addEventListener('click', () => {
     if (!settingsPanel.hidden) setDynamicsOpen(false);
   });
 
   const nitroButton = document.getElementById('nitro-button');
+  const nitroSources = new Set();
+  const syncNitro = () => {
+    const active = nitroSources.size > 0 && !nitroButton.disabled;
+    physics.setNitroActive(active);
+    nitroButton.setAttribute('aria-pressed', String(active));
+  };
   const releaseNitro = () => {
-    physics.setNitroActive(false);
-    nitroButton.setAttribute('aria-pressed', 'false');
+    nitroSources.clear();
+    syncNitro();
   };
   nitroButton.addEventListener('pointerdown', event => {
     if (nitroButton.disabled) return;
     event.preventDefault();
     nitroButton.setPointerCapture(event.pointerId);
-    physics.setNitroActive(true);
-    nitroButton.setAttribute('aria-pressed', 'true');
+    nitroSources.add(`pointer-${event.pointerId}`);
+    syncNitro();
   });
   for (const type of ['pointerup','pointercancel','lostpointercapture'])
-    nitroButton.addEventListener(type, releaseNitro);
+    nitroButton.addEventListener(type, event => {
+      nitroSources.delete(`pointer-${event.pointerId}`);
+      syncNitro();
+    });
+  window.addEventListener('keydown', event => {
+    if (event.code !== 'ShiftLeft' && event.code !== 'ShiftRight') return;
+    const active = document.activeElement;
+    if (active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)) return;
+    event.preventDefault();
+    nitroSources.add(event.code);
+    syncNitro();
+  });
+  window.addEventListener('keyup', event => {
+    if (event.code !== 'ShiftLeft' && event.code !== 'ShiftRight') return;
+    nitroSources.delete(event.code);
+    syncNitro();
+  });
   window.addEventListener('blur', releaseNitro);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) releaseNitro(); });
 
   document.querySelectorAll('[data-model]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -807,7 +864,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (boundary) boundary.textContent = physics.roadBlocked ? (physics.roadNetwork ? 'Road edge · brake / reverse or reset' : 'Waiting for drivable roads') : 'Road boundaries active';
     hudRpm.innerText = Math.round(physics.rpm);
     hudGear.innerText = physics.driveGear === 'auto' ?
-      (physics.bmwModel === 'i4 M50 (EV)' ? 'D' : physics.gear) :
+      (physics.bmwModel === 'i4 M50 (EV)' ? 'A' : `A${physics.gear}`) :
       (physics.driveGear === 'D' && physics.bmwModel !== 'i4 M50 (EV)' ? `D${physics.gear}` : physics.driveGear);
     document.getElementById('hud-drive-mode').textContent = physics.driveMode;
     document.getElementById('hud-dsc').textContent = physics.dscMode;

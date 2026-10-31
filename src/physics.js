@@ -25,7 +25,7 @@ export class CarPhysics {
     this.bmwModel = 'M3 Competition';
     this.color = '#1c3fa8';
     this.handlingMode = 'Sport+';
-    this.driveMode = 'Comfort';
+    this.driveMode = 'Normal';
     this.brakeMode = 'Comfort';
     this.suspensionMode = 'Comfort';
     this.dscMode = 'On';
@@ -83,7 +83,8 @@ export class CarPhysics {
   }
 
   setDriveMode(mode) {
-    if (!['Comfort', 'Sport', 'Sport+'].includes(mode)) return false;
+    if (mode === 'Comfort') mode = 'Normal';
+    if (!['Normal', 'Sport', 'Sport+'].includes(mode)) return false;
     this.driveMode = mode;
     return true;
   }
@@ -107,8 +108,9 @@ export class CarPhysics {
   }
 
   setDriveGear(gear) {
-    if (!['D', 'N', 'R'].includes(gear)) return false;
-    if (gear !== 'N' && gear !== this.driveGear && Math.abs(this.speed) > 3) return false;
+    if (!['auto', 'D', 'N', 'R'].includes(gear)) return false;
+    const forwardSwitch = ['auto', 'D'].includes(gear) && ['auto', 'D'].includes(this.driveGear);
+    if (gear !== 'N' && gear !== this.driveGear && !forwardSwitch && Math.abs(this.speed) > 3) return false;
     this.driveGear = gear;
     this.reverseDelay = 0;
     return true;
@@ -242,13 +244,19 @@ export class CarPhysics {
     const normalYaw = Math.max(-yawLimit, Math.min(yawLimit, requestedYaw));
     const steerDirection = Math.sign(this.steering);
     const arcadeInput = this.handbrake || (this.throttle > .55 && Math.abs(this.steering) > .35);
-    const canDrift = this.drivetrain === 'RWD' && absMs > 7 && Math.abs(this.steering) > .12 && arcadeInput;
+    const handbrakeTurn = this.handbrake && absMs > 7 && Math.abs(this.steering) > .08;
+    const canDrift = this.drivetrain === 'RWD' && absMs > 7 && arcadeInput &&
+      (Math.abs(this.steering) > .12 || this.handbrake);
     const counterSteering = this.driftDirection && steerDirection === -this.driftDirection;
     const speedSlip = Math.min(1, Math.max(0, (absMs - 7) / 18));
-    const steerSlip = Math.min(1, Math.max(0, (Math.abs(this.steering) - .12) / .55));
+    const steerSlip = Math.min(1, Math.max(0, (Math.abs(this.steering) - .08) / .55));
     const driveSlip = this.handbrake ? 1 : .6 + Math.min(.4, Math.max(0, this.throttle));
     const stability = this.dscMode === 'On' ? .6 : this.dscMode === 'Traction' ? .85 : 1;
-    const targetSlip = canDrift ? speedSlip * steerSlip * driveSlip * stability * (counterSteering ? .7 : 1) : 0;
+    // A handbrake locks the rear axle: it must create lateral slip even before
+    // throttle is applied. DSC can damp it, but cannot make locked tires grip.
+    const handbrakeSlip = this.handbrake ? speedSlip * (.55 + .45 * steerSlip) : 0;
+    const targetSlip = canDrift ? Math.max(handbrakeSlip,
+      speedSlip * steerSlip * driveSlip * stability * (counterSteering ? .7 : 1)) : 0;
     const response = 1 - Math.exp(-(targetSlip > this.driftFactor ? 4.0 : 6.0) * dt);
     this.driftFactor += (targetSlip - this.driftFactor) * response;
     if (this.driftFactor > .02 && steerDirection && (!this.driftDirection || !counterSteering)) this.driftDirection = steerDirection;

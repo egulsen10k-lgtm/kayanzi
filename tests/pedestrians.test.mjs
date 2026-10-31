@@ -19,21 +19,46 @@ test('clearNetwork disables stale pedestrian interactions',()=>{
  assert.equal(sim.passengers,0);
  assert.equal(sim.horn(c),0);
 });
-test('horn activates only nearby pedestrians on the same road level',()=>{
- const sim=new Pedestrians(),c=car();sim.network=network;sim.people=[person(10),person(60)];
+test('horn calls nearby pedestrians without a road-height restriction',()=>{
+ const sim=new Pedestrians(),c=car();sim.network=network;sim.people=[person(10),person(160)];
  assert.equal(sim.horn(c),1);assert.equal(sim.people[0].state,'chasing');assert.equal(sim.people[1].state,'idle');
- c.roadHeight=5;assert.equal(sim.horn(c),0);
+ c.roadHeight=5;assert.equal(sim.horn(c),1);
+});
+test('idle pedestrians walk freely across road edges and building footprints',()=>{
+ const sim=new Pedestrians(),c=car();
+ const world={...network,buildings:[{points:[[4,-2],[8,-2],[8,2],[4,2],[4,-2]]}]};
+ sim.network=world;c.roadNetwork=world;
+ sim.people=[{...person(3.9),heading:Math.PI/2}];
+ for(let i=0;i<20;i++)sim.update(c,.1);
+ assert.ok(sim.people[0].x>6,'walker stopped at a road or building edge');
+});
+test('a horn chase survives district replacement',()=>{
+ const sim=new Pedestrians(),c=car();sim.network=network;sim.people=[person(20,20)];sim.horn(c);
+ const next={...network,center:{lat:.0001,lng:.0001}};
+ sim.reset(next,c);
+ assert.equal(sim.people[0].state,'chasing');
+ c.roadNetwork=next;const before=sim.people[0].y;sim.update(c,.1);
+ assert.ok(sim.people[0].y<before);
 });
 test('catching a slow car boards once, with capacity including driver',()=>{
  const sim=new Pedestrians(),c=car();sim.network=network;sim.people=Array.from({length:8},(_,i)=>person(2+i*.01));
  sim.horn(c);sim.update(c,.1);assert.equal(sim.passengers,4);assert.equal(sim.people.filter(p=>p.state==='boarded').length,4);
  sim.horn(c);sim.update(c,.1);assert.equal(sim.passengers,4);
- c.bmwModel='M4 CSL';sim.update(c,.1);assert.equal(sim.passengers,1);assert.equal(seatCapacity(c.bmwModel),2);
+ c.bmwModel='M4 CSL';sim.update(c,.1);assert.equal(sim.passengers,1);assert.equal(sim.people.filter(p=>p.state==='boarded').length,1);assert.equal(seatCapacity(c.bmwModel),2);
 });
-test('pedestrians cannot board a fast car or chase forever',()=>{
+test('horn runners cross the road before boarding at the car door',()=>{
+ const sim=new Pedestrians(),c=car();sim.network=network;sim.people=[person(8)];sim.horn(c);
+ for(let i=0;i<10;i++)sim.update(c,.1);
+ assert.ok(sim.people[0].x<4,'runner stopped outside the asphalt');
+ assert.equal(sim.people[0].state,'chasing');assert.equal(sim.passengers,0);
+ for(let i=0;i<10;i++)sim.update(c,.1);
+ assert.equal(sim.people[0].state,'boarded');
+});
+test('pedestrians cannot board a fast car and keep chasing beyond the old timer',()=>{
  const sim=new Pedestrians(),c=car();sim.network=network;sim.people=[person(2)];c.speed=40;
  sim.horn(c);sim.update(c,.1);assert.equal(sim.passengers,0);
- sim.people[0].remaining=.01;sim.update(c,.1);assert.equal(sim.people[0].state,'idle');
+ for(let i=0;i<200;i++)sim.update(c,.1);
+ assert.equal(sim.people[0].state,'chasing');
 });
 test('chasing pedestrians stay on the sidewalk instead of crossing asphalt',()=>{
  const sim=new Pedestrians(),c=car();sim.network=network;
@@ -58,18 +83,39 @@ test('spawn budget is bounded and places people on ground streets only',()=>{
  for(const p of sim.people)assert.ok(Math.abs(p.x)>4);
  sim.reset({...network,roads:[{...network.roads[0],bridge:true,elevations:[5,5]}]},c);assert.equal(sim.people.length,0);
 });
-test('chase advances toward car without walking through buildings',()=>{
- const sim=new Pedestrians(),c=car();sim.network=network;sim.people=[person(5,15)];
- sim.horn(c);sim.update(c,.1);assert.ok(sim.people[0].y<15);
+test('chasing pedestrians cross junction asphalt freely',()=>{
+ const sim=new Pedestrians(),c=car();
+ const crossing={...network,roads:[
+  {width:8,highway:'residential',points:[[-100,0],[100,0]]},
+  {width:8,highway:'residential',points:[[0,-100],[0,100]]}
+ ]};
+ sim.network=crossing;c.roadNetwork=crossing;sim.people=[{...person(4.75),height:.22,state:'chasing',remaining:18,phase:0}];
+ sim.update(c,.1);
+ assert.ok(sim.people[0].x<4.75);assert.equal(sim.people[0].height,.22);
+});
+test('elevated roads do not create walkable sidewalks',()=>{
+ const sim=new Pedestrians(),c=car();const elevated={...network,roads:[{...network.roads[0],elevations:[5,5]}]};
+ sim.network=elevated;sim.people=[{...person(4.75),height:.22,state:'chasing',remaining:18,phase:0}];c.roadNetwork=elevated;
+ sim.update(c,.1);assert.ok(sim.people[0].x<4.75);assert.equal(sim.people[0].height,.22);
+});
+test('horn-chasing pedestrians take the direct route through mapped walls',()=>{
+ const sim=new Pedestrians(),c=car();
  const blocked={...network,buildings:[{points:[[-10,10],[10,10],[10,14.9],[-10,14.9],[-10,10]]}]};
  sim.network=blocked;c.roadNetwork=blocked;sim.people=[person(5,15)];sim.horn(c);sim.update(c,.1);
- assert.equal(sim.people[0].y,15);
+ assert.ok(sim.people[0].y<15,'active horn chases must not detour around walls');
+});
+
+test('walking NPCs keep a direct path through another pedestrian',()=>{
+ const sim=new Pedestrians(),c=car();sim.network=network;
+ sim.people=[person(0,15),person(0,14.6)];sim.horn(c);sim.update(c,.1);
+ assert.ok(Math.abs(sim.people[0].x)<1e-6);
+ assert.ok(sim.people[0].y<14.9,'nearby NPCs must not stop the walker');
 });
 
 test('passengers survive world streaming, while old pedestrians are replaced',()=>{
  const sim=new Pedestrians(),c=car();sim.update(c,.1);sim.passengers=2;
  c.roadNetwork={...network};sim.update(c,.1);assert.equal(sim.passengers,2);assert.equal(sim.network,c.roadNetwork);
- c.roadNetwork=null;sim.update(c,.1);assert.equal(sim.people.length,0);assert.equal(sim.network,null);
+ c.roadNetwork=null;sim.update(c,.1);assert.equal(sim.people.length,0);assert.equal(sim.network,null);assert.equal(sim.passengers,0);
 });
 test('vehicle impact launches nearby pedestrians with speed-proportional impulse',()=>{
  const launch=speed=>{

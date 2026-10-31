@@ -22,13 +22,20 @@ test('off-centre impacts produce angular motion; separate road levels do not col
  resolveTrafficContact(player,car);assert.ok(Math.abs(car.angularVelocity)>.1);
  const bridge=traffic();bridge.roadHeight=5;assert.equal(resolveTrafficContact(player,bridge),false);
 });
+test('traffic collision cannot launch or spin an AI car away from its lane',()=>{
+ const car=traffic(),player={x:-2,y:1.5,heading:Math.PI/2,speed:150,roadHeight:.08};
+ resolveTrafficContact(player,car);
+ assert.ok(Math.hypot(car.vx,car.vy)<=3+1e-6);
+ for(let i=0;i<20;i++)integrateTrafficImpact(car,.1,20);
+ assert.ok(Math.abs(car.yawOffset)<=.18+1e-6);
+});
 test('oriented bodies permit passing beside a car without proximity locks',()=>{
  const car=traffic(),player={x:2,y:0,heading:0,speed:30,roadHeight:.08};
  assert.equal(vehicleContact(player,car),null);assert.equal(resolveTrafficContact(player,car),false);assert.equal(player.speed,30);
 });
 test('traffic route update preserves pushed position and player can back out',()=>{
  const manager=new TrafficManager(new THREE.Scene()),center={lat:0,lng:0};
- const network={center,roads:[{width:10,points:[[0,20],[0,120]],elevations:[0,0]}]};
+ const network={center,radiusMeters:500,roads:[{width:10,points:[[0,20],[0,120]],elevations:[0,0]}]};
  const player={lat:0,lng:0,heading:Math.PI/2,speed:36,roadHeight:.08};manager.reset(network,player);
  const car=manager.cars[0],before=car.x;
  Object.assign(player,localToCoordinate([car.x-2,car.y],center));manager.update(.016,player);

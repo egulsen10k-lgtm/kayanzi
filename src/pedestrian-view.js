@@ -83,7 +83,7 @@ export class PedestrianView {
         } else {
           model.position.set(person.x-p[0],person.height,-(person.y-p[1]));model.rotation.set(0,Math.PI-person.heading,0);
           const holding=person.state==='clinging';
-          const swing=person.state==='chasing'?Math.sin(person.phase)*.65:0;
+          const swing=['idle','chasing'].includes(person.state)?Math.sin(person.phase)*(person.state==='chasing'?.65:.3):0;
           model.rotation.x=holding ? -.18 : person.state==='recovering' ? (1-Math.min(1,person.recoveryTime/1.2))*1.3 : 0;
           model.userData.legs.forEach((limb,j)=>{limb.rotation.x=holding ? (j ? -.42 : -.25) : swing*(j%2?1:-1);});
           model.userData.arms.forEach((limb,j)=>{limb.rotation.x=holding ? -1.32+(j ? -.12 : .12) : swing*(j%2?-1:1);});
