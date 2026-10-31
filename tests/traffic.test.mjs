@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { TrafficManager } from '../src/traffic.js';
-import { lanePose } from '../src/traffic-routes.js';
+import { lanePose, makeTrafficTurn, nextTrafficEdge } from '../src/traffic-routes.js';
 import { footprintOnRoad,localToCoordinate } from '../src/road-safety.js';
 const network=(roads,buildings=[])=>({center:{lat:0,lng:0},radiusMeters:800,roads,buildings});
 const street=(points,extra={})=>({width:8,highway:'residential',points,elevations:points.map(()=>0),...extra});
@@ -28,6 +28,12 @@ test('a dead-end stops the vehicle instead of reversing or changing lanes',()=>{
  const x=car.x;
  for(let i=0;i<200;i++)m.update(.05,player());
  assert.equal(car.edge.id,edge.id);assert.equal(car.turn,null);assert.ok(car.speed<.2);assert.equal(car.x,x);assert.ok(car.s<=edge.length);
+});
+test('straight road joins preserve cruising speed in a fast zone',()=>{
+ const m=setup(network([street([[0,-200],[0,0]],{highway:'primary'}),street([[0,0],[0,200]],{highway:'primary'})]));
+ const car=m.cars[0],edge=m.graph.edges.find(e=>e.from.p[1]<0&&e.to.p[1]===0);
+ place(car,edge,edge.length);car.turn=makeTrafficTurn(edge,nextTrafficEdge(m.graph,edge));car.s=car.turn.length/2;Object.assign(car,car.turn.pose(car.s));car.speed=80;
+ assert.ok(m.targetSpeed(car,m.playerPoint(player()))>20,'straight joins should not force an 18 km/h turn speed');
 });
 
 test('district streaming preserves the same car and exact world position',()=>{

@@ -101,7 +101,7 @@ export class TrafficManager {
   }
   targetSpeed(car,player) {
     let target=Math.min(car.cruise,car.edge.limit*.92)/3.6;
-    if(car.turn)target=Math.min(target,5);
+    if(car.turn&&car.edge.tangent[0]*car.turn.next.tangent[0]+car.edge.tangent[1]*car.turn.next.tangent[1]<.95)target=Math.min(target,5);
     const forward=[Math.sin(car.heading),Math.cos(car.heading)];
     for(const other of [player,...this.cars]) {
       if(other===car||Math.abs(other.roadHeight-car.roadHeight)>.7)continue;
