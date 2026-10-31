@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { disposeTrafficObject } from './traffic-vehicle.js';
+import { crosswalkLayout } from './crosswalks.js';
 export function signalPhase(time,axis,offset=0) {
   const phase=((time+offset)%44+44)%44;
   const local=axis===0?phase:(phase+22)%44;
@@ -30,7 +31,8 @@ export class TrafficControls {
           transform.position.set(p[0],node.h+3.92-i*.32,-p[1]);transform.translateZ(.14);transform.updateMatrix();this.bulbs.setMatrixAt(bulbIndex,transform.matrix);
           this.bulbs.setColorAt(bulbIndex,new THREE.Color(color).multiplyScalar(.05));lamps.push({index:bulbIndex,color,axis:approachAxis(edge),phase:['red','amber','green'][i]});
         }
-        transform.position.set(edge.end[0],edge.hb+.025,-edge.end[1]);transform.rotation.set(-Math.PI/2,0,-Math.atan2(...edge.tangent));transform.scale.set(Math.max(1.6,edge.road.width/2-.3),.22,1);transform.updateMatrix();lines.setMatrixAt(index,transform.matrix);index++;
+        const stop=this.stopPoint(edge);
+        transform.position.set(stop[0],edge.hb+.025,-stop[1]);transform.rotation.set(-Math.PI/2,0,-Math.atan2(...edge.tangent));transform.scale.set(Math.max(1.6,edge.road.width/2-.3),.22,1);transform.updateMatrix();lines.setMatrixAt(index,transform.matrix);index++;
       }
       this.signals.set(node.id,{node,lamps,offset:0,lastPhase:null});
     }
@@ -53,6 +55,8 @@ export class TrafficControls {
     }
   }
   allows(edge,time){const signal=this.signals.get(edge.to.id);return !signal||signalPhase(time,approachAxis(edge),signal.offset)==='green';}
+  stopDistance(edge){return crosswalkLayout(edge)?.stopOffset??0;}
+  stopPoint(edge){const offset=this.stopDistance(edge);return [edge.end[0]-edge.tangent[0]*offset,edge.end[1]-edge.tangent[1]*offset];}
   phase(edge,time){const signal=edge?this.signals.get(edge.to.id):null;return signal?signalPhase(time,approachAxis(edge),signal.offset):null;}
   update(time,player) {
     let changed=false;
@@ -67,7 +71,8 @@ export class TrafficControls {
       const forward=[Math.sin(player.heading),Math.cos(player.heading)];
       for(const signal of this.signals.values())for(const edge of signal.node.incoming) {
         if(this.phase(edge,time)!=='red'||time-this.lastRedTicket<5||Math.abs(player.roadHeight-edge.hb)>.7||forward[0]*edge.tangent[0]+forward[1]*edge.tangent[1]<.6)continue;
-        const front=p=>[p.x+Math.sin(p.heading)*2.25-edge.end[0],p.y+Math.cos(p.heading)*2.25-edge.end[1]],before=front(this.previousPlayer),after=front(player);
+        const stop=this.stopPoint(edge);
+        const front=p=>[p.x+Math.sin(p.heading)*2.25-stop[0],p.y+Math.cos(p.heading)*2.25-stop[1]],before=front(this.previousPlayer),after=front(player);
         const along=p=>p[0]*edge.tangent[0]+p[1]*edge.tangent[1];
         if(along(before)<0&&along(after)>=0&&Math.abs(after[0]*edge.normal[0]+after[1]*edge.normal[1])<edge.road.width/4) {
           this.tickets++;this.lastRedTicket=time;this.message=`Red light · Ticket ${this.tickets}`;this.messageUntil=time+6;

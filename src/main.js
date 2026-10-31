@@ -842,7 +842,7 @@ document.addEventListener('DOMContentLoaded', () => {
       navigation.textContent=info?.directions.length?`${Math.ceil(info.remaining)} m · ${info.directions.map(d=>`${d.arrow} ${d.name}`).join(' · ')}`:info?.name?`↑ ${info.name}`:'';
       navigation.title=navigation.textContent;
       const signal=document.getElementById('hud-signal');signal.hidden=!info?.signal||info.remaining>100;
-      if(!signal.hidden){signal.textContent=`${info.signal.toUpperCase()} · ${Math.ceil(info.remaining)} m`;signal.style.color={red:'#ff968c',amber:'#ffd37d',green:'#8de2a6'}[info.signal];}
+      if(!signal.hidden){signal.textContent=`${info.signal.toUpperCase()} · ${Math.ceil(info.signalDistance??info.remaining)} m`;signal.style.color={red:'#ff968c',amber:'#ffd37d',green:'#8de2a6'}[info.signal];}
       const energy=physics.energy,percent=Math.ceil(energy.percent);
       document.getElementById('hud-fuel').textContent=`${energy.electric?'Battery':'Fuel'} ${percent}%`;
       document.getElementById('hud-economy').textContent=energy.readout(physics.speed);

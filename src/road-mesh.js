@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { sidewalkWidth, SIDEWALK_HEIGHT } from './sidewalks.js';
+import { buildCrosswalkMesh } from './crosswalks.js';
 
 export const ROAD_SURFACE_HEIGHT = 0.08;
 const BASE = -0.035;
@@ -108,6 +109,11 @@ export function buildRoadMeshes(network) {
   group.name = 'road-surfaces';
   const asphalt = [], markings = [], shoulders = [], curbs = [], structures = [];
   const overlaps = streetOverlap(network);
+  const crosswalks=buildCrosswalkMesh(network),crossings=crosswalks?.userData.crossings??[];
+  const crossingAt=point=>crossings.some(c=>{
+    const dx=point[0]-c.x,dy=-point[2]-c.y;
+    return Math.abs(point[1]-c.height)<.1&&Math.abs(dx*c.tangent[0]+dy*c.tangent[1])<=c.depth/2+.2&&Math.abs(dx*c.normal[0]+dy*c.normal[1])<=c.width/2;
+  });
   for (const road of network?.roads ?? []) {
     if (!Number.isFinite(road.width) || road.width < 2 || road.width > 40) continue;
     for (const points of cleanFragments(road.points, road.elevations)) {
@@ -167,7 +173,7 @@ export function buildRoadMeshes(network) {
             if (to <= from) continue;
             const p = (d, sign) => [ax + (bx - ax) * d / length + sign * nx, ROAD_SURFACE_HEIGHT + .004 + points[i][2] + (points[j][2]-points[i][2])*d/length, az + (bz - az) * d / length + sign * nz];
             // No lane dashes painted across another street's junction.
-            if (![from, (from + to) / 2, to].some(d => overlaps(road, p(d, 0))))
+            if (![from, (from + to) / 2, to].some(d => overlaps(road, p(d, 0))||crossingAt(p(d,0))))
               quad(markings, p(from, 1), p(to, 1), p(to, -1), p(from, -1));
           }
         }
@@ -212,5 +218,6 @@ export function buildRoadMeshes(network) {
     mesh.castShadow = ['curbs','structures','asphalt'].includes(name);
     group.add(mesh);
   }
+  if(crosswalks)group.add(crosswalks);
   return group;
 }

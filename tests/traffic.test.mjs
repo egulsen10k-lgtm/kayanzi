@@ -71,6 +71,7 @@ test('traffic queues at red and proceeds when its light becomes green',()=>{
  for(let i=0;i<150;i++)m.update(.05,player());
  assert.equal(car.turn,null);assert.equal(car.edge.id,edge.id);assert.ok(car.speed<.5,'car failed to stop at red');
  assert.ok(car.s+car.length/2<edge.length,'front bumper crossed the stop line');
+ assert.ok(car.s+car.length/2<edge.length-m.controls.stopDistance(edge),'queued car blocked the crosswalk');
  m.time=22;
  for(let i=0;i<100;i++)m.update(.05,player());
  assert.ok(car.turn||car.edge.id!==edge.id,'car did not proceed on green');

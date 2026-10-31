@@ -113,7 +113,7 @@ export class TrafficManager {
     if(!car.turn) {
       const next=this.nextEdge(car,player),remaining=car.edge.length-car.s;
       if(next&&next.tangent[0]*car.edge.tangent[0]+next.tangent[1]*car.edge.tangent[1]<.95)target=Math.min(target,Math.sqrt(25+2*3.5*Math.max(0,remaining)));
-      const red=!this.controls.allows(car.edge,this.time),stopBuffer=red?car.length/2+.6:.3;
+      const red=!this.controls.allows(car.edge,this.time),stopBuffer=red?car.length/2+.6+this.controls.stopDistance(car.edge):.3;
       if(!next||red)target=Math.min(target,Math.sqrt(Math.max(0,2*4*(remaining-stopBuffer))));
       if(remaining<12&&next&&car.edge.to.neighbors.size>=3&&this.cars.some(other=>other!==car&&other.turn&&Math.abs(other.roadHeight-car.roadHeight)<.7&&distance(other,{x:car.edge.to.p[0],y:car.edge.to.p[1]})<9))target=Math.min(target,Math.sqrt(Math.max(0,2*4*(remaining-.4))));
     }
@@ -125,7 +125,7 @@ export class TrafficManager {
     for(let step=0;step<8&&remaining>0;step++) {
       const length=car.turn?.length??car.edge.length,available=Math.max(0,length-car.s);
       if(!car.turn&&!this.controls.allows(car.edge,this.time)) {
-        const stopAt=Math.max(car.s,length-car.length/2-.6);
+        const stopAt=Math.max(car.s,length-this.controls.stopDistance(car.edge)-car.length/2-.6);
         if(car.s+remaining>=stopAt){car.s=stopAt;car.speed=0;return;}
       }
       if(remaining<available){car.s+=remaining;return;}
@@ -151,7 +151,11 @@ export class TrafficManager {
     const p=this.playerPoint(player);this.controls.update(this.time,p);
     this.infoClock+=dt;
     if(this.infoClock>=.15){this.infoClock=0;this.roadInfo=this.signs.nearby(this.graph,p);}
-    if(this.roadInfo)this.roadInfo.signal=this.controls.phase(this.roadInfo.signalEdge??this.roadInfo.edge,this.time);
+    if(this.roadInfo){
+      const edge=this.roadInfo.signalEdge??this.roadInfo.edge;
+      this.roadInfo.signal=this.controls.phase(edge,this.time);
+      this.roadInfo.signalDistance=Math.max(0,this.roadInfo.remaining-(edge?this.controls.stopDistance(edge):0));
+    }
     if(this.spawnClock>=1.5){this.spawnClock=0;this.spawn(p);}
     this.refreshFrustum();
     let retireBudget=Math.max(0,this.cars.length-this.maxCars-this.cars.filter(car=>car.retiring).length);
