@@ -1114,6 +1114,34 @@
       .drive-quickbar { bottom:calc(175px + env(safe-area-inset-bottom)); }
       #map-container:not(.map-expanded) { top:155px !important; left:12px !important; }
     }
+    @media (max-width:800px), (pointer:coarse) {
+      .hud-card,.drive-touch-btn,#drive-dynamics-panel { backdrop-filter:none; box-shadow:none; }
+      .hud-overlay { top:64px!important; width:160px!important; }
+      .hud-card { padding:8px 10px; }
+      .speedometer-val { font-size:25px; }
+      .dynamics-readout,.rpm-container { display:none; }
+      #sidebar-toggle { top:12px; right:12px; min-height:40px; }
+      #settings-toggle { top:12px!important; right:82px!important; min-height:40px; width:40px; }
+      #drive-dynamics-toggle { top:12px!important; right:130px; min-height:40px; width:66px; font-size:0; padding:4px; }
+      #drive-dynamics-toggle::after { content:'Setup'; font-size:12px; }
+      #milli-sarki-btn { top:12px; right:204px; width:40px; min-height:40px; font-size:0; padding:0; }
+      #milli-sarki-btn::after { content:'♫'; font-size:20px; }
+      #transform-controls { top:64px!important; right:12px!important; width:112px!important; }
+      #transform-controls button { min-height:40px; padding:5px!important; border-radius:8px!important; box-shadow:none!important; }
+      .drive-mode-shortcuts { display:none; }
+      .drive-quickbar { bottom:calc(128px + env(safe-area-inset-bottom)); width:min(290px,calc(100vw - 24px)); }
+      #drive-touch-controls { bottom:calc(16px + env(safe-area-inset-bottom))!important; }
+      .touch-pedals { grid-template-columns:54px 54px; gap:6px; }
+      .drive-touch-btn { width:54px; height:54px; min-height:54px; border-radius:10px; font-size:24px; }
+      .touch-pedals .touch-handbrake,.touch-pedals .touch-horn { width:54px; height:40px; min-height:40px; font-size:9px; }
+      #map-container:not(.map-expanded) { top:auto!important; bottom:calc(190px + env(safe-area-inset-bottom))!important; left:12px!important; width:100px; height:76px; }
+      #drive-dynamics-panel { top:60px; max-height:calc(100dvh - 76px); }
+      #imagery-attribution { max-width:100%; white-space:nowrap; overflow:hidden; }
+    }
+    @media (max-height:500px) and (orientation:landscape) {
+      .drive-quickbar { bottom:calc(16px + env(safe-area-inset-bottom)); }
+      #map-container:not(.map-expanded) { bottom:140px!important; }
+    }
   </style>
 </head>
 <body>

@@ -69,14 +69,27 @@ test('chasing pedestrians stay on the sidewalk instead of crossing asphalt',()=>
 });
 test('overflow passengers require both 80 km/h and a steering reversal to fall',()=>{
  const sim=new Pedestrians(),c=car();sim.network=network;sim.passengers=4;
- sim.people=[person(2)];sim.horn(c);sim.update(c,.1);assert.equal(sim.people[0].state,'clinging');
+ sim.people=[person(2),{...person(0),state:'trunk-rider',trunkSlot:0},{...person(0),state:'trunk-rider',trunkSlot:1}];sim.horn(c);sim.update(c,.1);assert.equal(sim.people[0].state,'clinging');
  const held=sim.people[0],previousY=held.y;c.lat=.0001;sim.update(c,.1);assert.notEqual(held.y,previousY);
  c.speed=79;sim.update(c,.1);assert.equal(sim.people[0].state,'clinging');
  c.speed=80;sim.update(c,.1);assert.equal(sim.people[0].state,'clinging');
  c.steering=.7;sim.update(c,.1);c.steering=-.7;sim.update(c,.1);assert.equal(sim.people[0].state,'ragdoll');
  const wiggling=new Pedestrians(),d=car();wiggling.network=network;wiggling.passengers=4;wiggling.people=[person(2)];
+ wiggling.people.push({...person(0),state:'trunk-rider',trunkSlot:0},{...person(0),state:'trunk-rider',trunkSlot:1});
  wiggling.horn(d);wiggling.update(d,.1);assert.equal(wiggling.people[0].state,'clinging');
  d.speed=50;d.heading=.25;wiggling.update(d,.1);assert.equal(wiggling.people[0].state,'clinging');
+});
+test('two overflow NPCs open the trunk, climb inside, then close it',()=>{
+ const sim=new Pedestrians(),c=car();sim.network=network;sim.passengers=4;
+ sim.people=[person(2),person(-2)];sim.horn(c);sim.update(c,.1);
+ assert.equal(sim.people.filter(p=>p.state==='trunk-approach').length,2);
+ let opened=false;
+ for(let i=0;i<120;i++){sim.update(c,.1);opened ||= sim.trunkOpen>.9;}
+ assert.ok(opened,'lid never opened');
+ assert.equal(sim.people.filter(p=>p.state==='trunk-rider').length,2);
+ assert.equal(sim.trunkOpen,0);
+ sim.people.push(person(2));sim.horn(c);sim.update(c,.1);
+ assert.equal(sim.people[2].state,'clinging','trunk capacity must remain two');
 });
 test('spawn budget is bounded and places people on ground streets only',()=>{
  const sim=new Pedestrians(),c=car();sim.update(c,.1);assert.ok(sim.people.length>0);assert.ok(sim.people.length<=24);
@@ -91,7 +104,7 @@ test('chasing pedestrians cross junction asphalt freely',()=>{
  ]};
  sim.network=crossing;c.roadNetwork=crossing;sim.people=[{...person(4.75),height:.22,state:'chasing',remaining:18,phase:0}];
  sim.update(c,.1);
- assert.ok(sim.people[0].x<4.75);assert.equal(sim.people[0].height,.22);
+ assert.ok(sim.people[0].x<4.75);assert.equal(sim.people[0].height,.08);
 });
 test('elevated roads do not create walkable sidewalks',()=>{
  const sim=new Pedestrians(),c=car();const elevated={...network,roads:[{...network.roads[0],elevations:[5,5]}]};

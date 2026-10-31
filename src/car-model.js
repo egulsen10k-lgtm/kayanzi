@@ -48,6 +48,7 @@ export function createCarModel(rawModelType = 'm3', colorHex = '#1c3fa8') {
       vertices.push(-width, low, z, width, low, z, width, high, z, -width, high, z);
     }
     for (let r = 0; r < rings.length - 1; r++) for (let j = 0; j < 4; j++) {
+      if(name==='sculpted-body' && r<2 && j===2)continue;
       const a = r * 4 + j, b = r * 4 + (j + 1) % 4, c = b + 4, d = a + 4;
       indices.push(a, b, c, a, c, d);
     }
@@ -134,7 +135,13 @@ export function createCarModel(rawModelType = 'm3', colorHex = '#1c3fa8') {
   }
   box('front-splitter',p.width*.92,.045,.18,black,0,.29,half-.02);
   box('rear-diffuser',1.45,.17,.11,black,0,.31,-half);
-  box('rear-lip',1.56,.045,.15,modelType==='m4'?black:paint,0,.86,-half+.18);
+  const trunkLid=new THREE.Group();trunkLid.name='trunk-lid';
+  trunkLid.position.set(0,.88,-1.36);group.add(trunkLid);
+  const trunkDepth=half-1.42;
+  box('trunk-panel',1.65,.07,trunkDepth,paint,0,0,-trunkDepth/2,.02,trunkLid);
+  box('rear-lip',1.56,.045,.15,modelType==='m4'?black:paint,0,.035,-trunkDepth+.12,.02,trunkLid);
+  box('trunk-interior',1.55,.05,trunkDepth,black,0,.43,-1.36-trunkDepth/2);
+  group.userData.trunkRear=half+.45;
   for(const z of [half+.065,-half-.065]) {
     const badge = mesh(new THREE.CircleGeometry(.055,24),silver,'roundel',0,.77,z);
     if(z<0) badge.rotation.y=Math.PI;

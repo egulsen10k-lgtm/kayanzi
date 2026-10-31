@@ -43,7 +43,7 @@ export class PedestrianView {
     const activeRagdolls=new Set();
     this.models.forEach((initialModel,i)=>{
       let model=initialModel;
-      const person=sim.people[i],visible=!!person&&person.state!=='boarded';
+      const person=sim.people[i],visible=!!person&&!['boarded','trunk-rider'].includes(person.state);
       if(visible){
         const style=this.styleColors[person.style] ? person.style : 'casual';
         if(model.userData.style!==style) {
@@ -83,10 +83,13 @@ export class PedestrianView {
         } else {
           model.position.set(person.x-p[0],person.height,-(person.y-p[1]));model.rotation.set(0,Math.PI-person.heading,0);
           const holding=person.state==='clinging';
-          const swing=['idle','chasing'].includes(person.state)?Math.sin(person.phase)*(person.state==='chasing'?.65:.3):0;
+          const entering=person.state==='trunk-entering',progress=person.trunkProgress??0;
+          model.scale.set(1,entering?1-progress*.5:1,1);
+          const swing=['idle','chasing','trunk-approach'].includes(person.state)?Math.sin(person.phase)*(person.state==='idle'?.3:.65):0;
           model.rotation.x=holding ? -.18 : person.state==='recovering' ? (1-Math.min(1,person.recoveryTime/1.2))*1.3 : 0;
           model.userData.legs.forEach((limb,j)=>{limb.rotation.x=holding ? (j ? -.42 : -.25) : swing*(j%2?1:-1);});
           model.userData.arms.forEach((limb,j)=>{limb.rotation.x=holding ? -1.32+(j ? -.12 : .12) : swing*(j%2?-1:1);});
+          if(entering){model.rotation.x=-.5;model.userData.arms.forEach(limb=>{limb.rotation.x=-1.3;});model.userData.legs.forEach(limb=>{limb.rotation.x=-progress*.9;});}
         }
         model.updateMatrixWorld(true);
       }
@@ -94,6 +97,8 @@ export class PedestrianView {
     });
     for(const [person,ragdoll] of this.ragdolls) if(!activeRagdolls.has(person)) {ragdoll.physics.dispose();this.ragdolls.delete(person);}
     this.batches.forEach(batch=>{batch.instanceMatrix.needsUpdate=true;});
+    const trunkLid=carGroup.getObjectByName('trunk-lid');
+    if(trunkLid)trunkLid.rotation.x=(sim.trunkOpen??0)*1.2;
     const roofRider=carGroup.getObjectByName('sunroof-rider');
     const riderOut=Boolean(roofRider && sim.passengers>0 && Math.abs(car.speed)<80);
     if(roofRider) roofRider.visible=riderOut;

@@ -794,6 +794,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastTime = performance.now();
   let syncTimer = 0;
   let routeTimer = 0;
+  let mapUpdateTimer = 0;
 
   function gameLoop(currentTime) {
     const dt = Math.min(0.1, (currentTime - lastTime) / 1000);
@@ -829,7 +830,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (visualizer.highBeams && !visualizer.previewActive) pedestrians.highBeam(physics);
     pedestrianView.update(pedestrians, physics, visualizer.carGroup, visualizer.previewActive);
     const clinging = pedestrians.people.filter(person => person.state === 'clinging').length;
-    const occupancy = `Kişi: ${pedestrians.passengers + 1}/${seatCapacity(physics.bmwModel)}${clinging ? ` · Tutunan: ${clinging}` : ' · Sürücü dahil'}`;
+    const trunkPassengers=pedestrians.people.filter(person=>person.state==='trunk-rider').length;
+    const occupancy = `Kişi: ${pedestrians.passengers + 1}/${seatCapacity(physics.bmwModel)}${trunkPassengers?` · Bagaj: ${trunkPassengers}/2`:''}${clinging ? ` · Tutunan: ${clinging}` : ' · Sürücü dahil'}`;
     const passengerHud = document.getElementById('hud-passengers');
     if (passengerHud.textContent !== occupancy) passengerHud.textContent = occupancy;
     const passengerStatus = document.getElementById('passenger-status');
@@ -844,7 +846,8 @@ document.addEventListener('DOMContentLoaded', () => {
     visualizer.update(physics, dt);
 
     const headingDeg = (physics.heading * 180) / Math.PI;
-    mapController.updateCarPosition(physics.lat, physics.lng, headingDeg);
+    mapUpdateTimer+=dt;
+    if(mapUpdateTimer>=.1){mapUpdateTimer=0;mapController.updateCarPosition(physics.lat, physics.lng, headingDeg);}
 
     audio.update(physics.rpm, physics.throttle, physics.speed, physics.isDrifting, {model:physics.bmwModel,gear:physics.gear,slip:physics.driftFactor,brake:physics.handbrake || (physics.throttle < 0 && physics.speed > 0)});
     if (physics.nitroEngaged && physics.bmwModel !== 'i4 M50 (EV)') {

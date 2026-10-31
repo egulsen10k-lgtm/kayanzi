@@ -1,5 +1,5 @@
 import { projectCoordinate } from './road-network.js';
-import { localToCoordinate } from './road-safety.js';
+import { localToCoordinate, roadSurfaceAt } from './road-safety.js';
 import { SIDEWALK_HEIGHT, sidewalkWidth } from './sidewalks.js';
 
 export const seatCapacity = model => /m4|csl/i.test(model) ? 2 : 5;
@@ -55,9 +55,10 @@ export class Pedestrians {
     this.people = [];
     this.passengers = 0;
     this.lastCarPoint = null;
+    this.trunkOpen = 0;
   }
   reset(network, car, density = this.density) {
-    const pursuers=this.network ? this.people.filter(person=>person.state==='chasing').map(person=>{
+    const pursuers=this.network ? this.people.filter(person=>['chasing','trunk-approach','trunk-entering','trunk-rider'].includes(person.state)).map(person=>{
       const coordinate=localToCoordinate([person.x,person.y],this.network.center);
       const [x,y]=projectCoordinate(coordinate.lat,coordinate.lng,network.center);
       return {...person,x,y};
@@ -200,8 +201,29 @@ export class Pedestrians {
         person.heading ??= 0;
         person.x+=Math.sin(person.heading)*1.2*dt;
         person.y+=Math.cos(person.heading)*1.2*dt;
-        person.height=sidewalkSurfaceAt(this.network,[person.x,person.y]) ?? .08;
+        person.height=roadSurfaceAt(this.network,[person.x,person.y],person.height) ?? .08;
         person.phase+=dt*5;
+        continue;
+      }
+      if(['trunk-approach','trunk-entering','trunk-rider'].includes(person.state)) {
+        const heading=car.heading??0,side=person.trunkSlot===0?-.4:.4;
+        if(person.state==='trunk-rider')continue;
+        const rear=/m5/i.test(car.bmwModel)?2.94:2.85;
+        const target=[p[0]-Math.sin(heading)*rear+Math.cos(heading)*side,p[1]-Math.cos(heading)*rear-Math.sin(heading)*side];
+        if(person.state==='trunk-approach') {
+          const dx=target[0]-person.x,dy=target[1]-person.y,d=Math.hypot(dx,dy),step=Math.min(d,4.3*dt);
+          person.x+=dx/Math.max(d,.001)*step;person.y+=dy/Math.max(d,.001)*step;
+          person.heading=Math.atan2(dx,dy);person.phase+=dt*11;
+          if(d<.35 && Math.abs(car.speed)<3){person.state='trunk-entering';person.trunkTime=0;}
+        } else {
+          if(Math.abs(car.speed)<3)person.trunkTime+=dt;
+          const progress=Math.max(0,Math.min(1,(person.trunkTime-.7)/1.5));
+          person.x=target[0]+Math.sin(heading)*progress;
+          person.y=target[1]+Math.cos(heading)*progress;
+          person.height=(car.roadHeight??.08)+Math.sin(progress*Math.PI)*.55+progress*.25;
+          person.heading=heading;person.trunkProgress=progress;
+          if(progress>=1){person.state='trunk-rider';this.message='Bagajda 2 kişiye kadar yer var!';}
+        }
         continue;
       }
       if(person.state!=='chasing')continue;
@@ -209,6 +231,9 @@ export class Pedestrians {
       if(distance<2.3 && Math.abs(car.speed)<8) {
         if(this.passengers<capacity-1){this.passengers++;person.state='boarded';this.message=`Yolcu bindi · ${this.passengers+1}/${capacity} kişi`;} 
         else {
+          const trunkSlots=new Set(this.people.filter(n=>['trunk-approach','trunk-entering','trunk-rider'].includes(n.state)).map(n=>n.trunkSlot));
+          const trunkSlot=[0,1].find(slot=>!trunkSlots.has(slot));
+          if(trunkSlot!==undefined){person.state='trunk-approach';person.trunkSlot=trunkSlot;continue;}
           const occupied=new Set(this.people.filter(n=>n.state==='clinging').map(n=>n.gripSlot));
           const active=this.people.filter(n=>['clinging','ragdoll','recovering'].includes(n.state)).length;
           const slot=[0,1,2,3].find(i=>!occupied.has(i));
@@ -219,11 +244,13 @@ export class Pedestrians {
       }
       const direction=Math.atan2(dx,dy),step=Math.min(4.3*dt,Math.max(0,distance-1.2));
       const next=[person.x+Math.sin(direction)*step,person.y+Math.cos(direction)*step];
-      const height=sidewalkSurfaceAt(this.network,next);
+      const height=roadSurfaceAt(this.network,next,person.height);
       // Active walkers follow the car directly, regardless of mapped walls,
       // road edges, sidewalk gaps, or nearby NPCs.
       person.x=next[0];person.y=next[1];person.height=height ?? person.height;
       person.heading=direction;person.phase+=dt*11;
     }
+    const opening=this.people.some(person=>person.state==='trunk-entering');
+    this.trunkOpen=Math.max(0,Math.min(1,(this.trunkOpen??0)+(opening?1:-1)*dt*2));
   }
 }
