@@ -422,6 +422,8 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   gearButtons.forEach(button => button.addEventListener('click', () => selectGear(button.dataset.gear)));
   transmissionSelect.addEventListener('change', () => selectGear(transmissionSelect.value));
+  const refuelButton=document.getElementById('refuel-button');
+  refuelButton.addEventListener('click',()=>physics.energy.refuel(physics.speed));
   settingsToggle.addEventListener('click', () => {
     if (!settingsPanel.hidden) setDynamicsOpen(false);
   });
@@ -795,6 +797,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let syncTimer = 0;
   let routeTimer = 0;
   let mapUpdateTimer = 0;
+  let instrumentTimer = 0;
 
   function gameLoop(currentTime) {
     const dt = Math.min(0.1, (currentTime - lastTime) / 1000);
@@ -828,7 +831,27 @@ document.addEventListener('DOMContentLoaded', () => {
     trafficManager.root.visible = !visualizer.previewActive;
     if (!visualizer.previewActive) trafficManager.update(dt, physics);
     const trafficStatus=document.getElementById('traffic-status');
-    if(trafficStatus.textContent!==trafficManager.status)trafficStatus.textContent=trafficManager.status;
+    const drivingStatus=physics.energy.remaining<=0?`${physics.energy.electric?'Battery':'Fuel'} empty · Refill in Setup`:trafficManager.status;
+    if(trafficStatus.textContent!==drivingStatus)trafficStatus.textContent=drivingStatus;
+    instrumentTimer+=dt;
+    if(instrumentTimer>=.15) {
+      instrumentTimer=0;
+      const info=trafficManager.roadInfo,limit=document.getElementById('hud-speed-limit');
+      limit.textContent=info?Math.round(info.limit):'—';limit.dataset.speeding=String(info&&Math.abs(physics.speed)>info.limit+1);
+      const navigation=document.getElementById('hud-navigation');
+      navigation.textContent=info?.directions.length?`${Math.ceil(info.remaining)} m · ${info.directions.map(d=>`${d.arrow} ${d.name}`).join(' · ')}`:info?.name?`↑ ${info.name}`:'';
+      navigation.title=navigation.textContent;
+      const signal=document.getElementById('hud-signal');signal.hidden=!info?.signal||info.remaining>100;
+      if(!signal.hidden){signal.textContent=`${info.signal.toUpperCase()} · ${Math.ceil(info.remaining)} m`;signal.style.color={red:'#ff968c',amber:'#ffd37d',green:'#8de2a6'}[info.signal];}
+      const energy=physics.energy,percent=Math.ceil(energy.percent);
+      document.getElementById('hud-fuel').textContent=`${energy.electric?'Battery':'Fuel'} ${percent}%`;
+      document.getElementById('hud-economy').textContent=energy.readout(physics.speed);
+      document.getElementById('hud-fuel-meter').value=energy.percent;
+      document.getElementById('energy-details').textContent=`${energy.remaining.toFixed(1)} / ${energy.capacity} ${energy.electric?'kWh':'L'} · Range ~${Math.round(energy.rangeKm)} km`;
+      document.getElementById('energy-average').textContent=energy.average===null?'Average economy appears after driving 50 m.':`Trip ${(energy.distanceKm).toFixed(1)} km · Average ${energy.average.toFixed(1)} ${energy.electric?'kWh':'L'}/100 km`;
+      refuelButton.disabled=Math.abs(physics.speed)>1;
+      refuelButton.textContent=refuelButton.disabled?'Stop to refuel / charge':energy.electric?'Charge battery':'Refill tank';
+    }
     if (visualizer.highBeams && !visualizer.previewActive) pedestrians.highBeam(physics);
     pedestrianView.update(pedestrians, physics, visualizer.carGroup, visualizer.previewActive);
     const clinging = pedestrians.people.filter(person => person.state === 'clinging').length;

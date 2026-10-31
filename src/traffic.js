@@ -5,6 +5,7 @@ import { resolveTrafficContact, integrateTrafficImpact } from './traffic-collisi
 import { buildTrafficGraph, lanePose, nextTrafficEdge, makeTrafficTurn } from './traffic-routes.js';
 import { createTrafficVehicle, disposeTrafficObject, TRAFFIC_TYPES } from './traffic-vehicle.js';
 import { TrafficControls } from './traffic-controls.js';
+import { RoadSigns } from './road-signs.js';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 const poseFields=['x','y','heading','roadHeight'];
@@ -14,6 +15,7 @@ export class TrafficManager {
     this.camera=camera;this.cars=[];this.maxCars=8;this.network=null;this.origin=null;
     this.roads=new Map();this.buildings=new Map();this.time=0;this.nextId=0;this.spawnClock=0;
     this.controls=new TrafficControls(this.root);this.frustum=new THREE.Frustum();
+    this.signs=new RoadSigns(this.root);this.roadInfo=null;this.infoClock=0;
   }
   setDensity(value) {this.maxCars=Math.round(clamp(Number(value)||0,0,2)*8);}
   reset(network,player) {
@@ -37,7 +39,8 @@ export class TrafficManager {
     for(const [id,building] of this.buildings)if(building.points.every(q=>Math.hypot(q[0]-p.x,q[1]-p.y)>1400))this.buildings.delete(id);
     let radius=500;for(const road of this.roads.values())for(const q of road.points)radius=Math.max(radius,Math.hypot(...q)+30);
     this.world={center:this.origin,radiusMeters:radius,roads:[...this.roads.values()],buildings:[...this.buildings.values()]};
-    this.graph=buildTrafficGraph(this.world);this.controls.rebuild(this.graph);
+    this.graph=buildTrafficGraph(this.world);this.controls.rebuild(this.graph);this.signs.rebuild(this.graph,p,this.world.roads);
+    this.roadInfo=this.signs.nearby(this.graph,p);
     if(first)for(let i=0;i<this.maxCars;i++)if(!this.spawn(p,true))break;
     // Streaming preserves vehicle identities, exact world positions, and routes.
     for(const car of this.cars)if(car.group.parent!==this.root)this.root.add(car.group);
@@ -146,6 +149,9 @@ export class TrafficManager {
     if(!this.network)return;
     dt=clamp(Number(dt)||0,0,.1);this.time+=dt;this.spawnClock+=dt;
     const p=this.playerPoint(player);this.controls.update(this.time,p);
+    this.infoClock+=dt;
+    if(this.infoClock>=.15){this.infoClock=0;this.roadInfo=this.signs.nearby(this.graph,p);}
+    if(this.roadInfo)this.roadInfo.signal=this.controls.phase(this.roadInfo.signalEdge??this.roadInfo.edge,this.time);
     if(this.spawnClock>=1.5){this.spawnClock=0;this.spawn(p);}
     this.refreshFrustum();
     let retireBudget=Math.max(0,this.cars.length-this.maxCars-this.cars.filter(car=>car.retiring).length);
@@ -184,7 +190,7 @@ export class TrafficManager {
   }
   get status(){return this.controls.messageUntil>this.time?this.controls.message:'';}
   clear() {
-    for(const car of this.cars)disposeTrafficObject(car.group);this.cars=[];this.controls.clear();
+    for(const car of this.cars)disposeTrafficObject(car.group);this.cars=[];this.controls.clear();this.signs.clear();this.roadInfo=null;
     this.network=null;this.origin=null;this.graph=null;this.world=null;this.roads.clear();this.buildings.clear();this.root.position.set(0,0,0);
   }
 }

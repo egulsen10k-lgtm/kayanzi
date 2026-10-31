@@ -1,4 +1,5 @@
 import { projectCoordinate } from './road-network.js';
+import { FuelEconomy } from './fuel-economy.js';
 // Robust BMW Vehicle & Physics Controller with Edge Case Validation
 import { sweepRoadMotionResult, nearestRoadSpawn, footprintOnRoad } from './road-safety.js';
 
@@ -23,6 +24,7 @@ export class CarPhysics {
     this.drivetrain = 'RWD';
 
     this.bmwModel = 'M3 Competition';
+    this.energy = new FuelEconomy(this.bmwModel);
     this.color = '#1c3fa8';
     this.handlingMode = 'Sport+';
     this.driveMode = 'Normal';
@@ -50,6 +52,7 @@ export class CarPhysics {
 
   setModel(modelName) {
     this.bmwModel = modelName;
+    this.energy.setModel(modelName);
     switch (modelName) {
       case 'M3 Competition':
         this.maxSpeed = 290;
@@ -137,7 +140,11 @@ export class CarPhysics {
     if (!this.impactCooldown) this.impactEvent = null;
     const count = Math.ceil(dt / (1 / 120));
     for (let step = 0; step < count; step++) {
-      if (!this.integrate(dt / count)) break;
+      const before={lat:this.lat,lng:this.lng};
+      const moved=this.integrate(dt/count);
+      const distance=Math.hypot(...projectCoordinate(this.lat,this.lng,before))/1000;
+      this.energy.update(dt/count,this,distance);
+      if (!moved) break;
     }
     if (this.roadConstrained && this.roadNetwork) {
       const point = projectCoordinate(this.lat, this.lng, this.roadNetwork.center);
@@ -172,8 +179,9 @@ export class CarPhysics {
     const tilt = this.tiltInput || { throttle: 0, steering: 0 };
     // Touch/keyboard pedals override tilt, including an immediate brake override.
     const pedal = keyForward || keyBackward ? Number(keyForward) - Number(keyBackward) : tilt.throttle;
-    const selectedPedal = this.driveGear === 'N' ? 0 : this.driveGear === 'R' ? -Math.max(0, pedal) : pedal;
-    const serviceBrake = this.driveGear !== 'auto' && pedal < 0;
+    const hasPower=this.energy.remaining>0;
+    const selectedPedal = !hasPower||this.driveGear === 'N' ? 0 : this.driveGear === 'R' ? -Math.max(0, pedal) : pedal;
+    const serviceBrake = (this.driveGear !== 'auto'||!hasPower) && pedal < 0;
     const forward = selectedPedal > 0 || (keyForward && keyBackward);
     const backward = selectedPedal < 0 || (keyForward && keyBackward);
     const pressure = Math.abs(pedal);
@@ -184,7 +192,7 @@ export class CarPhysics {
     this.throttle = 0;
     if (this.nitroCharge <= 0) this.nitroDepleted = true;
     if (this.nitroCharge >= .25) this.nitroDepleted = false;
-    this.nitroEngaged = this.nitroActive && !this.nitroDepleted && this.nitroCharge > 0 &&
+    this.nitroEngaged = hasPower && this.nitroActive && !this.nitroDepleted && this.nitroCharge > 0 &&
       this.driveGear !== 'N' && this.driveGear !== 'R' && forward && this.speed > 5 && !this.handbrake;
     this.nitroCharge = Math.max(0, Math.min(1, this.nitroCharge +
       (this.nitroEngaged ? -0.16 : 0.045) * dt));

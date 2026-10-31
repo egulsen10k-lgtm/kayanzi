@@ -7,7 +7,7 @@ export function signalPhase(time,axis,offset=0) {
 }
 export function approachAxis(edge){return Math.abs(edge.tangent[0])>Math.abs(edge.tangent[1])?0:1;}
 export class TrafficControls {
-  constructor(parent){this.parent=parent;this.signals=new Map();this.radars=new Map();this.tickets=0;this.message='';this.messageUntil=0;}
+  constructor(parent){this.parent=parent;this.signals=new Map();this.radars=new Map();this.tickets=0;this.message='';this.messageUntil=0;this.previousPlayer=null;this.lastRedTicket=-10;}
   rebuild(graph) {
     if(this.signalBatch)disposeTrafficObject(this.signalBatch);
     this.signals.clear();this.signalBatch=new THREE.Group();this.parent.add(this.signalBatch);
@@ -53,6 +53,7 @@ export class TrafficControls {
     }
   }
   allows(edge,time){const signal=this.signals.get(edge.to.id);return !signal||signalPhase(time,approachAxis(edge),signal.offset)==='green';}
+  phase(edge,time){const signal=edge?this.signals.get(edge.to.id):null;return signal?signalPhase(time,approachAxis(edge),signal.offset):null;}
   update(time,player) {
     let changed=false;
     for(const signal of this.signals.values()) {
@@ -62,6 +63,18 @@ export class TrafficControls {
       changed=true;
     }
     if(changed&&this.bulbs.instanceColor)this.bulbs.instanceColor.needsUpdate=true;
+    if(this.previousPlayer&&Math.hypot(player.x-this.previousPlayer.x,player.y-this.previousPlayer.y)<20&&Math.abs(player.speed)>3) {
+      const forward=[Math.sin(player.heading),Math.cos(player.heading)];
+      for(const signal of this.signals.values())for(const edge of signal.node.incoming) {
+        if(this.phase(edge,time)!=='red'||time-this.lastRedTicket<5||Math.abs(player.roadHeight-edge.hb)>.7||forward[0]*edge.tangent[0]+forward[1]*edge.tangent[1]<.6)continue;
+        const front=p=>[p.x+Math.sin(p.heading)*2.25-edge.end[0],p.y+Math.cos(p.heading)*2.25-edge.end[1]],before=front(this.previousPlayer),after=front(player);
+        const along=p=>p[0]*edge.tangent[0]+p[1]*edge.tangent[1];
+        if(along(before)<0&&along(after)>=0&&Math.abs(after[0]*edge.normal[0]+after[1]*edge.normal[1])<edge.road.width/4) {
+          this.tickets++;this.lastRedTicket=time;this.message=`Red light · Ticket ${this.tickets}`;this.messageUntil=time+6;
+        }
+      }
+    }
+    this.previousPlayer={...player};
     for(const radar of this.radars.values()) {
       const distance=Math.hypot(player.x-radar.x,player.y-radar.y);
       if(distance>35)radar.armed=true;
@@ -71,5 +84,5 @@ export class TrafficControls {
       }
     }
   }
-  clear(){if(this.signalBatch)disposeTrafficObject(this.signalBatch);this.signalBatch=null;for(const item of this.radars.values())disposeTrafficObject(item.group);this.signals.clear();this.radars.clear();this.message='';}
+  clear(){if(this.signalBatch)disposeTrafficObject(this.signalBatch);this.signalBatch=null;for(const item of this.radars.values())disposeTrafficObject(item.group);this.signals.clear();this.radars.clear();this.message='';this.previousPlayer=null;}
 }
