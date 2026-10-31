@@ -38,3 +38,30 @@ test('model switches preserve the percentage and teleport cannot refill fuel',()
  assert.equal(car.energy.percent,50);assert.equal(car.energy.electric,true);
  car.teleport(0,0);assert.equal(car.energy.percent,50);assert.equal(car.energy.distanceKm,0);
 });
+function warmRate(model,speed,motion={acceleration:0,grade:0},extra={}) {
+ const f=new FuelEconomy(model);f.elapsed=900;
+ f.update(.1,{speed,throttle:.3,rpm:2000,driveGear:'D',driveMode:'Normal',...extra},speed/3600*.1,motion);
+ return f;
+}
+test('warm cruise consumption sits in realistic performance-car and EV ranges',()=>{
+ const petrol=warmRate('M3 Competition',100),electric=warmRate('i4 M50 (EV)',100);
+ assert.ok(petrol.instantaneous>7&&petrol.instantaneous<12);
+ assert.ok(electric.instantaneous>14&&electric.instantaneous<22);
+ assert.equal(electric.capacity,81.1,'battery should expose usable energy');
+});
+test('measured acceleration, hills and high speed increase actual energy demand',()=>{
+ const cruise=warmRate('M3',80),accelerating=warmRate('M3',80,{acceleration:3,grade:0}),hill=warmRate('M3',80,{acceleration:0,grade:.06});
+ assert.ok(accelerating.rate>cruise.rate*3);assert.ok(hill.rate>cruise.rate*1.5);
+ assert.ok(warmRate('M3',180).instantaneous>warmRate('M3',100).instantaneous*1.5);
+ assert.ok(warmRate('M5 CS',100).instantaneous>warmRate('M4 CSL',100).instantaneous);
+});
+test('neutral coasting keeps idle flow while in-gear overrun cuts fuel',()=>{
+ const neutral=warmRate('M3',50,{acceleration:-.4,grade:0},{throttle:0,driveGear:'N'});
+ const engaged=warmRate('M3',50,{acceleration:-.4,grade:0},{throttle:0,driveGear:'D'});
+ assert.ok(neutral.rate>.5);assert.equal(engaged.rate,0);
+});
+test('regeneration is bounded by braking power and fades near a full battery',()=>{
+ const sample=percent=>{const f=new FuelEconomy('i4 M50 (EV)');f.remaining=f.capacity*percent/100;f.update(.1,{speed:100,throttle:-1},.002,{acceleration:-8,grade:0});return f;};
+ const low=sample(50),high=sample(99);
+ assert.ok(low.rate<0&&low.rate>=-195);assert.ok(Math.abs(high.rate)<Math.abs(low.rate));
+});

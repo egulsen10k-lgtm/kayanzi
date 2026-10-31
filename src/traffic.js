@@ -82,7 +82,7 @@ export class TrafficManager {
     if(!candidate){disposeTrafficObject(model.group);return false;}
     model.group.traverse(o=>{if(o.material)materials.add(o.material);});
     const car={...model,id,edge:candidate.edge,s:candidate.s,turn:null,...candidate.pose,speed:0,
-      cruise:Math.min(candidate.edge.limit,type==='bus'||type==='firetruck'?36:46),
+      cruise:type==='bus'||type==='firetruck'?80:type==='van'?90:120,
       offsetX:0,offsetY:0,yawOffset:0,impactTime:Infinity,vx:0,vy:0,angularVelocity:0,
       opacity:0,materials:[...materials],alertUntil:0,noticeAt:0};
     this.root.add(car.group);this.cars.push(car);this.renderCar(car,0);return true;
@@ -100,7 +100,7 @@ export class TrafficManager {
     return nextTrafficEdge(this.graph,car.edge,car.id+Math.floor(this.time/44));
   }
   targetSpeed(car,player) {
-    let target=Math.min(car.cruise,car.edge.limit)/3.6;
+    let target=Math.min(car.cruise,car.edge.limit*.92)/3.6;
     if(car.turn)target=Math.min(target,5);
     const forward=[Math.sin(car.heading),Math.cos(car.heading)];
     for(const other of [player,...this.cars]) {

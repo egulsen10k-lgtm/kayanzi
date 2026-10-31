@@ -5,8 +5,12 @@ const cross=(a,b)=>a[0]*b[1]-a[1]*b[0];
 export function trafficSpeedLimit(road) {
   const raw=String(road.maxspeed??road.speedLimit??'');
   const value=parseFloat(raw);
-  return Number.isFinite(value)?Math.max(15,Math.min(120,value*(raw.includes('mph')?1.609344:1))):
-    /motorway|trunk/.test(road.highway??'')?80:/primary|secondary/.test(road.highway??'')?50:40;
+  const posted=Number.isFinite(value)?value*(raw.toLowerCase().includes('mph')?1.609344:1):null;
+  // Game zones: higher-speed arterial routes, with posted local limits retained.
+  const fastZones={motorway:130,motorway_link:80,trunk:110,trunk_link:80,primary:90,primary_link:70,secondary:70,secondary_link:60};
+  const defaults={tertiary:60,tertiary_link:50,unclassified:60,residential:50,living_street:20,service:30,track:30};
+  const zone=fastZones[road.highway];
+  return Math.max(15,Math.min(160,zone?Math.max(zone,posted??0):posted??defaults[road.highway]??50));
 }
 function simplified(road) {
   const points=road.points, result=[];

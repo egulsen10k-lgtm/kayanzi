@@ -26,3 +26,9 @@ test('perpendicular signals never show green together and include amber clearanc
  assert.ok(amber&&allRed);
 });
 test('mapped speed limits support mph',()=>{assert.ok(Math.abs(trafficSpeedLimit({maxspeed:'30 mph'})-48.28)<.1);});
+test('higher game zones share consistent arterial limits and retain local posted limits',()=>{
+ for(const [highway,limit] of Object.entries({motorway:130,trunk:110,primary:90,secondary:70,motorway_link:80,trunk_link:80}))assert.equal(trafficSpeedLimit({highway,maxspeed:50}),limit);
+ assert.equal(trafficSpeedLimit({highway:'residential',maxspeed:30}),30);
+ assert.equal(trafficSpeedLimit({highway:'service',maxspeed:20}),20);
+ assert.equal(trafficSpeedLimit({highway:'motorway',maxspeed:200}),160);
+});

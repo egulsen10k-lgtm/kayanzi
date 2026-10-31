@@ -140,10 +140,13 @@ export class CarPhysics {
     if (!this.impactCooldown) this.impactEvent = null;
     const count = Math.ceil(dt / (1 / 120));
     for (let step = 0; step < count; step++) {
-      const before={lat:this.lat,lng:this.lng};
+      const before={lat:this.lat,lng:this.lng},previousSpeed=this.speed,previousHeight=this.roadHeight;
       const moved=this.integrate(dt/count);
       const distance=Math.hypot(...projectCoordinate(this.lat,this.lng,before))/1000;
-      this.energy.update(dt/count,this,distance);
+      this.energy.update(dt/count,this,distance,{
+        acceleration:(Math.abs(this.speed)-Math.abs(previousSpeed))/3.6/(dt/count),
+        grade:distance>.000001?(this.roadHeight-previousHeight)/(distance*1000):0
+      });
       if (!moved) break;
     }
     if (this.roadConstrained && this.roadNetwork) {
