@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const peerId = 'driver-' + Math.random().toString(36).substring(2, 8);
   const physics = new CarPhysics(peerId);
   const audio = new CarAudio();
+  physics.onPeerImpact = ({ relativeSpeed = 0 } = {}) => audio.triggerImpact(Math.min(100, Math.max(8, relativeSpeed * 3.6)));
   const canvasContainer = document.getElementById('render-canvas-container');
   const visualizer = new CarVisualizer3D(canvasContainer);
   const pedestrians = new Pedestrians();
@@ -174,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
     multiplayerPanelOpen = Boolean(detail?.open);
   });
   const multiplayer = new ShortCodeMultiplayerSession({
-    getState: () => physics.serializeState(),
+    getState: () => ({ ...physics.serializeState(), robot: robotMode }),
     onPeerState: (state) => {
       visualizer.updatePeerCar(state);
       mapController.updatePeerPosition(state);
@@ -192,7 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
   npcSync = new NpcSync({ session: multiplayer, trafficManager, pedestrians, pedestrianView, scene: visualizer.scene });
   multiplayerUI = mountMultiplayerUI({
     session: multiplayer,
-    getState: () => physics.serializeState(),
+    getState: () => ({ ...physics.serializeState(), robot: robotMode }),
     onJoinPeer: (state) => {
       if (!state || !Number.isFinite(state.lat) || !Number.isFinite(state.lng)) return;
       endRoute();
@@ -915,11 +916,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const dt = Math.min(0.1, (currentTime - lastTime) / 1000);
     lastTime = currentTime;
     npcSync.syncRole(physics);
+    audio.updateRemotePeers?.([...visualizer.peerCars].map(([peerId, peer]) => ({ ...peer.state, peerId })), { lat: physics.lat, lng: physics.lng });
 
     syncTimer += dt;
     if (syncTimer > 0.1) {
       syncTimer = 0;
-      multiplayer.sendState(physics.serializeState());
+      multiplayer.sendState({ ...physics.serializeState(), robot: robotMode });
     }
 
     if(runnerActive){
@@ -934,6 +936,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    physics.setPeerCars?.([...visualizer.peerCars].map(([peerId, peer]) => ({ ...peer.state, peerId })));
     if (!visualizer.previewActive && !multiplayerPanelOpen && !mobileMenuOpen) physics.update(dt);
     if (physics.impactEvent && physics.impactEvent.timestamp) {
       audio.triggerImpact(physics.impactEvent.speed);

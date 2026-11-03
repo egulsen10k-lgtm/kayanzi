@@ -13,6 +13,7 @@ import { buildCoastalWater } from './coastal-water.js';
 import { buildBridgePiers } from './bridge-piers.js';
 import { projectCoordinate } from './road-network.js';
 import { createCarModel } from './car-model.js';
+import { createRobotModel } from './robot-runner-view.js';
 
 export function geographicOffset(center, lat, lng) {
   const deltaLng = ((lng - center.lng + 540) % 360) - 180;
@@ -301,14 +302,17 @@ export class CarVisualizer3D {
   updatePeerCar(state) {
     if (!state || !Number.isFinite(state.lat) || !Number.isFinite(state.lng) || !Number.isFinite(state.heading)) return;
     let peer = this.peerCars.get(state.peerId);
-    if (peer && (peer.model !== state.model || peer.color !== state.color)) {
+    const robot = state.robot === true;
+    if (peer && (peer.robot !== robot || peer.model !== state.model || peer.color !== state.color)) {
       this.removePeerCar(state.peerId);
       peer = null;
     }
     if (!peer) {
       if (this.peerCars.size >= 8) return;
-      const model = createCarModel(state.model, /^#[0-9a-f]{6}$/i.test(state.color) ? state.color : '#718ba1');
-      peer = { group: model.group, wheels: model.wheels ?? [], model: state.model, color: state.color, displayed: { ...state } };
+      const color = /^#[0-9a-f]{6}$/i.test(state.color) ? state.color : '#718ba1';
+      const model = robot ? { group: createRobotModel(color), wheels: [] } : createCarModel(state.model, color);
+      if (robot) model.group.scale.set(.9, .52, 3.4);
+      peer = { group: model.group, wheels: model.wheels ?? [], model: state.model, color: state.color, robot, displayed: { ...state } };
       this.scene.add(peer.group);
       this.peerCars.set(state.peerId, peer);
     }

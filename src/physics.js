@@ -3,6 +3,26 @@ import { FuelEconomy } from './fuel-economy.js';
 // Robust BMW Vehicle & Physics Controller with Edge Case Validation
 import { sweepRoadMotionResult, nearestRoadSpawn, footprintOnRoad } from './road-safety.js';
 
+const PEER_CONTACT_METERS = 3;
+function boundedPeerCars(peers, localId) {
+  if (!Array.isArray(peers)) return [];
+  const result = [];
+  for (const peer of peers) {
+    if (!peer || typeof peer.peerId !== 'string' || !peer.peerId || peer.peerId === localId ||
+        !Number.isFinite(peer.lat) || Math.abs(peer.lat) > 90 ||
+        !Number.isFinite(peer.lng) || Math.abs(peer.lng) > 180 ||
+        !Number.isFinite(peer.heading) || Math.abs(peer.heading) > 1000 ||
+        !Number.isFinite(peer.speed)) continue;
+    result.push({
+      peerId: peer.peerId.slice(0, 64), lat: peer.lat, lng: peer.lng,
+      heading: ((peer.heading % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI),
+      speed: Math.max(-400, Math.min(400, peer.speed))
+    });
+    if (result.length >= 8) break;
+  }
+  return result;
+}
+
 export class CarPhysics {
   constructor(peerId = 'local-driver') {
     this.peerId = peerId;
@@ -48,6 +68,9 @@ export class CarPhysics {
     this.impactEvent = null;
     this.impactCooldown = 0;
     this.reverseDelay = 0;
+    this.peerCars = [];
+    this.peerImpactCooldowns = new Map();
+    this.onPeerImpact = null;
   }
 
   setModel(modelName) {
@@ -155,11 +178,45 @@ export class CarPhysics {
       this.blockedSeconds = this.roadBlocked || invalid ? (this.blockedSeconds || 0) + dt : 0;
       if (invalid || this.blockedSeconds > 1.5) this.recoverToRoad();
     }
+    this.resolvePeerContacts(dt);
     const absSpeed = Math.abs(this.speed);
     this.gear = this.speed < -0.1 ? -1 : Math.min(6, 1 + Math.floor(absSpeed / 45));
     this.rpm = this.bmwModel === 'i4 M50 (EV)'
       ? 800 + absSpeed / this.maxSpeed * 12000
       : Math.min(8200, 800 + absSpeed / (Math.max(1, this.gear) * 50) * 6400 + Math.abs(this.throttle) * 1300);
+  }
+
+  setPeerCars(peers) {
+    this.peerCars = boundedPeerCars(peers, this.peerId);
+  }
+
+  resolvePeerContacts(dt = 1 / 60) {
+    for (const [id, cooldown] of this.peerImpactCooldowns) {
+      const next = Math.max(0, cooldown - dt);
+      if (next === 0) this.peerImpactCooldowns.delete(id);
+      else this.peerImpactCooldowns.set(id, next);
+    }
+    for (const peer of this.peerCars) {
+      const meanLat = (this.lat + peer.lat) * Math.PI / 360;
+      let east = (this.lng - peer.lng) * Math.PI / 180 * 6371008.8 * Math.cos(meanLat);
+      let north = (this.lat - peer.lat) * Math.PI / 180 * 6371008.8;
+      let distance = Math.hypot(east, north);
+      if (distance >= PEER_CONTACT_METERS) continue;
+      if (distance < 0.001) {
+        east = -Math.sin(this.heading); north = -Math.cos(this.heading); distance = 1;
+      }
+      const push = PEER_CONTACT_METERS - distance;
+      east += east / distance * push;
+      north += north / distance * push;
+      this.lng += east / (6371008.8 * Math.max(0.01, Math.cos(this.lat * Math.PI / 180))) * 180 / Math.PI;
+      this.lat += north / 6371008.8 * 180 / Math.PI;
+      const relativeSpeed = Math.abs(this.speed - peer.speed) / 3.6;
+      this.speed *= 0.72;
+      if (!this.peerImpactCooldowns.has(peer.peerId)) {
+        this.peerImpactCooldowns.set(peer.peerId, 0.45);
+        this.onPeerImpact?.({ id: peer.peerId, relativeSpeed });
+      }
+    }
   }
 
   recoverToRoad() {

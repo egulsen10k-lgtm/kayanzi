@@ -170,6 +170,8 @@ test('state schema preserves bounded car data and never carries arbitrary fields
   assert.equal(clean.steering, -1);
   assert.equal(clean.roadHeight, 10000);
   assert.equal(clean.drivetrain, 'AWD');
+  assert.equal(sanitizeState({ ...state, robot: true }, 'real').robot, true);
+  assert.equal(sanitizeState({ ...state, robot: 1 }, 'real').robot, false);
   assert.equal(Object.hasOwn(clean, 'constructor'), false);
 });
 

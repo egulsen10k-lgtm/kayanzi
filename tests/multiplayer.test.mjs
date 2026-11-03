@@ -42,6 +42,8 @@ test('snapshot validation rejects invalid positions and discards untrusted prope
   assert.equal(sanitizeState({ ...state(), heading: Infinity }, 'trusted'), null);
   const clean = sanitizeState({ ...state(), peerId: 'spoof', speed: 1e20, model: '<script>', color: 'red', arbitrary: true }, 'trusted');
   assert.equal(clean.peerId, 'trusted'); assert.equal(clean.speed, 500); assert.equal(clean.model, 'M3 Competition'); assert.equal(clean.color, '#718ba1'); assert.equal(clean.arbitrary, undefined);
+  assert.equal(sanitizeState({ ...state(), robot: true }, 'trusted').robot, true);
+  assert.equal(sanitizeState({ ...state(), robot: 'true' }, 'trusted').robot, false);
   assert.equal(sanitizeName('<Guest>\n'), 'Guest');
 });
 

@@ -27,7 +27,8 @@ export function sanitizeState(raw, peerId) {
     roadHeight: bounded(raw.roadHeight, 0.05, -1000, 10000),
     model: MODELS.has(raw.model) ? raw.model : 'M3 Competition',
     color: typeof raw.color === 'string' && /^#[0-9a-f]{6}$/i.test(raw.color) ? raw.color : '#718ba1',
-    drivetrain: ['AWD', 'RWD', 'FWD'].includes(raw.drivetrain) ? raw.drivetrain : 'AWD'
+    drivetrain: ['AWD', 'RWD', 'FWD'].includes(raw.drivetrain) ? raw.drivetrain : 'AWD',
+    robot: raw.robot === true
   };
 }
 

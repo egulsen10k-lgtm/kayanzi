@@ -3,6 +3,7 @@ export const TRUCK_ROOF_HEIGHT = 2.25;
 export const LOW_OBSTACLE_HEIGHT = 1.55;
 export const SLIDE_DURATION = .72;
 export const ROADSTER_HEIGHT = 2.8;
+export const ROLL_DURATION = .68;
 
 export class RunnerGame {
   constructor(random = Math.random) {
@@ -18,6 +19,9 @@ export class RunnerGame {
     this.roof = null;
     this.sliding = false;
     this.slideTimer = 0;
+    this.rolling = false;
+    this.rollTimer = 0;
+    this.rollAngle = 0;
     this.trucks = [];
     this.lowObstacles = [];
     this.roadsters = [];
@@ -49,9 +53,17 @@ export class RunnerGame {
   }
 
   slide() {
-    if (this.over || this.y > .03 || this.roof) return false;
+    if (!this.roll()) return false;
     this.sliding = true;
     this.slideTimer = SLIDE_DURATION;
+    return true;
+  }
+
+  roll() {
+    if (this.over || this.y > .03 || this.roof) return false;
+    this.rolling = true;
+    this.rollTimer = ROLL_DURATION;
+    this.rollAngle = 0;
     return true;
   }
 
@@ -80,6 +92,9 @@ export class RunnerGame {
     this.invulnerable = Math.max(0, this.invulnerable - dt);
     this.slideTimer = Math.max(0, this.slideTimer - dt);
     this.sliding = this.slideTimer > 0;
+    this.rollTimer = Math.max(0, this.rollTimer - dt);
+    this.rolling = this.rollTimer > 0;
+    if (this.rolling) this.rollAngle += dt * 14;
     this.x += (RUNNER_LANES[this.lane] - this.x) * Math.min(1, dt * 13);
     const previouslyAboveRoof = this.y >= TRUCK_ROOF_HEIGHT - .18;
     this.vy -= 20 * dt;

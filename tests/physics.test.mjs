@@ -22,6 +22,37 @@ test('drive modes accept Normal and provide distinct acceleration mapping', () =
   assert.equal(normal.driveMode, 'Normal');
 });
 
+test('peer car overlap pushes the local car away, damps speed, and emits one bounded impact', () => {
+  const car = unconstrainedCar();
+  car.speed = 36;
+  const peerLat = car.lat + (2 / 6371008.8) * (180 / Math.PI);
+  const impacts = [];
+  car.onPeerImpact = event => impacts.push(event);
+  car.setPeerCars([{ peerId: 'nearby', lat: peerLat, lng: car.lng, heading: Math.PI, speed: 0 }]);
+  car.update(1 / 60);
+  const north = (car.lat - peerLat) * Math.PI / 180 * 6371008.8;
+  const east = (car.lng - car.lng) * Math.PI / 180 * 6371008.8;
+  assert.ok(Math.hypot(east, north) >= 2.99, `overlap remained at ${Math.hypot(east, north)}m`);
+  assert.ok(car.speed < 36);
+  assert.equal(impacts.length, 1);
+  assert.equal(impacts[0].id, 'nearby');
+  assert.ok(Number.isFinite(impacts[0].relativeSpeed));
+  car.update(1 / 60);
+  assert.equal(impacts.length, 1, 'impact callback is cooled down while contact persists');
+});
+
+test('peer snapshots are bounded and reject invalid coordinates and headings', () => {
+  const car = unconstrainedCar();
+  car.setPeerCars([
+    { peerId: 'bad-lat', lat: 91, lng: 0, heading: 0, speed: 0 },
+    { peerId: 'bad-heading', lat: 0, lng: 0, heading: Infinity, speed: 0 },
+    ...Array.from({ length: 10 }, (_, i) => ({ peerId: `p${i}`, lat: 0, lng: 0, heading: i, speed: 900 }))
+  ]);
+  assert.equal(car.peerCars.length, 8);
+  assert.equal(car.peerCars[0].peerId, 'p0');
+  assert.equal(car.peerCars[0].speed, 400);
+});
+
 test('accelerating moves the car north and respects its speed limit', () => {
   const car = unconstrainedCar();
   const start = car.lat;

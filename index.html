@@ -1145,7 +1145,7 @@
       #map-container:not(.map-expanded) .map-toolbar { padding:0; background:#101b25e8; }
       #map-container:not(.map-expanded) .map-toolbar button { width:100%; min-height:44px; border:0; border-radius:0; background:transparent; font-size:10px; }
       #map-container:not(.map-expanded) .leaflet-control-attribution { display:none; }
-      #drive-touch-controls { display:flex!important; left:max(16px,env(safe-area-inset-left))!important; right:max(16px,env(safe-area-inset-right))!important; bottom:calc(26px + env(safe-area-inset-bottom))!important; }
+      #drive-touch-controls { display:flex!important; left:max(16px,env(safe-area-inset-left))!important; right:max(16px,env(safe-area-inset-right))!important; bottom:calc(96px + env(safe-area-inset-bottom))!important; }
       .touch-steering { gap:8px; }
       .touch-pedals { grid-template-columns:repeat(2,var(--thumb-size)); gap:8px; }
       .drive-touch-btn { width:var(--thumb-size); height:74px; min-height:74px; border:1px solid #ffffff30; border-radius:18px; background:#17242fe8; box-shadow:none; font-size:26px; }
@@ -1154,14 +1154,14 @@
       .touch-pedals .touch-gas { grid-column:2; grid-row:2; background:#255c61ed; border-color:#83c9c766; }
       .touch-pedals .drive-touch-btn span { margin-top:5px; font-size:18px; }
       .drive-touch-btn[aria-pressed="true"] { background:#36787e; border-color:#b5e6e2; transform:translateY(2px); }
-      .drive-quickbar { left:max(16px,env(safe-area-inset-left)); right:max(104px,calc(104px + env(safe-area-inset-right))); bottom:calc(168px + env(safe-area-inset-bottom)); width:auto; transform:none; flex-direction:row; align-items:center; }
+      .drive-quickbar { left:max(16px,env(safe-area-inset-left)); right:max(104px,calc(104px + env(safe-area-inset-right))); bottom:calc(238px + env(safe-area-inset-bottom)); width:auto; transform:none; flex-direction:row; align-items:center; }
       .drive-mode-shortcuts { display:none; }
       #mobile-gear-selector { display:flex; width:100%; gap:4px; padding:4px; border:1px solid #ffffff1c; border-radius:14px; background:#111c26ed; }
       #mobile-gear-selector button, #mobile-gear-selector button[data-gear="auto"] { flex:1; width:auto; min-width:44px; min-height:44px; border:0; border-radius:10px; background:transparent; color:#a8b8c5; font-size:11px; }
       #mobile-gear-selector button[aria-pressed="false"] { background:transparent; border:0; color:#b9c8d2; }
       #mobile-gear-selector button[aria-pressed="true"] { background:#315b64; color:#f0fffc; box-shadow:none; }
       #main-viewport #nitro-button { position:fixed; right:auto; left:50%; bottom:calc(38px + env(safe-area-inset-bottom)); transform:translateX(-50%); width:56px; min-width:44px; min-height:48px; padding:5px; border:1px solid #75bbca55; border-radius:14px; background:#203a46e8; font-size:10px; color:#a9dce6; }
-      #mobile-drive-menu-toggle { display:block; position:absolute; z-index:1001; right:max(16px,env(safe-area-inset-right)); bottom:calc(168px + env(safe-area-inset-bottom)); width:80px; min-height:52px; border:1px solid #ffffff26; border-radius:14px; background:#1b2a36f5; color:#f0f6f9; font-size:12px; font-weight:650; cursor:pointer; touch-action:manipulation; }
+      #mobile-drive-menu-toggle { display:block; position:absolute; z-index:1001; right:max(16px,env(safe-area-inset-right)); bottom:calc(238px + env(safe-area-inset-bottom)); width:80px; min-height:52px; border:1px solid #ffffff26; border-radius:14px; background:#1b2a36f5; color:#f0f6f9; font-size:12px; font-weight:650; cursor:pointer; touch-action:manipulation; }
       #mobile-drive-menu-toggle[aria-expanded="true"] { background:#315b64; }
       #mobile-drive-menu:not([hidden]) { display:flex; position:fixed; inset:0; z-index:1050; align-items:flex-end; justify-content:center; padding:12px max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left)); background:#04090e88; }
       .mobile-drive-sheet { width:min(520px,100%); max-height:82dvh; overflow:auto; overscroll-behavior:contain; padding:20px; border:1px solid #ffffff22; border-radius:24px; background:#101a24; box-shadow:0 -12px 60px #0005; }

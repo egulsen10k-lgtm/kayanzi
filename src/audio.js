@@ -1,5 +1,12 @@
 // Procedural sounds: no recordings or third-party audio assets are required.
 const clamp = (value, min, max) => Math.max(min, Math.min(max, Number.isFinite(Number(value)) ? Number(value) : min));
+const peerDistance = (a, b) => {
+  const radians = Math.PI / 180;
+  const meanLat = (a.lat + b.lat) * 0.5 * radians;
+  const east = (b.lng - a.lng) * radians * 6371008.8 * Math.cos(meanLat);
+  const north = (b.lat - a.lat) * radians * 6371008.8;
+  return Math.hypot(east, north);
+};
 
 export class CarAudio {
   constructor() {
@@ -16,6 +23,7 @@ export class CarAudio {
     this.popCooldown = -Infinity;
     this.hornCooldown = -Infinity;
     this.hornVoice = null;
+    this.remoteVoices = new Map();
     this.nodes = new Set();
     this.sources = new Set();
     this.channels = { engine: true, turbo: true, exhaust: true, tires: true, wind: true, horn: true };
@@ -202,6 +210,53 @@ export class CarAudio {
     this.nodes.delete(horn.filter); this.nodes.delete(horn.gain);
   }
 
+  removeRemoteVoice(id) {
+    const voice = this.remoteVoices.get(id);
+    if (!voice) return;
+    voice.oscillator.onended = null;
+    try { voice.oscillator.stop(); } catch {}
+    for (const node of [voice.oscillator, voice.gain]) {
+      try { node.disconnect(); } catch {}
+      this.sources.delete(node); this.nodes.delete(node);
+    }
+    this.remoteVoices.delete(id);
+  }
+
+  updateRemotePeers(peers, localPosition) {
+    const local = localPosition && Number.isFinite(localPosition.lat) && Number.isFinite(localPosition.lng)
+      ? { lat: localPosition.lat, lng: localPosition.lng } : null;
+    const nearby = (Array.isArray(peers) ? peers : [])
+      .filter(peer => peer && typeof peer.peerId === 'string' && peer.peerId.length > 0 &&
+        Number.isFinite(peer.lat) && Math.abs(peer.lat) <= 90 && Number.isFinite(peer.lng) && Math.abs(peer.lng) <= 180)
+      .map(peer => ({ ...peer, distance: local ? peerDistance(local, peer) : Infinity }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 7);
+    const active = new Set(nearby.map(peer => peer.peerId));
+    for (const id of this.remoteVoices.keys()) if (!active.has(id)) this.removeRemoteVoice(id);
+    if (!this.initialized || !local) return;
+    const now = this.ctx.currentTime;
+    for (const peer of nearby) {
+      let voice = this.remoteVoices.get(peer.peerId);
+      if (!voice) {
+        const oscillator = this.source(this.ctx.createOscillator());
+        const profile = /i4|electric/i.test(String(peer.model || '')) ? 'electric' : /m5|v8/i.test(String(peer.model || '')) ? 'eight' : 'six';
+        if (profile === 'electric') oscillator.type = 'sine';
+        else oscillator.setPeriodicWave(this.combustionWaves[profile]);
+        const gain = this.gain(0);
+        oscillator.connect(gain); gain.connect(this.masterGain); oscillator.start();
+        voice = { oscillator, gain };
+        this.remoteVoices.set(peer.peerId, voice);
+      }
+      const speed = clamp(Math.abs(peer.speed), 0, 400);
+      const frequency = /i4|electric/i.test(String(peer.model || '')) ? 80 + speed * 2.5 : 24 + speed * 0.55;
+      const distanceGain = peer.distance >= 120 ? 0 : (1 - peer.distance / 120) ** 1.6;
+      const speedGain = 0.35 + Math.min(1, speed / 180) * 0.65;
+      const volume = this.channels.engine && !this.isMuted ? 0.055 * distanceGain * speedGain : 0;
+      voice.oscillator.frequency.setTargetAtTime(frequency, now, 0.08);
+      voice.gain.gain.setTargetAtTime(volume, now, 0.12);
+    }
+  }
+
   update(rpm, throttle, speedKmh, isDrifting, options = {}) {
     if (!this.initialized) return;
     const signedSpeed = clamp(speedKmh, -400, 400), speed = Math.abs(signedSpeed);
@@ -266,6 +321,7 @@ export class CarAudio {
 
   dispose() {
     this.stopHorn();
+    this.remoteVoices.clear();
     for (const source of this.sources) { source.onended = null; try { source.stop(); } catch {} }
     for (const node of this.nodes) { try { node.disconnect(); } catch {} }
     this.sources.clear(); this.nodes.clear();

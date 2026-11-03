@@ -51,6 +51,37 @@ test('reverse load is audible but braking does not increase engine or turbo load
   audio.dispose();
 });
 
+test('remote engine voices attenuate to silence beyond 120m and detach on leave', () => {
+  const audio = create();
+  const local = { lat: 48, lng: 11 };
+  const peerAtDistance = meters => ({
+    peerId: 'remote-driver', lat: 48,
+    lng: 11 + meters / (6371008.8 * Math.cos(48 * Math.PI / 180)) * 180 / Math.PI,
+    speed: 90, model: 'M3 Competition'
+  });
+  audio.updateRemotePeers([peerAtDistance(60)], local);
+  assert.equal(audio.remoteVoices.size, 1);
+  const voice = audio.remoteVoices.get('remote-driver');
+  assert.ok(voice.gain.gain.value > 0);
+  audio.updateRemotePeers([peerAtDistance(121)], local);
+  assert.equal(voice.gain.gain.value, 0);
+  audio.updateRemotePeers([], local);
+  assert.equal(audio.remoteVoices.size, 0);
+  assert.equal(voice.oscillator.stopped, true);
+  assert.equal(voice.oscillator.disconnected, true);
+  audio.dispose();
+});
+
+test('remote engine voices are capped at seven peers', () => {
+  const audio = create();
+  const local = { lat: 48, lng: 11 };
+  audio.updateRemotePeers(Array.from({ length: 8 }, (_, i) => ({
+    peerId: `remote-${i}`, lat: 48, lng: 11 + i * 0.00001, speed: 45
+  })), local);
+  assert.equal(audio.remoteVoices.size, 7);
+  audio.dispose();
+});
+
 test('engine profiles follow cylinder firing frequency and electric has no combustion transients', () => {
   const audio = create();
   audio.update(3000, 1, 60, false, { model: 'BMW M3 Competition', gear: 2 });

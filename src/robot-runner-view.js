@@ -71,9 +71,11 @@ export class RobotRunnerView {
       const rail=new THREE.Mesh(new THREE.BoxGeometry(.32,.55,210),paint('#90a9b4',.5));
       rail.position.set(edge,.22,-69);this.root.add(rail);
     }
+    this.laneMarkers=[];
     for(const x of [-2,2])for(let z=8;z>-145;z-=11) {
       const line=new THREE.Mesh(new THREE.BoxGeometry(.12,.015,5.2),paint('#d5e4e7'));
       line.position.set(x,.01,z);this.root.add(line);
+      this.laneMarkers.push({mesh:line,initialZ:z});
     }
     this.buildings=[];
     for(const side of [-1,1])for(let i=0;i<9;i++) {
@@ -141,6 +143,10 @@ export class RobotRunnerView {
     if (!(this.roadsters instanceof Map)) this.roadsters=new Map();
     if (!(this.lowObstacles instanceof Map)) this.lowObstacles=new Map();
     const speed=game.over?0:Math.min(25,14+game.distance/500);
+    for(const marker of this.laneMarkers) {
+      marker.mesh.position.z += speed*dt;
+      if(marker.mesh.position.z - 2.6 > 18) marker.mesh.position.z -= 165;
+    }
     for(const building of this.buildings) {
       building.mesh.position.z += speed*dt;
       if(building.mesh.position.z - building.depth/2 > 18) building.mesh.position.z -= 180;
@@ -180,7 +186,9 @@ export class RobotRunnerView {
     }
     this.robot.position.set(game.x,game.y,0);
     this.robot.visible=game.over||game.invulnerable<=0||Math.floor(game.invulnerable*10)%2===0;
-    this.robot.scale.y += ((game.sliding?.72:1)-this.robot.scale.y)*Math.min(1,dt*14);
+    const rollingPose=game.sliding||game.rolling;
+    this.robot.scale.y += ((rollingPose?.72:1)-this.robot.scale.y)*Math.min(1,dt*14);
+    this.robot.rotation.z += ((game.rolling ? Math.sin(game.rollAngle||0)*.28 : 0)-this.robot.rotation.z)*Math.min(1,dt*12);
     animateRobot(this.robot,{dt,speed,grounded:game.y<=.03||Boolean(game.roof),verticalVelocity:game.vy,lateral:RUNNER_LANES[game.lane]-game.x});
     this.camera.aspect=this.container.clientWidth/Math.max(1,this.container.clientHeight);
     this.camera.updateProjectionMatrix();

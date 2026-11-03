@@ -68,9 +68,11 @@ play connects best. For a fully offline room, run `npm run multiplayer` on one
 computer and share the LAN address printed in its terminal; manual
 invitation/answer pairing remains available under the advanced options. See
 [multiplayer setup and troubleshooting](docs/MULTIPLAYER.md).
-Players share car positions, models, and colors. The visible traffic and
-pedestrian world mirrors the host's simulation; guests do not run their own
-crowd interactions, and player-to-player collisions are not authoritative.
+Players share car positions, models, colors and robot-transform state, with
+nearby remote engines audible and local car-to-car contact response. The visible
+traffic and pedestrian world mirrors the host's simulation; guests do not run
+their own crowd interactions, and player-to-player collisions are resolved
+independently on each client rather than authoritatively.
 Surveyed terrain elevations are outside the current scope.
 Independent fan prototype, not an official BMW product.
 

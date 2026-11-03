@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { RunnerGame, TRUCK_ROOF_HEIGHT, SLIDE_DURATION } from '../src/runner-game.js';
+import { RunnerGame, TRUCK_ROOF_HEIGHT, SLIDE_DURATION, ROLL_DURATION } from '../src/runner-game.js';
 import { createRobotModel, RobotRunnerView } from '../src/robot-runner-view.js';
 import { animateRobot } from '../src/robot-animation.js';
 
@@ -39,6 +39,18 @@ test('slide avoids low obstacles and expires after its roll window',()=>{
   assert.ok(game.slideTimer<SLIDE_DURATION);
   for (let i = 0; i < 15; i++) game.update(.05);
   assert.equal(game.sliding,false);
+});
+
+test('down roll has a finite barrel-roll window and slide remains compatible',()=>{
+  const game=new RunnerGame(()=>0);
+  assert.equal(game.roll(),true);
+  assert.equal(game.rolling,true);
+  game.update(.05);
+  assert.ok(Number.isFinite(game.rollAngle));
+  assert.ok(game.rollTimer<ROLL_DURATION);
+  assert.equal(game.slide(),true);
+  for(let i=0;i<20;i++)game.update(.05);
+  assert.equal(game.rolling,false);
 });
 
 test('low obstacle collision costs a life when not sliding',()=>{
@@ -79,7 +91,7 @@ test('truck impacts cost hearts, end the run, and reset cleanly',()=>{
 
 test('runner traffic and pickups animate between frames',()=>{
  const view=Object.create(RobotRunnerView.prototype);
- view.trucks=new Map();view.pickups=new Map();view.lowObstacles=new Map();view.roadsters=new Map();view.buildings=[];view.root=new THREE.Group();view.robot=createRobotModel();
+ view.trucks=new Map();view.pickups=new Map();view.lowObstacles=new Map();view.roadsters=new Map();view.laneMarkers=[];view.buildings=[];view.root=new THREE.Group();view.robot=createRobotModel();
  view.camera={position:new THREE.Vector3(),lookAt(){},updateProjectionMatrix(){}};view.renderer={render(){}};view.container={clientWidth:320,clientHeight:240};
  const truck=view.createTruck({lane:1});const pickup=view.createPickup();
  const game={trucks:[{id:1,lane:1,z:-8,roll:0}],pickups:[{id:2,lane:1,z:-6,y:0}],roadsters:[],lowObstacles:[],distance:0,x:0,y:0,vy:0,lane:1,over:false,invulnerable:0};
