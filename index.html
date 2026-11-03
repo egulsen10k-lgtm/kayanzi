@@ -1007,6 +1007,37 @@
       box-shadow:0 6px 20px #0007; cursor:pointer; touch-action:manipulation;
     }
     #drive-dynamics-toggle[aria-expanded="true"] { background:#154d72; border-color:#8de7fa; }
+    #fullscreen-toggle {
+      position:absolute; z-index:22; top:122px; right:12px; min-height:44px; min-width:44px; padding:7px 10px;
+      border:1px solid rgba(121,217,240,.35); border-radius:10px; color:#f3f8fb;
+      background:rgba(9,21,31,.88); font-size:18px; cursor:pointer; touch-action:manipulation;
+      display:none;
+    }
+    #fullscreen-toggle:active { background:#1c3a50; }
+    /* On touch/small screens show fullscreen button and reposition dynamics toggle */
+    @media (max-width:900px),(any-pointer:coarse) {
+      #fullscreen-toggle { display:block; top:170px; right:12px; }
+      #drive-dynamics-toggle { top:116px; }
+    }
+    /* HUD card expand on mobile */
+    @media (max-width:900px),(any-pointer:coarse) {
+      #hud-speed-card .rpm-container,
+      #hud-speed-card .dynamics-readout,
+      #hud-speed-card #hud-passengers,
+      #hud-speed-card #traffic-status,
+      #hud-speed-card .energy-readout,
+      #hud-speed-card #hud-fuel-meter,
+      #hud-speed-card > div:last-of-type { display:none; }
+      #hud-speed-card[aria-expanded="true"] .rpm-container,
+      #hud-speed-card[aria-expanded="true"] .dynamics-readout,
+      #hud-speed-card[aria-expanded="true"] #hud-passengers,
+      #hud-speed-card[aria-expanded="true"] #traffic-status,
+      #hud-speed-card[aria-expanded="true"] .energy-readout,
+      #hud-speed-card[aria-expanded="true"] #hud-fuel-meter,
+      #hud-speed-card[aria-expanded="true"] > div:last-of-type { display:flex; }
+      #hud-speed-card { transition: width .2s ease; }
+      #hud-speed-card[aria-expanded="true"] { width:min(220px,calc(100vw - 32px)); }
+    }
     #drive-dynamics-panel {
       position:absolute; z-index:32; top:174px; right:12px; width:min(310px,calc(100vw - 24px));
       max-height:calc(100dvh - 190px); overflow-y:auto; overscroll-behavior:contain;
@@ -1224,7 +1255,7 @@
 
       <!-- Heads Up Display -->
       <div class="hud-overlay">
-        <div class="hud-card">
+        <div class="hud-card" id="hud-speed-card" role="button" tabindex="0" aria-expanded="false" aria-label="Speed — tap to expand" style="cursor:pointer">
           <div class="speedometer-unit">Speed</div>
           <div class="speedometer-val"><span id="hud-speed">0</span> <span style="font-size: 16px; color: var(--text-dim);">km/h</span> <span id="hud-speed-limit" aria-label="Current speed limit">—</span></div>
           <div id="hud-navigation" title="Upcoming road directions"></div>
@@ -1273,6 +1304,7 @@
         ⚙️
       </button>
       <button id="drive-dynamics-toggle" type="button" aria-controls="drive-dynamics-panel" aria-expanded="false">Drive setup</button>
+      <button id="fullscreen-toggle" type="button" aria-label="Toggle fullscreen" title="Fullscreen">⛶</button>
       <section id="drive-dynamics-panel" aria-label="Vehicle dynamics settings" hidden>
         <div class="dynamics-panel-header">
           <div><div class="dynamics-panel-kicker">Vehicle dynamics</div><h2>Drive setup</h2></div>
@@ -1632,5 +1664,33 @@
 
   <!-- Main Application Script -->
   <script type="module" src="/src/main.js"></script>
+  <script>
+    // Fullscreen toggle
+    const fsBtn = document.getElementById('fullscreen-toggle');
+    if (fsBtn) {
+      const vp = document.getElementById('main-viewport') || document.documentElement;
+      const updateFsIcon = () => {
+        fsBtn.textContent = document.fullscreenElement ? '✕' : '⛶';
+        fsBtn.title = document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen';
+        fsBtn.setAttribute('aria-label', fsBtn.title);
+      };
+      fsBtn.addEventListener('click', () => {
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        else vp.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+      });
+      document.addEventListener('fullscreenchange', updateFsIcon);
+    }
+    // Expandable HUD speed card
+    const hudCard = document.getElementById('hud-speed-card');
+    if (hudCard) {
+      hudCard.addEventListener('click', () => {
+        const expanded = hudCard.getAttribute('aria-expanded') === 'true';
+        hudCard.setAttribute('aria-expanded', String(!expanded));
+      });
+      hudCard.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); hudCard.click(); }
+      });
+    }
+  </script>
 </body>
 </html>
