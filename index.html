@@ -11,9 +11,9 @@
   <style>
     :root {
       color-scheme: dark;
-      --sidebar-width: 360px;
+      --sidebar-width: min(350px, 100vw);
       --bg-primary: #080b10;
-      --panel-bg: rgba(12, 17, 24, 0.94);
+      --panel-bg: rgba(12, 17, 24, 0.96);
       --panel-raised: rgba(21, 29, 39, 0.92);
       --accent-blue: #1769aa;
       --accent-cyan: #79d9f0;
@@ -216,9 +216,6 @@
         display: block;
         min-height: 44px;
         touch-action: manipulation;
-      }
-      :root {
-        --sidebar-width: min(300px, 100vw);
       }
       #control-sidebar {
         position: absolute;
@@ -600,18 +597,7 @@
       cursor: pointer;
     }
     /* Expedition interface refinement */
-    :root {
-      --sidebar-width: 340px;
-      --bg-primary: #080b10;
-      --panel-bg: rgba(12, 17, 24, 0.94);
-      --panel-raised: rgba(21, 29, 39, 0.92);
-      --accent-blue: #1769aa;
-      --accent-cyan: #79d9f0;
-      --accent-pink: #ff5577;
-      --text-main: #f3f6f8;
-      --text-dim: #a2adb7;
-      --border-color: rgba(121, 217, 240, 0.2);
-    }
+
 
     #main-viewport { min-width: 0; overflow: hidden; }
     #render-canvas-container, #render-canvas-container canvas { display: block; }
@@ -801,18 +787,7 @@
     [hidden] { display: none !important; }
 
     /* Responsive expedition studio and direct driving controls */
-    :root {
-      --sidebar-width: 350px;
-      --bg-primary: #080b10;
-      --panel-bg: rgba(12, 17, 24, 0.96);
-      --panel-raised: rgba(21, 29, 39, 0.92);
-      --accent-blue: #1769aa;
-      --accent-cyan: #79d9f0;
-      --accent-pink: #ff5577;
-      --text-main: #f3f6f8;
-      --text-dim: #a2adb7;
-      --border-color: rgba(121, 217, 240, 0.2);
-    }
+
     #main-viewport { min-width: 0; overflow: hidden; }
     #render-canvas-container, #render-canvas-container canvas { display: block; }
     #control-sidebar { border-left-color: rgba(255,255,255,0.08); }
@@ -1151,6 +1126,87 @@
     #refuel-button { width:100%; min-height:44px; margin-top:8px; border:1px solid #6cadb7; border-radius:8px; background:#17475a; color:white; cursor:pointer; }
     #refuel-button:disabled { opacity:.5; cursor:default; }
     @media(max-width:800px) { #hud-navigation { max-width:140px; } }
+    /* One mobile layout: instruments above the road, controls within thumb reach. */
+    #mobile-drive-menu-toggle, #mobile-drive-menu { display:none; }
+    @media (max-width:900px), (any-pointer:coarse) {
+      #main-viewport { --thumb-size:clamp(52px,15vw,68px); }
+      .hud-overlay { top:max(16px,env(safe-area-inset-top))!important; left:max(16px,env(safe-area-inset-left))!important; right:auto!important; width:154px!important; max-width:calc(100% - 150px); }
+      .hud-overlay > .hud-card { width:100%; padding:12px 14px; border:1px solid #ffffff15; border-radius:16px; background:#111a22e8; box-shadow:none; }
+      .hud-overlay .speedometer-unit, .hud-overlay .rpm-container, .hud-overlay .dynamics-readout, .hud-overlay #hud-passengers, .hud-overlay #traffic-status, .hud-overlay #hud-economy { display:none; }
+      .hud-overlay .speedometer-val { font-size:36px; line-height:1.1; letter-spacing:-1.5px; color:#f3f6f8; }
+      .hud-overlay .speedometer-val > span:nth-child(2) { font-size:10px!important; letter-spacing:0; }
+      #hud-speed-limit { width:25px; height:25px; border-width:2px; font-size:10px; letter-spacing:0; }
+      .hud-overlay .hud-card > div:has(#hud-gear) { margin-top:6px!important; font-size:11px!important; color:#afbdc6!important; }
+      .hud-overlay .hud-card > div:has(#hud-gear) > span:last-child { display:none; }
+      .energy-readout { margin-top:7px; font-size:10px; }
+      #hud-fuel-meter { height:2px; }
+      #hud-navigation { max-width:126px; margin-top:6px; }
+      #main-viewport #map-container:not(.map-expanded) { top:max(16px,env(safe-area-inset-top))!important; right:max(16px,env(safe-area-inset-right))!important; bottom:auto!important; left:auto!important; width:112px; height:104px; border:1px solid #ffffff24; border-radius:16px; box-shadow:none; }
+      #map-container:not(.map-expanded) .map-toolbar { padding:0; background:#101b25e8; }
+      #map-container:not(.map-expanded) .map-toolbar button { width:100%; min-height:44px; border:0; border-radius:0; background:transparent; font-size:10px; }
+      #map-container:not(.map-expanded) .leaflet-control-attribution { display:none; }
+      #drive-touch-controls { display:flex!important; left:max(16px,env(safe-area-inset-left))!important; right:max(16px,env(safe-area-inset-right))!important; bottom:calc(26px + env(safe-area-inset-bottom))!important; }
+      .touch-steering { gap:8px; }
+      .touch-pedals { grid-template-columns:repeat(2,var(--thumb-size)); gap:8px; }
+      .drive-touch-btn { width:var(--thumb-size); height:74px; min-height:74px; border:1px solid #ffffff30; border-radius:18px; background:#17242fe8; box-shadow:none; font-size:26px; }
+      .touch-pedals .touch-horn, .touch-pedals .touch-handbrake { width:var(--thumb-size); height:44px; min-height:44px; border-radius:12px; background:#18242ddb; color:#bdcbd5; font-size:9px; letter-spacing:.02em; }
+      .touch-pedals .touch-brake { grid-column:1; grid-row:2; background:#28323de8; }
+      .touch-pedals .touch-gas { grid-column:2; grid-row:2; background:#255c61ed; border-color:#83c9c766; }
+      .touch-pedals .drive-touch-btn span { margin-top:5px; font-size:18px; }
+      .drive-touch-btn[aria-pressed="true"] { background:#36787e; border-color:#b5e6e2; transform:translateY(2px); }
+      .drive-quickbar { left:max(16px,env(safe-area-inset-left)); right:max(104px,calc(104px + env(safe-area-inset-right))); bottom:calc(168px + env(safe-area-inset-bottom)); width:auto; transform:none; flex-direction:row; align-items:center; }
+      .drive-mode-shortcuts { display:none; }
+      #mobile-gear-selector { display:flex; width:100%; gap:4px; padding:4px; border:1px solid #ffffff1c; border-radius:14px; background:#111c26ed; }
+      #mobile-gear-selector button, #mobile-gear-selector button[data-gear="auto"] { flex:1; width:auto; min-width:44px; min-height:44px; border:0; border-radius:10px; background:transparent; color:#a8b8c5; font-size:11px; }
+      #mobile-gear-selector button[aria-pressed="false"] { background:transparent; border:0; color:#b9c8d2; }
+      #mobile-gear-selector button[aria-pressed="true"] { background:#315b64; color:#f0fffc; box-shadow:none; }
+      #main-viewport #nitro-button { position:fixed; right:auto; left:50%; bottom:calc(38px + env(safe-area-inset-bottom)); transform:translateX(-50%); width:56px; min-width:44px; min-height:48px; padding:5px; border:1px solid #75bbca55; border-radius:14px; background:#203a46e8; font-size:10px; color:#a9dce6; }
+      #mobile-drive-menu-toggle { display:block; position:absolute; z-index:1001; right:max(16px,env(safe-area-inset-right)); bottom:calc(168px + env(safe-area-inset-bottom)); width:80px; min-height:52px; border:1px solid #ffffff26; border-radius:14px; background:#1b2a36f5; color:#f0f6f9; font-size:12px; font-weight:650; cursor:pointer; touch-action:manipulation; }
+      #mobile-drive-menu-toggle[aria-expanded="true"] { background:#315b64; }
+      #mobile-drive-menu:not([hidden]) { display:flex; position:fixed; inset:0; z-index:1050; align-items:flex-end; justify-content:center; padding:12px max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left)); background:#04090e88; }
+      .mobile-drive-sheet { width:min(520px,100%); max-height:82dvh; overflow:auto; overscroll-behavior:contain; padding:20px; border:1px solid #ffffff22; border-radius:24px; background:#101a24; box-shadow:0 -12px 60px #0005; }
+      .mobile-drive-sheet::before { content:''; display:block; width:36px; height:4px; margin:-8px auto 17px; border-radius:4px; background:#7c8b9666; }
+      .mobile-drive-sheet header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+      .mobile-drive-sheet h2 { font-size:20px; font-weight:650; letter-spacing:-.4px; }
+      #mobile-drive-menu-close { width:44px; min-height:44px; border:0; border-radius:50%; background:#ffffff0c; color:#cad7df; font-size:24px; cursor:pointer; }
+      #mobile-drive-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+      #mobile-drive-actions > button, #mobile-drive-actions #transform-controls button { position:static!important; display:block; width:100%!important; min-height:52px!important; height:auto; padding:12px!important; margin:0; border:1px solid #ffffff12!important; border-radius:12px!important; background:#1b2b38!important; color:#dbe9f1; font-size:12px!important; line-height:1.4; letter-spacing:0; box-shadow:none!important; text-align:left; transform:none; }
+      #mobile-drive-actions button::after { content:none!important; }
+      #mobile-drive-actions #transform-controls { position:static!important; display:grid; grid-template-columns:1fr 1fr; gap:8px; width:100%!important; grid-column:1/-1; }
+      #mobile-drive-actions #transform-controls button[hidden] { display:none; }
+      #mobile-drive-status { margin-top:20px; }
+      #mobile-drive-status > .hud-card { display:block!important; padding:14px 0 0; border:0; border-top:1px solid #ffffff18; border-radius:0; background:none; box-shadow:none; }
+      #mobile-drive-status #hud-location-name { color:#d9e9f1!important; font-size:13px!important; }
+      #app-container #control-sidebar { position:fixed; z-index:1060; top:auto; bottom:0; left:0; right:0; width:100%; max-width:100%; height:auto; max-height:82dvh; border-radius:24px 24px 0 0; padding:20px max(20px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left)); transform:translateY(105%); }
+      #app-container #control-sidebar.open { transform:translateY(0); }
+      #app-container #control-sidebar.collapsed { width:100%; }
+      #settings-panel, #drive-dynamics-panel { position:fixed!important; z-index:1060!important; top:auto!important; left:12px!important; right:12px!important; bottom:max(12px,env(safe-area-inset-bottom))!important; width:auto!important; max-width:520px!important; margin:0 auto; max-height:78dvh!important; overflow:auto!important; border:1px solid #ffffff22!important; border-radius:22px!important; background:#101a24!important; }
+      #settings-close, #drive-dynamics-close, #studio-close { min-width:44px; min-height:44px; }
+      #main-viewport:has(#mobile-drive-menu:not([hidden])) #drive-touch-controls, #main-viewport:has(#mobile-drive-menu:not([hidden])) .drive-quickbar { visibility:hidden; }
+      #akanzi-hud { top:152px!important; left:16px!important; right:16px!important; max-width:none!important; background:#111c25e8!important; border-color:#ffffff1c!important; padding:9px 12px!important; }
+      #imagery-attribution { bottom:3px!important; opacity:.75; }
+      #virtual-steering-wheel { bottom:calc(26px + env(safe-area-inset-bottom))!important; }
+      #start-overlay { height:100dvh; }
+      #start-overlay .start-title { max-width:340px; font-size:clamp(38px,11vw,60px); }
+      #start-overlay .start-subtitle { max-width:320px; line-height:1.6; color:#b2c1cc; }
+      #start-overlay .controls-hint { max-width:300px; color:#a0b0bd; line-height:1.6; }
+    }
+    @media (min-width:700px) and (any-pointer:coarse) {
+      .drive-quickbar { left:50%; right:auto; width:230px; transform:translateX(-50%); bottom:calc(34px + env(safe-area-inset-bottom)); }
+      #mobile-drive-menu-toggle { right:calc(50% - 115px); bottom:calc(96px + env(safe-area-inset-bottom)); width:230px; }
+      #main-viewport #nitro-button { left:50%; bottom:calc(158px + env(safe-area-inset-bottom)); }
+    }
+    @media (max-height:500px) and (orientation:landscape) {
+      .hud-overlay { width:146px!important; top:12px!important; }
+      .hud-overlay .energy-readout, .hud-overlay #hud-fuel-meter, .hud-overlay .hud-card > div:has(#hud-gear) { display:none; }
+      .hud-overlay .speedometer-val { font-size:30px; }
+      #main-viewport #map-container:not(.map-expanded) { top:12px!important; width:104px; height:88px; }
+      .drive-quickbar { left:50%; right:auto; bottom:calc(18px + env(safe-area-inset-bottom)); transform:translateX(-50%); width:208px; }
+      #mobile-drive-menu-toggle { right:calc(50% - 104px); bottom:calc(80px + env(safe-area-inset-bottom)); width:100px; }
+      #main-viewport #nitro-button { left:calc(50% - 54px); bottom:calc(80px + env(safe-area-inset-bottom)); width:100px; }
+      #akanzi-hud { top:92px!important; left:175px!important; right:132px!important; }
+      .mobile-drive-sheet { max-height:92dvh; }
+    }
   </style>
 </head>
 <body>
@@ -1312,6 +1368,14 @@
           <button type="button" data-gear="R" aria-label="Reverse" aria-pressed="false">R</button>
         </div>
         <button id="nitro-button" type="button" aria-label="Hold for nitro boost" aria-pressed="false">NITRO</button>
+      </div>
+      <button id="mobile-drive-menu-toggle" type="button" aria-controls="mobile-drive-menu" aria-expanded="false">••• Menu</button>
+      <div id="mobile-drive-menu" hidden>
+        <section class="mobile-drive-sheet" role="dialog" aria-modal="true" aria-labelledby="mobile-drive-menu-title">
+          <header><h2 id="mobile-drive-menu-title">Your drive</h2><button id="mobile-drive-menu-close" type="button" aria-label="Close drive menu">×</button></header>
+          <div id="mobile-drive-actions" aria-label="Driving tools"></div>
+          <div id="mobile-drive-status"></div>
+        </section>
       </div>
       <div id="photoreal-attribution" hidden style="position:absolute;bottom:12px;right:12px;z-index:25;background:#101820;color:white;padding:8px;font-size:12px;max-width:85%;">Google Maps</div>
       <div id="imagery-attribution">Imagery © Esri, Vantor, Earthstar Geographics · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">Map © OpenStreetMap contributors</a></div>

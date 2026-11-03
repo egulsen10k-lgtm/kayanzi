@@ -1,6 +1,6 @@
-# Play together on the same network
+# Play together
 
-The game supports small driving rooms with up to eight drivers. Open **Multiplayer** on the game page to see connection status, create or join a room, and find other drivers. Each driver controls their own car. Traffic and pedestrian simulation remain local; player-to-player collision physics and competitive anti-cheat are not included.
+The game supports small driving rooms with up to eight drivers. Open **Multiplayer** on the game page to see connection status, create or join a room, and find other drivers. Each driver controls their own car. The visible traffic and pedestrian world mirrors the host's simulation; guests do not run their own crowd interactions, and player-to-player collision physics and competitive anti-cheat are not included.
 
 ## Recommended: host a LAN room
 
@@ -29,22 +29,21 @@ On Windows PowerShell, use `$env:PORT=3001` before running `node server/lan-serv
 
 Use a trusted home or office network. Devices on guest Wi-Fi may be isolated from one another even when the Wi-Fi name matches. Disable guest/client isolation or use the same non-guest network. VPNs and corporate firewall policies can also prevent connection. Do not forward the LAN server's port to the public internet; it is a small local room relay, not a publicly managed game service.
 
-## Published GitHub page: connection codes
+## Published GitHub page: six-character room codes
 
-GitHub Pages serves static files and does not run the LAN server. The published game offers a server-free WebRTC connection-code option instead:
+GitHub Pages serves static files and does not run the LAN server. The published game offers PeerJS room codes instead:
 
 1. Everyone opens the published game page using HTTPS and opens **Multiplayer**.
-2. The host creates an invitation code and sends the complete code to a friend using a messaging app or another channel.
-3. The friend pastes the invitation and creates an answer code, then sends that complete answer to the host.
-4. The host accepts the answer. Wait until both pages show that the connection is ready.
-5. Repeat the invitation/answer exchange for each additional friend if the room supports multiple guests.
+2. The host chooses **Host game**. Share the six-character code it shows, such as `ABC123`.
+3. Friends choose **Join game**, enter that code, and wait until both pages show the connection is ready. No answer code is needed.
+4. Repeat the join step for each additional friend if the room supports multiple guests.
 
-Keep all pages open while pairing and playing. Connection codes contain temporary network session information; send them only to the intended players and use freshly generated codes after leaving a session. The host must stay connected for guests to remain in the room.
+Room codes use PeerJS public signaling (`0.peerjs.com`) only to introduce browsers, so discovery needs internet access. Once connected, driving data flows directly browser to browser over WebRTC, and same-network play connects best. Keep all pages open while playing; the host must stay connected for guests to remain in the room. If the public signaling service is unavailable, the LAN server method above still works fully offline.
 
-This mode uses direct browser-to-browser connections and has no TURN relay. It works when browsers can find a direct network path, commonly on the same ordinary local network. Guest Wi-Fi isolation, VPNs, browser policy or restrictive firewalls can still block it; connection codes cannot bypass those restrictions. If direct pairing fails, use the LAN server method above. Opening an HTTPS GitHub page does not let it connect to a plain HTTP/WebSocket LAN server automatically: use the local game link for LAN hosting.
+This WebRTC path has no TURN relay. Guest Wi-Fi isolation, VPNs, strict browser policy, or restrictive firewalls can block direct connections. Manual invitation/answer pairing remains available under the advanced options for networks where the public signaling service is unreachable, but the six-character flow is the normal path. Opening an HTTPS GitHub page does not let it connect to a plain HTTP/WebSocket LAN server automatically: use the local game link for LAN hosting.
 
 ## Technical protocol
 
 The local server serves the built `dist/` directory, exposes `GET /api/multiplayer-info`, and accepts WebSocket connections at `/multiplayer`. It validates room codes, limits rooms to eight players, assigns driver IDs, bounds vehicle-state values, limits message size and frequency, removes disconnected drivers, and rejects browser connections from unexpected origins. No account or database is required. Empty rooms disappear when their last driver leaves.
 
-The multiplayer feature synchronizes vehicle position, heading, speed, steering, appearance and elevation. It does not synchronize every world object. A local server must remain running for local room links to work.
+The multiplayer feature synchronizes vehicle position, heading, speed, steering, appearance and elevation. The room host also publishes the visible NPC world at a bounded rate: traffic vehicles and pedestrians at up to 10 updates per second, with at most 16 vehicles and 24 pedestrians per snapshot. Guests render that host world and do not simulate their own traffic or pedestrians; crowd interactions are host-controlled. If the host leaves, the remaining drivers elect a new host and that driver publishes the next NPC world. Player-to-player collisions and individual player car collisions with traffic are resolved locally, not authoritatively. A local server must remain running for local room links to work.

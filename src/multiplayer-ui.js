@@ -1,4 +1,5 @@
 import './multiplayer.css';
+import './multiplayer-ui.css';
 
 const MAX_NAME = 24;
 
@@ -59,9 +60,28 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
   const nameInput = make('input', { id: 'multiplayer-name', type: 'text', maxlength: String(MAX_NAME), autocomplete: 'nickname', placeholder: 'Your driver name' });
   try { nameInput.value = localStorage.getItem('earth-drive-driver-name') || ''; } catch { /* Storage can be disabled. */ }
   const nameField = field('Driver name', nameInput);
+  const shortSection = make('section', { className: 'mp-short-method', 'aria-label': 'Play with a room code' });
+  shortSection.append(make('p', { className: 'mp-muted' }, 'Host a game and share its 6-character code. Friends enter the code to join — no answer code needed.'));
+  const hostGame = button('Host game', { id: 'multiplayer-host-game', className: 'mp-primary mp-host-game' });
+  const shortJoinInput = make('input', { id: 'multiplayer-short-code', type: 'text', maxlength: '6', minlength: '6', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', placeholder: 'ABC123', pattern: '[A-Za-z0-9]{6}' });
+  const joinGame = button('Join game', { id: 'multiplayer-join-game', className: 'mp-primary' });
+  const joinActions = make('div', { className: 'mp-short-join' });
+  joinActions.append(field('Have a room code?', shortJoinInput), joinGame);
+  const shortShare = make('div', { className: 'mp-short-share', hidden: '' });
+  const shortCodeOutput = make('input', { id: 'multiplayer-host-code', readonly: '', 'aria-label': 'Your room code' });
+  const copyShortCode = button('Copy code');
+  const shortLink = make('input', { id: 'multiplayer-short-invite', type: 'url', readonly: '', 'aria-label': 'Short-code invite link' });
+  const copyShortLink = button('Copy invite link');
+  const shortCopyActions = make('div', { className: 'mp-actions' });
+  shortCopyActions.append(copyShortCode, copyShortLink);
+  shortShare.append(make('p', { className: 'mp-muted' }, 'Your room code · keep this game open'), shortCodeOutput, shortCopyActions, shortLink);
+  shortSection.append(hostGame, joinActions, shortShare, make('p', { className: 'mp-muted mp-short-note' }, 'Internet is needed to find the room. Driving data travels directly between browsers. For the most reliable connection, use the same Wi-Fi.'));
+  const advanced = make('details', { className: 'mp-advanced' });
+  advanced.append(make('summary', {}, 'Advanced · local server or manual pairing'));
+  const worldNote = make('p', { className: 'mp-world-note' }, 'The room host controls traffic and pedestrians. Guests see the shared world; NPC interactions run on the host.');
   const choices = make('div', { className: 'mp-choice', 'aria-label': 'Connection method' });
   const lanChoice = button('Same Wi-Fi · room link', { 'aria-pressed': 'true' });
-  const codeChoice = button('Connection codes', { 'aria-pressed': 'false' });
+  const codeChoice = button('Manual pairing', { 'aria-pressed': 'false' });
   choices.append(lanChoice, codeChoice);
 
   const lanSection = make('section', { className: 'mp-method', 'aria-label': 'Local network rooms' });
@@ -124,7 +144,8 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
   const playersList = make('ul');
   const leaveButton = button('Leave multiplayer', { className: 'mp-leave', hidden: '' });
   playersSection.append(playersTitle, playersList, leaveButton);
-  panel.append(heading, intro, status, error, nameField, choices, lanSection, codeSection, playersSection);
+  advanced.append(choices, lanSection, codeSection);
+  panel.append(heading, intro, status, error, nameField, shortSection, worldNote, playersSection, advanced);
   backdrop.append(panel);
   (document.getElementById('main-viewport') || document.body).append(trigger);
   document.body.append(backdrop);
@@ -139,7 +160,11 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
   let activeMethod = 'lan';
   let methodSelection = 0;
   let destroyed = false;
-  const initialRoom = new URL(location.href).searchParams.get('room');
+  let actionGeneration = 0;
+  const pageURL = new URL(location.href);
+  const initialJoin = pageURL.searchParams.get('join');
+  const initialRoom = pageURL.searchParams.get('room');
+  if (initialJoin && /^[a-z0-9]{6}$/i.test(initialJoin)) shortJoinInput.value = initialJoin.toUpperCase();
   if (initialRoom && /^[a-z0-9]{3,24}$/i.test(initialRoom)) roomInput.value = initialRoom.toUpperCase();
 
   function showError(message) {
@@ -172,6 +197,15 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
   }
 
   function updateShare() {
+    const shortConnected = latestStatus.transport === 'short-code' && session.connected;
+    shortShare.hidden = !(shortConnected && session.role === 'host' && session.shortCode);
+    if (!shortShare.hidden) {
+      shortCodeOutput.value = session.shortCode;
+      const url = new URL(location.href);
+      url.searchParams.delete('room'); url.searchParams.set('join', session.shortCode); url.hash = '';
+      shortLink.value = url.href;
+      hostGame.textContent = 'Hosting this game';
+    } else hostGame.textContent = 'Host game';
     const lanConnected = latestStatus.state === 'connected' && latestStatus.transport === 'lan';
     roomShare.hidden = !lanConnected;
     if (lanConnected) {
@@ -215,7 +249,7 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
     } catch {
       if (destroyed) return;
       info = null;
-      lanIntro.textContent = 'This page has no local multiplayer server. Use Connection codes now, or start a server on one computer using the setup below.';
+      lanIntro.textContent = 'This page has no local server. Use Host game / Join game above, manual pairing, or start a server on one computer using the setup below.';
       serverHelp.open = true;
       addressList.replaceChildren();
       addressList.hidden = true;
@@ -234,7 +268,7 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
     trigger.setAttribute('aria-expanded', 'true');
     window.dispatchEvent(new CustomEvent('multiplayerpanelchange', { detail: { open: true } }));
     closeButton.focus();
-    detectServer();
+    if (advanced.open) detectServer();
   }
 
   function close() {
@@ -248,10 +282,11 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
 
   async function runAction(source, action) {
     if (source.disabled) return;
+    const generation = ++actionGeneration;
     source.disabled = true;
     showError('');
     try { await action(); }
-    catch (cause) { if (!destroyed) showError(cause?.message || 'Could not connect. Please try again.'); }
+    catch (cause) { if (!destroyed && generation === actionGeneration) showError(cause?.message || 'Could not connect. Please try again.'); }
     finally { source.disabled = false; }
   }
 
@@ -291,6 +326,21 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
     }
     event.stopPropagation();
   });
+  advanced.addEventListener('toggle', () => { if (advanced.open) detectServer(); });
+  hostGame.addEventListener('click', () => runAction(hostGame, async () => {
+    if (!session.hostGame) throw new Error('Refresh the game to use short room codes.');
+    await session.hostGame({ name: displayName() });
+    updateShare(); shortCodeOutput.focus();
+  }));
+  joinGame.addEventListener('click', () => runAction(joinGame, async () => {
+    if (!session.joinGame) throw new Error('Refresh the game to use short room codes.');
+    await session.joinGame(shortJoinInput.value, { name: displayName() });
+    updateShare();
+  }));
+  shortJoinInput.addEventListener('input', () => { shortJoinInput.value = shortJoinInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); });
+  shortJoinInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); joinGame.click(); } });
+  copyShortCode.addEventListener('click', () => copyValue(shortCodeOutput, 'Room code'));
+  copyShortLink.addEventListener('click', () => copyValue(shortLink, 'Invite link'));
   lanChoice.addEventListener('click', () => { methodSelection++; selectMethod('lan'); });
   codeChoice.addEventListener('click', () => { methodSelection++; selectMethod('webrtc'); });
   retryServer.addEventListener('click', () => {
@@ -326,6 +376,7 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
     createInvitation.textContent = 'Invite another friend';
   }));
   leaveButton.addEventListener('click', () => {
+    actionGeneration++;
     session.leave();
     offerOutput.value = answerOutput.value = offerInput.value = answerInput.value = '';
     offerShare.hidden = answerShare.hidden = answerField.hidden = connectAnswer.hidden = true;
@@ -337,6 +388,7 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
     latestStatus = value;
     status.dataset.state = value.state || 'offline';
     status.textContent = value.message || ({ offline: 'Not connected', connecting: 'Connecting… Keep this page open.', connected: 'Connected · drive together', error: 'Connection failed. Try again.' }[value.state] || 'Not connected');
+    if (value.state === 'connected') showError('');
     if (value.state === 'error') showError(value.message || 'Could not connect. Check that both devices are on the same Wi-Fi.');
     trigger.dataset.connected = String(value.state === 'connected');
     trigger.textContent = value.state === 'connected' ? `Multiplayer · ${Math.min(8, currentPeers.length + 1)}` : 'Multiplayer';
@@ -389,7 +441,8 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
 
   nameInput.addEventListener('change', () => updatePeers(currentPeers));
   updatePeers(Array.from(session.peers?.values?.() || []));
-  if (initialRoom && roomInput.value) open();
+  if (initialRoom && roomInput.value) { advanced.open = true; selectMethod('lan'); open(); }
+  else if (initialJoin && shortJoinInput.value) { open(); shortJoinInput.focus(); }
 
   return {
     updateStatus,
@@ -398,6 +451,7 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
     close,
     destroy() {
       destroyed = true;
+      actionGeneration++;
       infoAbort?.abort();
       close();
       trigger.remove();

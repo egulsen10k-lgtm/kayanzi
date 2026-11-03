@@ -7,6 +7,7 @@ import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
+import { sanitizeWorldSnapshot } from '../src/npc-state.js';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MODELS = new Set(['M3 Competition', 'M4 CSL', 'M5 CS', 'i4 M50 (EV)', 'XM Label Red', 'm3', 'm4', 'm5', 'i4']);
@@ -85,7 +86,7 @@ export function createLanServer({ port = 3000, host = '0.0.0.0', distDir = resol
       else response.destroy();
     }
   });
-  const wss = new WebSocketServer({ noServer: true, maxPayload: 4096, perMessageDeflate: false });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 65536, perMessageDeflate: false });
   const safeSend = (socket, value) => {
     if (socket.readyState !== WebSocket.OPEN) return;
     if (socket.bufferedAmount > 256 * 1024) return socket.close(1013, 'Connection is too slow');
@@ -103,6 +104,11 @@ export function createLanServer({ port = 3000, host = '0.0.0.0', distDir = resol
     room?.delete(member.id);
     broadcast(member.room, { type: 'peer-leave', id: member.id });
     if (room?.size === 0) rooms.delete(member.room);
+    else if (room && room.authorityId === member.id) {
+      room.authorityId = room.keys().next().value;
+      room.worldSnapshot = null; room.worldSeq = -1;
+      broadcast(member.room, { type: 'authority', room: member.room, authorityId: room.authorityId });
+    }
   };
   server.on('upgrade', (request, socket, head) => {
     let pathname;
@@ -150,11 +156,15 @@ export function createLanServer({ port = 3000, host = '0.0.0.0', distDir = resol
         const name = typeof message.name === 'string' ? message.name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 24) || 'Driver' : 'Driver';
         const peers = room ? [...room.values()].map(({ id, name, state }) => ({ id, name, state })) : [];
         const member = { id, name, room: roomId, state, socket };
-        if (!room) { room = new Map(); rooms.set(roomId, room); }
+        if (!room) {
+          room = new Map(); room.authorityId = id; room.worldSnapshot = null; room.worldSeq = -1;
+          rooms.set(roomId, room);
+        }
         room.set(id, member);
         socket.member = member;
         clearTimeout(joinTimer);
-        safeSend(socket, { type: 'welcome', id, room: roomId, peers, maxPlayers });
+        safeSend(socket, { type: 'welcome', id, room: roomId, authorityId: room.authorityId, peers, maxPlayers });
+        if (room.worldSnapshot) safeSend(socket, { type: 'world', room: roomId, authorityId: room.authorityId, snapshot: room.worldSnapshot });
         broadcast(roomId, { type: 'peer-join', id, name, state }, socket);
       } else if (message.type === 'state') {
         const member = socket.member;
@@ -163,6 +173,17 @@ export function createLanServer({ port = 3000, host = '0.0.0.0', distDir = resol
         if (!state) return sendError(socket, 'invalid-state', 'Driver position is invalid.');
         member.state = state;
         broadcast(member.room, { type: 'state', id: member.id, name: member.name, state }, socket);
+      } else if (message.type === 'world') {
+        const member = socket.member;
+        if (!member) return sendError(socket, 'not-joined', 'Join a room first.');
+        const room = rooms.get(member.room);
+        if (room?.authorityId !== member.id) return sendError(socket, 'not-authority', 'Only the room host can publish NPC state.');
+        if (message.room !== member.room || message.authorityId !== member.id) return sendError(socket, 'invalid-world', 'NPC state does not match this room.');
+        const snapshot = sanitizeWorldSnapshot(message.snapshot);
+        if (!snapshot) return sendError(socket, 'invalid-world', 'NPC snapshot is invalid.');
+        if (snapshot.seq <= room.worldSeq) return;
+        room.worldSeq = snapshot.seq; room.worldSnapshot = snapshot;
+        broadcast(member.room, { type: 'world', room: member.room, authorityId: member.id, snapshot }, socket);
       } else if (message.type === 'leave') {
         leave(socket);
         socket.close(1000, 'Left room');

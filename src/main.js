@@ -17,8 +17,9 @@ import { RunnerGame } from './runner-game.js';
 import { createRobotModel, RobotRunnerView } from './robot-runner-view.js';
 import { animateRobot } from './robot-animation.js';
 import { RobotJump } from './robot-jump.js';
-import { MultiplayerSession } from './multiplayer.js';
+import { ShortCodeMultiplayerSession } from './multiplayer-short-code.js';
 import { mountMultiplayerUI } from './multiplayer-ui.js';
+import { NpcSync, serializeNpcs, applyNpcs } from './npc-sync.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   const peerId = 'driver-' + Math.random().toString(36).substring(2, 8);
@@ -28,11 +29,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const visualizer = new CarVisualizer3D(canvasContainer);
   const pedestrians = new Pedestrians();
   const trafficManager = new TrafficManager(visualizer.trafficGroup ?? visualizer.scene, {camera:visualizer.camera});
+  let npcSync;
 
   const pedestrianView = new PedestrianView(visualizer.scene);
   const startHorn = () => {
     audio.startHorn();
-    if (!visualizer.previewActive) pedestrians.horn(physics);
+    if (!visualizer.previewActive && !npcSync?.isFollower) pedestrians.horn(physics);
   };
   const stopHorn = () => audio.stopHorn();
   let routeGuide = null;
@@ -109,7 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
           }
           physics.setRoadNetwork(network);
-          if (pedestrians.network !== network) {
+          if (!npcSync?.isFollower && pedestrians.network !== network) {
             pedestrians.reset(network, physics, pedestrians.density);
             trafficManager.reset(network, physics);
           }
@@ -167,10 +169,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let multiplayerUI;
   let multiplayerPanelOpen = false;
+  let mobileMenuOpen = false;
   window.addEventListener('multiplayerpanelchange', ({ detail }) => {
     multiplayerPanelOpen = Boolean(detail?.open);
   });
-  const multiplayer = new MultiplayerSession({
+  const multiplayer = new ShortCodeMultiplayerSession({
     getState: () => physics.serializeState(),
     onPeerState: (state) => {
       visualizer.updatePeerCar(state);
@@ -181,8 +184,12 @@ document.addEventListener('DOMContentLoaded', () => {
       mapController.removePeerPosition(id);
     },
     onStatus: (status) => multiplayerUI?.updateStatus(status),
-    onPeers: (peers) => multiplayerUI?.updatePeers(peers)
+    onPeers: (peers) => multiplayerUI?.updatePeers(peers),
+    getNpcs: () => serializeNpcs({ pedestrians, traffic: trafficManager }),
+    onNpcs: (snapshot) => applyNpcs(snapshot, { pedestrians, traffic: trafficManager }),
+    onWorldAuthority: () => npcSync?.syncRole(physics)
   });
+  npcSync = new NpcSync({ session: multiplayer, trafficManager, pedestrians, pedestrianView, scene: visualizer.scene });
   multiplayerUI = mountMultiplayerUI({
     session: multiplayer,
     getState: () => physics.serializeState(),
@@ -213,6 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const nightToggle = document.getElementById('night-mode');
   const beamsToggle = document.getElementById('high-beams');
   densitySelect?.addEventListener('change', e => {
+    if (npcSync.isFollower) return;
     const density = Number(e.target.value);
     trafficManager.setDensity(density, physics);
   });
@@ -221,7 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   startBtn.addEventListener('click', () => {
     audio.init();
-    trafficManager.setDensity(Number(densitySelect?.value ?? 1), physics);
+    if (!npcSync.isFollower) trafficManager.setDensity(Number(densitySelect?.value ?? 1), physics);
     audio.triggerExhaustPop();
     startOverlay.style.opacity = '0';
     setTimeout(() => {
@@ -726,7 +734,7 @@ document.addEventListener('DOMContentLoaded', () => {
     #transform-controls button[aria-pressed="true"]{background:#136384;border-color:#a5f5ff}
     #transform-controls button[hidden]{display:none}
     #runner-ui[hidden]{display:none}
-    #main-viewport.runner-active > :not(#render-canvas-container):not(#runner-ui){display:none!important}
+    #main-viewport.runner-active > :not(#render-canvas-container):not(#runner-ui):not(#mobile-drive-menu):not(#mobile-drive-menu-toggle){display:none!important}
     #runner-ui{position:absolute;inset:0;z-index:30;pointer-events:none;color:white;font-family:system-ui}
     #runner-ui button{pointer-events:auto;min-height:48px}
     .runner-top{display:flex;align-items:start;justify-content:space-between;gap:10px;padding:max(12px,env(safe-area-inset-top)) 12px 0}
@@ -779,7 +787,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setRobotMode(!robotMode);
   });
   const runnerAction=action=>{
-    if(!runnerActive || multiplayerPanelOpen)return;
+    if(!runnerActive || multiplayerPanelOpen || mobileMenuOpen)return;
     if(runnerGame.over){runnerGame.reset();runnerHint.hidden=true;return;}
     if(action==='left')runnerGame.move(-1);
     if(action==='right')runnerGame.move(1);
@@ -808,13 +816,13 @@ document.addEventListener('DOMContentLoaded', () => {
     event.preventDefault();runnerAction(button.dataset.runnerAction);
   }));
   window.addEventListener('keydown',event=>{
-    if(!runnerActive || multiplayerPanelOpen)return;
+    if(!runnerActive || multiplayerPanelOpen || mobileMenuOpen)return;
     if(event.code==='Escape'){event.preventDefault();event.stopImmediatePropagation();exitRunner();return;}
     const action=event.code==='ArrowLeft'||event.code==='KeyA'?'left':event.code==='ArrowRight'||event.code==='KeyD'?'right':event.code==='Space'||event.code==='ArrowUp'||event.code==='KeyW'?'jump':null;
     if(action){event.preventDefault();event.stopImmediatePropagation();if(!event.repeat)runnerAction(action);}
   },true);
   window.addEventListener('keyup',event=>{
-    if(runnerActive&&!multiplayerPanelOpen&&['ArrowLeft','ArrowRight','ArrowUp','KeyA','KeyD','KeyW','Space'].includes(event.code)){event.preventDefault();event.stopImmediatePropagation();}
+    if(runnerActive&&!multiplayerPanelOpen&&!mobileMenuOpen&&['ArrowLeft','ArrowRight','ArrowUp','KeyA','KeyD','KeyW','Space'].includes(event.code)){event.preventDefault();event.stopImmediatePropagation();}
   },true);
   let swipeStart=null;
   visualizer.renderer.domElement.addEventListener('pointerdown',event=>{if(runnerActive)swipeStart={x:event.clientX,y:event.clientY};});
@@ -826,6 +834,77 @@ document.addEventListener('DOMContentLoaded', () => {
     swipeStart=null;
   });
 
+  // Reuse the actual controls in a thumb-reachable sheet, retaining their state
+  // and listeners when switching between phone, tablet and desktop layouts.
+  const mobileLayout = matchMedia('(max-width:900px), (any-pointer:coarse)');
+  const mobileMenu = document.getElementById('mobile-drive-menu');
+  const mobileMenuToggle = document.getElementById('mobile-drive-menu-toggle');
+  const mobileMenuClose = document.getElementById('mobile-drive-menu-close');
+  const mobileActions = document.getElementById('mobile-drive-actions');
+  const mobileStatus = document.getElementById('mobile-drive-status');
+  const locationCard = document.querySelector('.hud-overlay > .hud-card:nth-child(2)');
+  const mobileControls = [sidebarToggle, dynamicsToggle, settingsToggle, songButton,
+    document.getElementById('multiplayer-toggle'), document.getElementById('transform-controls')];
+  const mobilePlacements = [...mobileControls, locationCard, nitroButton].filter(Boolean).map(element => {
+    const anchor = document.createComment(`desktop position: ${element.id || 'location status'}`);
+    element.before(anchor);
+    return {element, anchor};
+  });
+  const desktopSettingsLabel = settingsToggle.textContent;
+  const setMobileMenuOpen = (open, restoreFocus = true) => {
+    mobileMenuOpen = Boolean(open && mobileLayout.matches);
+    mobileMenu.hidden = !mobileMenuOpen;
+    mobileMenuToggle.setAttribute('aria-expanded', String(mobileMenuOpen));
+    driveInput.clear(); releaseNitro();
+    if (mobileMenuOpen) {
+      setSidebarOpen(false); setSettingsOpen(false); setDynamicsOpen(false);
+      physics.speed = 0; physics.throttle = 0;
+      mobileMenuClose.focus();
+    } else if (restoreFocus && mobileMenu.contains(document.activeElement)) mobileMenuToggle.focus();
+  };
+  const applyMobileLayout = () => {
+    setMobileMenuOpen(false);
+    if (mobileLayout.matches) {
+      for (const control of mobileControls) if (control) mobileActions.append(control);
+      if (locationCard) mobileStatus.append(locationCard);
+      mainViewport.append(nitroButton);
+      settingsToggle.textContent = 'Controls';
+    } else {
+      for (const {element, anchor} of mobilePlacements) anchor.after(element);
+      settingsToggle.textContent = desktopSettingsLabel;
+    }
+    requestAnimationFrame(() => mapController.map?.invalidateSize());
+  };
+  mobileMenuToggle.addEventListener('click', () => setMobileMenuOpen(!mobileMenuOpen));
+  mobileMenuClose.addEventListener('click', () => setMobileMenuOpen(false));
+  mobileMenu.addEventListener('click', event => { if (event.target === mobileMenu) setMobileMenuOpen(false); });
+  mobileActions.addEventListener('click', event => {
+    const target = event.target.closest('button');
+    if (!target || [songButton, transformButton].includes(target)) return;
+    setMobileMenuOpen(false, false);
+    const closeTarget = target === sidebarToggle ? studioClose : target === dynamicsToggle ? document.getElementById('drive-dynamics-close') : target === settingsToggle ? settingsClose : null;
+    closeTarget?.focus();
+  });
+  mobileMenu.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); setMobileMenuOpen(false); }
+    if (event.key === 'Tab') {
+      const controls = [...mobileMenu.querySelectorAll('button,a,input,select')].filter(element => !element.disabled && element.getClientRects().length);
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+    event.stopPropagation();
+  });
+  mobileMenu.addEventListener('keyup', event => event.stopPropagation());
+  for (const closeButton of [studioClose, settingsClose, document.getElementById('drive-dynamics-close')]) {
+    closeButton?.addEventListener('click', () => { if (mobileLayout.matches) mobileMenuToggle.focus(); });
+  }
+  window.addEventListener('multiplayerpanelchange', ({detail}) => {
+    if (!detail?.open && mobileLayout.matches) mobileMenuToggle.focus();
+  });
+  mobileLayout.addEventListener('change', applyMobileLayout);
+  applyMobileLayout();
+
   let lastTime = performance.now();
   let syncTimer = 0;
   let routeTimer = 0;
@@ -835,6 +914,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function gameLoop(currentTime) {
     const dt = Math.min(0.1, (currentTime - lastTime) / 1000);
     lastTime = currentTime;
+    npcSync.syncRole(physics);
 
     syncTimer += dt;
     if (syncTimer > 0.1) {
@@ -843,7 +923,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if(runnerActive){
-      if (!multiplayerPanelOpen) runnerGame.update(dt);
+      npcSync.update(dt, physics, {hidden:true});
+      if (!multiplayerPanelOpen && !mobileMenuOpen) runnerGame.update(dt);
       runnerView.update(runnerGame,dt);
       runnerScore.textContent=`${Math.floor(runnerGame.distance)} m · ${runnerGame.collected} met`;
       runnerLives.textContent='♥ '.repeat(runnerGame.lives).trim()||'No hearts';
@@ -853,7 +934,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    if (!visualizer.previewActive && !multiplayerPanelOpen) physics.update(dt);
+    if (!visualizer.previewActive && !multiplayerPanelOpen && !mobileMenuOpen) physics.update(dt);
     if (physics.impactEvent && physics.impactEvent.timestamp) {
       audio.triggerImpact(physics.impactEvent.speed);
       physics.impactEvent = null;
@@ -866,15 +947,19 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('akanzi-next').textContent=guidance.complete?'You drove the full coastal route.':`Next: ${guidance.nextStop}`;
       document.getElementById('akanzi-instruction').textContent=guidance.instruction;
     }
-    if (!visualizer.previewActive) pedestrians.update(physics, dt);
-    trafficManager.root.visible = !visualizer.previewActive;
-    if (!visualizer.previewActive) trafficManager.update(dt, physics);
+    if (!visualizer.previewActive && multiplayer.npcAuthority) pedestrians.update(physics, dt);
+    trafficManager.root.visible = !visualizer.previewActive && !npcSync.isFollower;
+    if (!visualizer.previewActive && multiplayer.npcAuthority) trafficManager.update(dt, physics);
     const trafficStatus=document.getElementById('traffic-status');
     const drivingStatus=physics.energy.remaining<=0?`${physics.energy.electric?'Battery':'Fuel'} empty · Refill in Setup`:trafficManager.status;
     if(trafficStatus.textContent!==drivingStatus)trafficStatus.textContent=drivingStatus;
     instrumentTimer+=dt;
     if(instrumentTimer>=.15) {
       instrumentTimer=0;
+      if (densitySelect) {
+        densitySelect.disabled = npcSync.isFollower;
+        densitySelect.title = npcSync.isFollower ? 'NPC density is controlled by the room host' : '';
+      }
       const info=trafficManager.roadInfo,limit=document.getElementById('hud-speed-limit');
       limit.textContent=info?Math.round(info.limit):'—';limit.dataset.speeding=String(info&&Math.abs(physics.speed)>info.limit+1);
       const navigation=document.getElementById('hud-navigation');
@@ -891,15 +976,17 @@ document.addEventListener('DOMContentLoaded', () => {
       refuelButton.disabled=Math.abs(physics.speed)>1;
       refuelButton.textContent=refuelButton.disabled?'Stop to refuel / charge':energy.electric?'Charge battery':'Refill tank';
     }
-    if (visualizer.highBeams && !visualizer.previewActive) pedestrians.highBeam(physics);
-    pedestrianView.update(pedestrians, physics, visualizer.carGroup, visualizer.previewActive);
+    if (visualizer.highBeams && !visualizer.previewActive && !npcSync.isFollower) pedestrians.highBeam(physics);
+    if (!npcSync.isFollower) pedestrianView.update(pedestrians, physics, visualizer.carGroup, visualizer.previewActive);
+    npcSync.update(dt, physics, {hidden:visualizer.previewActive});
     const clinging = pedestrians.people.filter(person => person.state === 'clinging').length;
     const trunkPassengers=pedestrians.people.filter(person=>person.state==='trunk-rider').length;
     const occupancy = `Kişi: ${pedestrians.passengers + 1}/${seatCapacity(physics.bmwModel)}${trunkPassengers?` · Bagaj: ${trunkPassengers}/2`:''}${clinging ? ` · Tutunan: ${clinging}` : ' · Sürücü dahil'}`;
     const passengerHud = document.getElementById('hud-passengers');
     if (passengerHud.textContent !== occupancy) passengerHud.textContent = occupancy;
     const passengerStatus = document.getElementById('passenger-status');
-    if (passengerStatus.textContent !== pedestrians.message) passengerStatus.textContent = pedestrians.message;
+    const crowdMessage = npcSync.isFollower ? 'Shared NPCs · crowd interactions follow the host' : pedestrians.message;
+    if (passengerStatus.textContent !== crowdMessage) passengerStatus.textContent = crowdMessage;
     worldRobot.visible=robotMode&&!visualizer.previewActive;
     if(robotMode)robotJump.update(dt);
     worldRobot.position.set(0,(physics.roadHeight??.08)+robotJump.height,0);

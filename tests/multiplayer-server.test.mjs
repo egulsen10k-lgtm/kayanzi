@@ -172,3 +172,71 @@ test('state schema preserves bounded car data and never carries arbitrary fields
   assert.equal(clean.drivetrain, 'AWD');
   assert.equal(Object.hasOwn(clean, 'constructor'), false);
 });
+
+const world = (seq = 0) => ({
+  v: 1, seq, time: 12,
+  traffic: [{ id: 't0', type: 'sedan', seed: 0, lat: 41.01, lng: 29.02, heading: 0, height: .08, speed: 25, opacity: 1 }],
+  people: [{ id: 'p0', style: 'casual', lat: 41.01, lng: 29.02, heading: 0, height: .22, state: 'chasing', phase: 1 }], passengers: 0, trunkOpen: 0
+});
+
+test('LAN NPC authority relays validated world snapshots, caches for late joiners and rejects guest injection', async (t) => {
+  const { app, url } = await fixture(t);
+  const a = await connect(url), b = await connect(url), outside = await connect(url);
+  const host = await joinRoom(a, 'WORLD'), guest = await joinRoom(b, 'WORLD');
+  const elsewhere = await joinRoom(outside, 'ELSEWHERE');
+  assert.equal(host.authorityId, host.id); assert.equal(guest.authorityId, host.id);
+  assert.equal(elsewhere.authorityId, elsewhere.id);
+  a.sendJson({ type: 'world', room: 'WORLD', authorityId: host.id, snapshot: { ...world(3), arbitrary: 'removed' } });
+  const received = await b.next('world');
+  assert.equal(received.authorityId, host.id); assert.equal(received.room, 'WORLD');
+  assert.equal(received.snapshot.people[0].state, 'chasing'); assert.equal(received.snapshot.arbitrary, undefined);
+  assert.equal(app.rooms.get('ELSEWHERE').worldSnapshot, null);
+  b.sendJson({ type: 'world', room: 'WORLD', authorityId: host.id, snapshot: world(500) });
+  assert.equal((await b.next('error')).code, 'not-authority');
+  assert.equal(app.rooms.get('WORLD').worldSeq, 3);
+  a.sendJson({ type: 'world', room: 'ELSEWHERE', authorityId: host.id, snapshot: world(4) });
+  assert.equal((await a.next('error')).code, 'invalid-world');
+  a.sendJson({ type: 'world', room: 'WORLD', authorityId: host.id, snapshot: { ...world(4), people: Array(25).fill(world().people[0]) } });
+  assert.equal((await a.next('error')).code, 'invalid-world');
+  a.sendJson({ type: 'world', room: 'WORLD', authorityId: host.id, snapshot: world(2) });
+  a.sendJson({ type: 'world', room: 'WORLD', authorityId: host.id, snapshot: world(5) });
+  assert.equal((await b.next('world')).snapshot.seq, 5);
+  const c = await connect(url), late = await joinRoom(c, 'WORLD');
+  assert.equal(late.authorityId, host.id);
+  assert.equal((await c.next('world')).snapshot.seq, 5);
+});
+
+test('LAN host departure elects one authority and resets sequence state without accepting old-host snapshots', async (t) => {
+  const { app, url } = await fixture(t);
+  const a = await connect(url), b = await connect(url), c = await connect(url);
+  const host = await joinRoom(a, 'MIGRATE'), successor = await joinRoom(b, 'MIGRATE');
+  await joinRoom(c, 'MIGRATE');
+  a.sendJson({ type: 'world', room: 'MIGRATE', authorityId: host.id, snapshot: world(100) });
+  await b.next('world'); await c.next('world');
+  a.close();
+  const elected = await b.next('authority');
+  assert.equal(elected.authorityId, successor.id); assert.equal(elected.room, 'MIGRATE');
+  assert.equal((await c.next('authority')).authorityId, successor.id);
+  assert.equal(app.rooms.get('MIGRATE').worldSnapshot, null);
+  assert.equal(app.rooms.get('MIGRATE').worldSeq, -1);
+  b.sendJson({ type: 'world', room: 'MIGRATE', authorityId: host.id, snapshot: world(101) });
+  assert.equal((await b.next('error')).code, 'invalid-world');
+  b.sendJson({ type: 'world', room: 'MIGRATE', authorityId: successor.id, snapshot: world(0) });
+  const next = await c.next('world');
+  assert.equal(next.authorityId, successor.id); assert.equal(next.snapshot.seq, 0);
+  assert.equal(app.rooms.get('MIGRATE').worldSeq, 0);
+});
+
+test('LAN relays a bounded full NPC scene larger than a driver-state packet', async (t) => {
+  const { url } = await fixture(t);
+  const a = await connect(url), b = await connect(url);
+  const host = await joinRoom(a, 'FULLWORLD'); await joinRoom(b, 'FULLWORLD');
+  const snapshot = world(1);
+  snapshot.traffic = Array.from({ length: 16 }, (_, index) => ({ ...world().traffic[0], id: `t${index}`, seed: index }));
+  snapshot.people = Array.from({ length: 24 }, (_, index) => ({ ...world().people[0], id: `p${index}` }));
+  const packet = { type: 'world', room: 'FULLWORLD', authorityId: host.id, snapshot };
+  assert.ok(JSON.stringify(packet).length > 4096);
+  a.sendJson(packet);
+  const received = await b.next('world');
+  assert.equal(received.snapshot.traffic.length, 16); assert.equal(received.snapshot.people.length, 24);
+});

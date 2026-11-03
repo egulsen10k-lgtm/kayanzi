@@ -59,13 +59,18 @@ from bundled files without those endpoints. Global requests are bounded, timed o
 and cached locally. No API key is required for this prototype.
 
 Cars and physics are simplified, not validated manufacturer specifications.
-Open **Multiplayer** on the game page to drive with up to eight people. On the
-published GitHub Pages game, exchange connection codes with friends on the same
-network. For easy room links on local Wi-Fi, run `npm run multiplayer` on one
-computer and share the LAN address printed in its terminal. See
+Open **Multiplayer** on the game page to drive with up to eight people. Choose
+**Host game** to get a six-character room code such as `ABC123`; friends choose
+**Join game** and enter that code, with no invitation/answer exchange. Short
+codes use PeerJS public signaling for discovery, which needs internet access;
+driving data then flows directly between browsers over WebRTC, and same-network
+play connects best. For a fully offline room, run `npm run multiplayer` on one
+computer and share the LAN address printed in its terminal; manual
+invitation/answer pairing remains available under the advanced options. See
 [multiplayer setup and troubleshooting](docs/MULTIPLAYER.md).
-Players share car positions, models, and colors; traffic and pedestrians remain
-local to each device, and player-to-player collisions are not synchronized.
+Players share car positions, models, and colors. The visible traffic and
+pedestrian world mirrors the host's simulation; guests do not run their own
+crowd interactions, and player-to-player collisions are not authoritative.
 Surveyed terrain elevations are outside the current scope.
 Independent fan prototype, not an official BMW product.
 

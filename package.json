@@ -14,6 +14,7 @@
     "3d-tiles-renderer": "0.3.40",
     "cannon-es": "^0.20.0",
     "leaflet": "^1.9.4",
+    "peerjs": "^1.5.5",
     "three": "^0.160.0",
     "ws": "^8.22.1"
   },

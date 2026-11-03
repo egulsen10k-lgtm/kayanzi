@@ -1,0 +1,13 @@
+.mp-short-method { margin: 14px 0 18px; padding: 16px; border: 1px solid #3a778d; border-radius: 12px; background: #112a38; }
+#multiplayer-panel .mp-host-game { width: 100%; min-height: 48px; font-size: 15px; }
+.mp-short-join { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; margin-top: 14px; }
+.mp-short-join .mp-field { margin: 0; }
+#multiplayer-panel #multiplayer-short-code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 21px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+#multiplayer-panel #multiplayer-host-code { min-height: 68px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: clamp(25px, 7vw, 35px); font-weight: 800; letter-spacing: .2em; text-align: center; color: #b0f5da; border-color: #548a76; }
+.mp-short-share { margin-top: 16px; border-top: 1px solid #355563; padding-top: 12px; }
+.mp-short-share > input[type='url'] { margin-top: 10px; font-size: 12px !important; }
+.mp-short-note { margin: 14px 0 0; }
+.mp-world-note { color: #adbfca; font-size: 12px; margin-top: 12px; }
+.mp-advanced { margin-top: 18px; padding-top: 12px; border-top: 1px solid #304653; }
+#multiplayer-panel .mp-advanced > summary { font-size: 12px; color: #aabcc8; }
+@media (max-width: 380px) { .mp-short-method { padding: 12px; } .mp-short-join { grid-template-columns: 1fr; } }

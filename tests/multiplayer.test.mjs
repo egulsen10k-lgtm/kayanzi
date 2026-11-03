@@ -223,3 +223,56 @@ test('a delayed offer creation cannot publish a status after leaving', async () 
   await assert.rejects(creating, /cancelled/);
   assert.equal(statuses.at(-1), leftStatus); assert.equal(host.pending, null); assert.equal(host.channels.size, 0);
 });
+
+const worldSnapshot = (seq = 0) => ({ v: 1, seq, time: 10, traffic: [], people: [], passengers: 0, trunkOpen: 0 });
+
+test('WebRTC only the host publishes shared NPC snapshots and late joiners receive the cached world', async () => {
+  const seen = [], host = makeSession(), first = makeSession({ onWorldSnapshot: value => seen.push(value) });
+  await pair(host, first);
+  assert.equal(host.isWorldAuthority, true); assert.equal(first.isWorldAuthority, false);
+  assert.equal(first.worldAuthorityId, host.id);
+  assert.equal(host.sendWorldSnapshot(worldSnapshot(1)), true); await tick();
+  assert.equal(seen.at(-1).seq, 1);
+  assert.equal(first.sendWorldSnapshot(worldSnapshot(2)), false);
+  first.guestChannel.send(JSON.stringify({ type: 'world', room: host.room, authorityId: host.id, snapshot: worldSnapshot(200) }));
+  await tick(); assert.equal(host.latestWorldSnapshot.seq, 1);
+  const secondSeen = [], second = makeSession({ onWorldSnapshot: value => secondSeen.push(value) });
+  await pair(host, second); assert.equal(secondSeen.at(-1).seq, 1);
+  host.sendWorldSnapshot(worldSnapshot(3)); await tick();
+  assert.equal(seen.at(-1).seq, 3); assert.equal(secondSeen.at(-1).seq, 3);
+  host.leave(); first.leave(); second.leave();
+});
+
+test('LAN world packets require server authority and matching room, reject stale data and reset after migration', async () => {
+  const seen = [], authority = [], session = makeSession({ WebSocketClass: FakeSocket, onWorldSnapshot: snapshot => seen.push(snapshot), onWorldAuthority: id => authority.push(id) });
+  const joining = session.connectLan({ url: 'http://localhost', room: 'ABC' });
+  const socket = FakeSocket.instances.at(-1); socket.open();
+  socket.message({ type: 'welcome', id: 'self', room: 'ABC', authorityId: 'host', peers: [] }); await joining;
+  const packet = { type: 'world', room: 'ABC', authorityId: 'host', snapshot: worldSnapshot(9) };
+  socket.message(packet); assert.equal(seen.length, 1);
+  socket.message({ ...packet, room: 'OTHER' }); socket.message({ ...packet, authorityId: 'spoof' }); socket.message(packet);
+  socket.message({ ...packet, snapshot: { ...worldSnapshot(10), people: Array(25).fill({}) } });
+  assert.equal(seen.length, 1);
+  socket.message({ type: 'authority', room: 'OTHER', authorityId: 'self' }); assert.equal(session.isWorldAuthority, false);
+  socket.message({ type: 'authority', room: 'ABC', authorityId: 'new-host' });
+  socket.message({ ...packet, authorityId: 'host', snapshot: worldSnapshot(99) }); assert.equal(seen.length, 1);
+  socket.message({ ...packet, authorityId: 'new-host', snapshot: worldSnapshot(0) }); assert.equal(seen.at(-1).seq, 0);
+  socket.message({ type: 'authority', room: 'ABC', authorityId: 'self' }); assert.equal(session.isWorldAuthority, true);
+  assert.equal(session.sendWorldSnapshot(worldSnapshot(0)), true);
+  assert.equal(socket.sent.at(-1).authorityId, 'self');
+  session.leave(); assert.equal(session.worldAuthorityId, null); assert.equal(authority.at(-1), null);
+});
+
+test('frozen NPC callback aliases publish once per player tick and preserve solo/host authority getters', async () => {
+  let captures = 0;
+  const received = [];
+  const host = makeSession({ getNpcs: () => worldSnapshot(captures++) });
+  const guest = makeSession({ onNpcs: value => received.push(value) });
+  assert.equal(host.npcAuthority, true); assert.equal(host.host, false);
+  await pair(host, guest);
+  assert.equal(host.host, true); assert.equal(host.npcAuthority, true); assert.equal(guest.npcAuthority, false);
+  host.sendState(state()); await tick();
+  assert.equal(captures, 1); assert.equal(received.length, 1); assert.equal(received[0].seq, 0);
+  guest.sendState(state()); await tick(); assert.equal(captures, 1);
+  host.leave(); guest.leave(); assert.equal(guest.npcAuthority, true); assert.equal(host.host, false);
+});

@@ -1,8 +1,9 @@
 // Transport-independent driving snapshots. No remote input is executed as game code.
+import { sanitizeWorldSnapshot } from './npc-state.js';
 export const MAX_PLAYERS = 8;
 export const CONNECTION_CODE_TTL = 120000;
 const MAX_CODE_LENGTH = 100000;
-const MAX_PACKET_LENGTH = 16384;
+const MAX_PACKET_LENGTH = 65536;
 const MODELS = new Set(['M3 Competition', 'M4 CSL', 'M5 CS', 'i4 M50 (EV)', 'XM Label Red']);
 const noop = () => {};
 const makeId = (prefix) => `${prefix}-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
@@ -60,12 +61,24 @@ export function lanSocketUrl(url) {
 
 export class MultiplayerSession {
   constructor({ getState = () => null, onPeerState = noop, onPeerLeave = noop, onStatus = noop, onPeers = noop,
+    onWorldSnapshot = noop, onWorldAuthority = noop, getNpcs = null, onNpcs = noop,
     name = 'Driver', WebSocketClass = globalThis.WebSocket, RTCPeerConnectionClass = globalThis.RTCPeerConnection } = {}) {
-    Object.assign(this, { getState, onPeerState, onPeerLeave, onStatus, onPeers, WebSocketClass, RTCPeerConnectionClass });
+    Object.assign(this, { getState, onPeerState, onPeerLeave, onStatus, onPeers, onWorldSnapshot, onWorldAuthority, getNpcs, onNpcs, WebSocketClass, RTCPeerConnectionClass });
     this.name = sanitizeName(name);
     this.peers = new Map(); this.channels = new Map();
     this.connected = false; this.transport = null; this.room = null; this.id = null;
     this.generation = 0; this.pending = null; this.role = null; this.socket = null;
+    this.worldAuthorityId = null; this.latestWorldSnapshot = null; this.lastWorldSeq = -1;
+  }
+
+  get isWorldAuthority() { return Boolean(this.connected && this.id && this.worldAuthorityId === this.id); }
+  get npcAuthority() { return !this.connected || this.isWorldAuthority; }
+  get host() { return this.role === 'host' || this.isWorldAuthority; }
+  _setWorldAuthority(id) {
+    id = validId(id) ? id : null;
+    if (this.worldAuthorityId === id) return;
+    this.worldAuthorityId = id; this.latestWorldSnapshot = null; this.lastWorldSeq = -1;
+    this.onWorldAuthority(id);
   }
 
   _status(state, message) { this.onStatus({ state, message, transport: this.transport, room: this.room, id: this.id }); }
@@ -94,9 +107,19 @@ export class MultiplayerSession {
       if (this.connected) return;
       if (!validId(message.id) || !validId(message.room) || !Array.isArray(message.peers) || message.peers.length > MAX_PLAYERS - 1) return;
       this.id = message.id; this.room = message.room; this.connected = true;
+      this._setWorldAuthority(message.authorityId);
       for (const peer of message.peers) this._upsert(peer.id, peer.name, peer.state);
       this._status('connected', `Connected · ${this.peers.size + 1} drivers`);
       this._peers();
+    } else if (this.connected && message.type === 'authority' && this.transport === 'lan' && message.room === this.room && validId(message.authorityId)) {
+      this._setWorldAuthority(message.authorityId);
+    } else if (this.connected && message.type === 'world') {
+      if (this.isWorldAuthority || message.room !== this.room || message.authorityId !== this.worldAuthorityId || !this.worldAuthorityId) return;
+      const snapshot = sanitizeWorldSnapshot(message.snapshot);
+      if (!snapshot || snapshot.seq <= this.lastWorldSeq) return;
+      this.lastWorldSeq = snapshot.seq; this.latestWorldSnapshot = snapshot;
+      this.onWorldSnapshot(snapshot);
+      if (this.onNpcs !== this.onWorldSnapshot) this.onNpcs(snapshot);
     } else if (this.connected && (message.type === 'state' || message.type === 'peer-join')) {
       this._upsert(message.id, message.name, message.state);
     } else if (this.connected && message.type === 'peer-leave') this._remove(message.id);
@@ -193,7 +216,8 @@ export class MultiplayerSession {
         peer.joined = true; peer.name = sanitizeName(message.name); clearTimeout(peer.timer);
         if (this.pending === peer) this.pending = null;
         const host = { id: this.id, name: this.name, state: sanitizeState(this.getState(), this.id) };
-        this._send(channel, { type: 'welcome', id: peer.id, room: this.room, maxPlayers: MAX_PLAYERS, peers: [host, ...this.peers.values()] });
+        this._send(channel, { type: 'welcome', id: peer.id, room: this.room, authorityId: this.worldAuthorityId || this.id, maxPlayers: MAX_PLAYERS, peers: [host, ...this.peers.values()] });
+        if (this.latestWorldSnapshot) this._send(channel, { type: 'world', room: this.room, authorityId: this.worldAuthorityId, snapshot: this.latestWorldSnapshot });
         this._upsert(peer.id, peer.name, message.state);
         this._broadcast({ type: 'peer-join', id: peer.id, name: peer.name, state: sanitizeState(message.state, peer.id) }, peer.id);
         this._status('connected', `Hosting · ${this.peers.size + 1} drivers`);
@@ -215,6 +239,7 @@ export class MultiplayerSession {
     if (this.transport !== 'webrtc' || this.role !== 'host') {
       this.leave(); this.transport = 'webrtc'; this.role = 'host'; this.name = sanitizeName(name);
       this.id = makeId('host'); this.room = makeId('room'); this.connected = true;
+      this._setWorldAuthority(this.id);
     }
     if (this.peers.size >= MAX_PLAYERS - 1) throw new Error('This room already has 8 drivers.');
     this._cancelPending();
@@ -291,6 +316,21 @@ export class MultiplayerSession {
     if (this.transport === 'lan') this._send(this.socket, { type: 'state', state });
     else if (this.role === 'host') this._broadcast({ type: 'state', id: this.id, name: this.name, state });
     else this._send(this.guestChannel, { type: 'state', state });
+    if (this.isWorldAuthority && typeof this.getNpcs === 'function') {
+      const snapshot = this.getNpcs();
+      if (snapshot) this.sendWorldSnapshot(snapshot);
+    }
+  }
+
+  sendWorldSnapshot(raw) {
+    if (!this.isWorldAuthority) return false;
+    const snapshot = sanitizeWorldSnapshot(raw);
+    if (!snapshot || snapshot.seq <= this.lastWorldSeq) return false;
+    this.lastWorldSeq = snapshot.seq; this.latestWorldSnapshot = snapshot;
+    const packet = { type: 'world', room: this.room, authorityId: this.worldAuthorityId, snapshot };
+    if (this.transport === 'lan') return this._send(this.socket, packet);
+    this._broadcast(packet);
+    return true;
   }
 
   leave() {
@@ -305,6 +345,7 @@ export class MultiplayerSession {
     if (this.guestPc) { this.guestPc.onconnectionstatechange = null; this.guestPc.close(); this.guestPc = null; }
     for (const id of this.peers.keys()) this.onPeerLeave(id);
     this.peers.clear(); this.connected = false; this.id = null; this.room = null; this.role = null;
+    this._setWorldAuthority(null); this.latestWorldSnapshot = null; this.lastWorldSeq = -1;
     this._peers(); this._status('offline', 'Solo drive');
   }
 }
