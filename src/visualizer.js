@@ -301,15 +301,25 @@ export class CarVisualizer3D {
   updatePeerCar(state) {
     if (!state || !Number.isFinite(state.lat) || !Number.isFinite(state.lng) || !Number.isFinite(state.heading)) return;
     let peer = this.peerCars.get(state.peerId);
+    if (peer && (peer.model !== state.model || peer.color !== state.color)) {
+      this.removePeerCar(state.peerId);
+      peer = null;
+    }
     if (!peer) {
       if (this.peerCars.size >= 8) return;
       const model = createCarModel(state.model, /^#[0-9a-f]{6}$/i.test(state.color) ? state.color : '#718ba1');
-      peer = { group: model.group };
+      peer = { group: model.group, wheels: model.wheels ?? [], model: state.model, color: state.color, displayed: { ...state } };
       this.scene.add(peer.group);
       this.peerCars.set(state.peerId, peer);
     }
     peer.state = state;
     peer.lastSeen = performance.now();
+  }
+
+  removePeerCar(id) {
+    const peer = this.peerCars.get(id);
+    if (peer) disposeModel(peer.group);
+    this.peerCars.delete(id);
   }
 
   update(physics, dt = 1 / 60) {
@@ -363,10 +373,19 @@ export class CarVisualizer3D {
       }
     }
     for (const [id, peer] of this.peerCars) {
-      if (performance.now() - peer.lastSeen > 10000) { disposeModel(peer.group); this.peerCars.delete(id); continue; }
-      const p = geographicOffset(this.lastPosition, peer.state.lat, peer.state.lng);
+      if (performance.now() - peer.lastSeen > 15000) { this.removePeerCar(id); continue; }
+      const blend = 1 - Math.exp(-dt * 14);
+      const display = peer.displayed;
+      const displacement = geographicOffset(display, peer.state.lat, peer.state.lng);
+      const snap = Math.hypot(displacement.east, displacement.north) > 100;
+      display.lat += (peer.state.lat - display.lat) * (snap ? 1 : blend);
+      display.lng += (peer.state.lng - display.lng) * (snap ? 1 : blend);
+      const angle = Math.atan2(Math.sin(peer.state.heading - display.heading), Math.cos(peer.state.heading - display.heading));
+      display.heading += angle * (snap ? 1 : blend);
+      const p = geographicOffset(this.lastPosition, display.lat, display.lng);
       peer.group.position.set(p.east, Number.isFinite(peer.state.roadHeight) ? peer.state.roadHeight : ROAD_SURFACE_HEIGHT, -p.north);
-      peer.group.rotation.y = Math.PI - peer.state.heading;
+      peer.group.rotation.y = Math.PI - display.heading;
+      animateWheels(peer.wheels, peer.state.speed ?? 0, peer.state.steering ?? 0, dt);
       peer.group.visible = Math.hypot(p.east, p.north) < 1000;
     }
     const mobile = this.container.clientWidth < 600;

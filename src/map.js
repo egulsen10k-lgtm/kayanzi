@@ -128,7 +128,7 @@ export class WorldMapController {
   }
 
   updatePeerPosition(peerState) {
-    if (!this.map) return;
+    if (!this.map || !peerState || !Number.isFinite(peerState.lat) || !Number.isFinite(peerState.lng)) return;
     let marker = this.peerMarkers.get(peerState.peerId);
     if (!marker) {
       const peerIcon = L.divIcon({
@@ -137,7 +137,7 @@ export class WorldMapController {
           <div style="
             width: 22px;
             height: 22px;
-            background: ${peerState.color || '#22c55e'};
+            background: ${/^#[0-9a-f]{6}$/i.test(peerState.color) ? peerState.color : '#22c55e'};
             border: 2px solid #fff;
             border-radius: 50%;
             box-shadow: 0 0 10px #22c55e;
@@ -147,11 +147,19 @@ export class WorldMapController {
         iconAnchor: [11, 11]
       });
       marker = L.marker([peerState.lat, peerState.lng], { icon: peerIcon }).addTo(this.map);
-      marker.bindTooltip(`Driver: ${peerState.peerId}`, { permanent: false, direction: 'top' });
+      const label = document.createElement('span');
+      label.textContent = `Driver: ${peerState.name || peerState.peerId}`;
+      marker.bindTooltip(label, { permanent: false, direction: 'top' });
       this.peerMarkers.set(peerState.peerId, marker);
     } else {
       marker.setLatLng([peerState.lat, peerState.lng]);
     }
+  }
+
+  removePeerPosition(id) {
+    const marker = this.peerMarkers.get(id);
+    if (marker && this.map) this.map.removeLayer(marker);
+    this.peerMarkers.delete(id);
   }
 
   updateCarPosition(lat, lng, headingDeg) {

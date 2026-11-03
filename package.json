@@ -6,13 +6,16 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "multiplayer": "npm run build -- --base ./ && node server/lan-server.mjs",
+    "multiplayer:serve": "node server/lan-server.mjs",
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "3d-tiles-renderer": "0.3.40",
     "cannon-es": "^0.20.0",
     "leaflet": "^1.9.4",
-    "three": "^0.160.0"
+    "three": "^0.160.0",
+    "ws": "^8.22.1"
   },
   "devDependencies": {
     "vite": "^5.0.0"

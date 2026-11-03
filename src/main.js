@@ -17,6 +17,8 @@ import { RunnerGame } from './runner-game.js';
 import { createRobotModel, RobotRunnerView } from './robot-runner-view.js';
 import { animateRobot } from './robot-animation.js';
 import { RobotJump } from './robot-jump.js';
+import { MultiplayerSession } from './multiplayer.js';
+import { mountMultiplayerUI } from './multiplayer-ui.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   const peerId = 'driver-' + Math.random().toString(36).substring(2, 8);
@@ -163,15 +165,39 @@ document.addEventListener('DOMContentLoaded', () => {
     mapController.teleport(spawn.lat,spawn.lng);
   });
 
-  // Simulated peer broadcasting (LocalStorage BroadcastChannel for working together with other browser tabs/drivers)
-  const syncChannel = new BroadcastChannel('bmw_earth_drive_multiplayer');
-  syncChannel.onmessage = (event) => {
-    const peerState = event.data;
-    if (peerState && peerState.peerId !== peerId) {
-      visualizer.updatePeerCar(peerState);
-      mapController.updatePeerPosition(peerState);
+  let multiplayerUI;
+  let multiplayerPanelOpen = false;
+  window.addEventListener('multiplayerpanelchange', ({ detail }) => {
+    multiplayerPanelOpen = Boolean(detail?.open);
+  });
+  const multiplayer = new MultiplayerSession({
+    getState: () => physics.serializeState(),
+    onPeerState: (state) => {
+      visualizer.updatePeerCar(state);
+      mapController.updatePeerPosition(state);
+    },
+    onPeerLeave: (id) => {
+      visualizer.removePeerCar(id);
+      mapController.removePeerPosition(id);
+    },
+    onStatus: (status) => multiplayerUI?.updateStatus(status),
+    onPeers: (peers) => multiplayerUI?.updatePeers(peers)
+  });
+  multiplayerUI = mountMultiplayerUI({
+    session: multiplayer,
+    getState: () => physics.serializeState(),
+    onJoinPeer: (state) => {
+      if (!state || !Number.isFinite(state.lat) || !Number.isFinite(state.lng)) return;
+      endRoute();
+      physics.teleport(state.lat, state.lng);
+      physics.heading = state.heading;
+      physics.roadHeight = state.roadHeight ?? 0;
+      mapController.teleport(state.lat, state.lng);
+      document.getElementById('hud-location-name').textContent = 'Meeting another driver';
+      visualizer.loadRoadsAt(state.lat, state.lng).catch(() => {});
     }
-  };
+  });
+  window.addEventListener('pagehide', () => multiplayer.leave());
 
   // Ignition Start Overlay & Real Road Network Loading
   const startOverlay = document.getElementById('start-overlay');
@@ -465,6 +491,13 @@ document.addEventListener('DOMContentLoaded', () => {
     syncNitro();
   });
   window.addEventListener('blur', releaseNitro);
+  window.addEventListener('multiplayerpanelchange', ({ detail }) => {
+    multiplayerPanelOpen = Boolean(detail?.open);
+    driveInput.clear();
+    releaseNitro();
+    physics.throttle = 0;
+    if (multiplayerPanelOpen) physics.speed = 0;
+  });
   document.addEventListener('visibilitychange', () => { if (document.hidden) releaseNitro(); });
 
   document.querySelectorAll('[data-model]').forEach((button) => {
@@ -746,7 +779,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setRobotMode(!robotMode);
   });
   const runnerAction=action=>{
-    if(!runnerActive)return;
+    if(!runnerActive || multiplayerPanelOpen)return;
     if(runnerGame.over){runnerGame.reset();runnerHint.hidden=true;return;}
     if(action==='left')runnerGame.move(-1);
     if(action==='right')runnerGame.move(1);
@@ -775,13 +808,13 @@ document.addEventListener('DOMContentLoaded', () => {
     event.preventDefault();runnerAction(button.dataset.runnerAction);
   }));
   window.addEventListener('keydown',event=>{
-    if(!runnerActive)return;
+    if(!runnerActive || multiplayerPanelOpen)return;
     if(event.code==='Escape'){event.preventDefault();event.stopImmediatePropagation();exitRunner();return;}
     const action=event.code==='ArrowLeft'||event.code==='KeyA'?'left':event.code==='ArrowRight'||event.code==='KeyD'?'right':event.code==='Space'||event.code==='ArrowUp'||event.code==='KeyW'?'jump':null;
     if(action){event.preventDefault();event.stopImmediatePropagation();if(!event.repeat)runnerAction(action);}
   },true);
   window.addEventListener('keyup',event=>{
-    if(runnerActive&&['ArrowLeft','ArrowRight','ArrowUp','KeyA','KeyD','KeyW','Space'].includes(event.code)){event.preventDefault();event.stopImmediatePropagation();}
+    if(runnerActive&&!multiplayerPanelOpen&&['ArrowLeft','ArrowRight','ArrowUp','KeyA','KeyD','KeyW','Space'].includes(event.code)){event.preventDefault();event.stopImmediatePropagation();}
   },true);
   let swipeStart=null;
   visualizer.renderer.domElement.addEventListener('pointerdown',event=>{if(runnerActive)swipeStart={x:event.clientX,y:event.clientY};});
@@ -803,8 +836,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const dt = Math.min(0.1, (currentTime - lastTime) / 1000);
     lastTime = currentTime;
 
+    syncTimer += dt;
+    if (syncTimer > 0.1) {
+      syncTimer = 0;
+      multiplayer.sendState(physics.serializeState());
+    }
+
     if(runnerActive){
-      runnerGame.update(dt);
+      if (!multiplayerPanelOpen) runnerGame.update(dt);
       runnerView.update(runnerGame,dt);
       runnerScore.textContent=`${Math.floor(runnerGame.distance)} m · ${runnerGame.collected} met`;
       runnerLives.textContent='♥ '.repeat(runnerGame.lives).trim()||'No hearts';
@@ -814,7 +853,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    if (!visualizer.previewActive) physics.update(dt);
+    if (!visualizer.previewActive && !multiplayerPanelOpen) physics.update(dt);
     if (physics.impactEvent && physics.impactEvent.timestamp) {
       audio.triggerImpact(physics.impactEvent.speed);
       physics.impactEvent = null;
@@ -904,13 +943,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const rpmPercent = Math.min(100, (physics.rpm / 8500) * 100);
     hudRpmBar.style.width = `${rpmPercent}%`;
-
-    // Broadcast position to other open tabs/drivers every 100ms
-    syncTimer += dt;
-    if (syncTimer > 0.1) {
-      syncTimer = 0;
-      syncChannel.postMessage(physics.serializeState());
-    }
 
     requestAnimationFrame(gameLoop);
   }

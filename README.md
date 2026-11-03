@@ -59,8 +59,14 @@ from bundled files without those endpoints. Global requests are bounded, timed o
 and cached locally. No API key is required for this prototype.
 
 Cars and physics are simplified, not validated manufacturer specifications.
-Same-origin browser tabs can share driver positions; internet multiplayer,
-traffic simulation and surveyed terrain elevations are outside the current scope.
+Open **Multiplayer** on the game page to drive with up to eight people. On the
+published GitHub Pages game, exchange connection codes with friends on the same
+network. For easy room links on local Wi-Fi, run `npm run multiplayer` on one
+computer and share the LAN address printed in its terminal. See
+[multiplayer setup and troubleshooting](docs/MULTIPLAYER.md).
+Players share car positions, models, and colors; traffic and pedestrians remain
+local to each device, and player-to-player collisions are not synchronized.
+Surveyed terrain elevations are outside the current scope.
 Independent fan prototype, not an official BMW product.
 
 ## Validation
