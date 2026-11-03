@@ -957,7 +957,6 @@
     #settings-panel { bottom:82px !important; max-height:calc(100dvh - 150px); overflow-y:auto !important; z-index:32 !important; }
     #settings-panel select { display:block; width:100%; min-height:44px; margin:6px 0 12px; background:#1b2d3c; color:white; }
     @media (max-width:800px), (any-pointer:coarse), (max-height:500px) and (orientation:landscape) {
-      #drive-touch-controls { bottom:calc(72px + env(safe-area-inset-bottom)) !important; }
       #map-container { bottom:calc(255px + env(safe-area-inset-bottom)) !important; }
       #imagery-attribution { bottom:calc(341px + env(safe-area-inset-bottom)) !important; }
       .hud-overlay { top:64px !important; }
@@ -1036,7 +1035,6 @@
     #hud-nitro { display:inline-flex; align-items:center; gap:4px; }
     #hud-nitro-meter { display:inline-block; width:40px; height:5px; border-radius:4px; background:linear-gradient(90deg,#58dfff 100%,#364957 100%); }
     @media (max-width:800px), (any-pointer:coarse), (max-height:500px) and (orientation:landscape) {
-      .drive-quickbar { left:50%; right:auto; bottom:calc(9px + env(safe-area-inset-bottom)); transform:translateX(-50%); }
       #drive-dynamics-panel { top:174px; bottom:auto; max-height:calc(100dvh - 186px - env(safe-area-inset-bottom)); }
       #main-viewport:has(#drive-dynamics-panel:not([hidden])) #drive-touch-controls,
       #main-viewport:has(#drive-dynamics-panel:not([hidden])) .drive-quickbar { visibility:hidden; pointer-events:none; }
@@ -1069,10 +1067,7 @@
     }
     .drive-mode-shortcuts button[aria-pressed="true"] { background:#166fa5; border-color:#8ce8f8; box-shadow:0 0 0 1px #8ce8f855 inset; }
     @media (max-width:800px), (any-pointer:coarse), (max-height:500px) and (orientation:landscape) {
-      .drive-quickbar {
-        left:50%; right:auto; bottom:calc(216px + env(safe-area-inset-bottom));
-        transform:translateX(-50%); flex-direction:column; align-items:center; gap:6px;
-        width:min(310px,calc(100vw - 24px)); z-index:19;
+      #drive-dynamics-panel { top:174px; bottom:auto; }
       }
       .drive-mode-shortcuts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; width:100%; }
       .drive-mode-shortcuts button { min-width:0; }
@@ -1104,8 +1099,7 @@
       #transform-controls { top:64px!important; right:12px!important; width:112px!important; }
       #transform-controls button { min-height:40px; padding:5px!important; border-radius:8px!important; box-shadow:none!important; }
       .drive-mode-shortcuts { display:none; }
-      .drive-quickbar { bottom:calc(128px + env(safe-area-inset-bottom)); width:min(290px,calc(100vw - 24px)); }
-      #drive-touch-controls { bottom:calc(16px + env(safe-area-inset-bottom))!important; }
+      .drive-quickbar { width:min(290px,calc(100vw - 24px)); }
       .touch-pedals { grid-template-columns:54px 54px; gap:6px; }
       .drive-touch-btn { width:54px; height:54px; min-height:54px; border-radius:10px; font-size:24px; }
       .touch-pedals .touch-handbrake,.touch-pedals .touch-horn { width:54px; height:40px; min-height:40px; font-size:9px; }
