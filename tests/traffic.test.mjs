@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { TrafficManager } from '../src/traffic.js';
+import { CarVisualizer3D } from '../src/visualizer.js';
 import { lanePose, makeTrafficTurn, nextTrafficEdge } from '../src/traffic-routes.js';
 import { footprintOnRoad,localToCoordinate } from '../src/road-safety.js';
 const network=(roads,buildings=[])=>({center:{lat:0,lng:0},radiusMeters:800,roads,buildings});
@@ -108,4 +109,75 @@ test('all service vehicles have visible models and release resources on clear',(
  m.reset(network(Array.from({length:10},(_,i)=>street([[i*20-100,-400],[i*20-100,400]]))),player());
  const types=new Set(m.cars.map(c=>c.type));for(const type of ['police','firetruck','ambulance','bus','van'])assert.ok(types.has(type));
  const groups=m.cars.map(c=>c.group);m.clear();assert.equal(m.cars.length,0);assert.ok(groups.every(g=>g.parent===null));assert.equal(m.controls.signals.size,0);
+});
+
+function laneChangeSetup(blocked=false) {
+ const m=setup(network([street([[0,-400],[0,400]])]));
+ m.maxCars=3;
+ const p=m.playerPoint(player());
+ assert.equal(m.spawn(p,true),true);assert.equal(m.spawn(p,true),true);
+ const edge=m.graph.edges.find(item=>item.tangent[1]>.9);
+ const [car,slower,blocker]=m.cars;
+ place(car,edge,80);place(slower,edge,95);
+ Object.assign(car,{speed:36,cruise:120,laneOffset:0,targetLaneOffset:0,laneChangeTimer:0,indicatorSide:null});
+ Object.assign(slower,{speed:0,cruise:0,laneOffset:0,targetLaneOffset:0,laneChangeTimer:100});
+ if(blocked) {
+  place(blocker,edge,85);
+  const pose=lanePose(edge,blocker.s),normal=[Math.cos(pose.heading),-Math.sin(pose.heading)];
+  blocker.laneOffset=-3.4;blocker.targetLaneOffset=-3.4;
+  blocker.x+=normal[0]*blocker.laneOffset;blocker.y+=normal[1]*blocker.laneOffset;
+  blocker.group.position.set(blocker.x,blocker.roadHeight,-blocker.y);
+  blocker.speed=10;blocker.laneChangeTimer=100;
+ }
+ return {m,car};
+}
+
+test('traffic starts a lane change when a slower car is within 18m ahead',()=>{
+ const {m,car}=laneChangeSetup();m.update(.05,player());
+ assert.notEqual(car.targetLaneOffset,0);
+ assert.ok(['left','right'].includes(car.indicatorSide));
+ assert.ok(car.laneChangeTimer>=6&&car.laneChangeTimer<=14);
+ assert.equal(car.group.userData.indicatorSide,car.indicatorSide);
+});
+
+test('traffic stays in its lane when the adjacent lane is occupied within 10m',()=>{
+ const {m,car}=laneChangeSetup(true);m.update(.05,player());
+ assert.equal(car.targetLaneOffset,0);
+ assert.equal(car.indicatorSide,null);
+});
+
+test('traffic lane offset animates at 1.2m/s toward its target',()=>{
+ const {m,car}=laneChangeSetup();m.update(.05,player());m.update(.05,player());
+ assert.ok(Math.abs(car.laneOffset)>0);
+ assert.ok(Math.abs(car.laneOffset)<Math.abs(car.targetLaneOffset));
+ assert.ok(Math.abs(Math.abs(car.laneOffset)-.06)<.002);
+});
+
+test('traffic honks on a hard proximity brake and clears the event on its next update',()=>{
+ const world=network([street([[0,-100],[0,100]])]);
+ const m=setup(world);m.reset(world,{lat:0,lng:0,heading:0,speed:0,roadHeight:.08});
+ const car=m.cars[0],edge=m.graph.edges.find(item=>item.tangent[1]>.9);
+ place(car,edge,edge.length/2-12.5);Object.assign(car,{speed:40,cruise:120,laneChangeTimer:100,laneOffset:0,targetLaneOffset:0});
+ const nearby={lat:0,lng:0,heading:0,speed:0,roadHeight:.08};
+ m.update(.05,nearby);
+ assert.equal(car.honkEvent,true);
+ m.update(.05,{...nearby,lat:.001});
+ assert.equal(car.honkEvent,false);
+});
+
+test('visualizer flashes only the indicated rear corner amber and restores it',()=>{
+ const visualizer={trafficGroup:new THREE.Group(),peerCars:new Map()};
+ const carGroup=new THREE.Group();
+ const left=new THREE.MeshStandardMaterial({color:'#921515',emissive:'#ff2222',emissiveIntensity:.25});
+ const right=new THREE.MeshStandardMaterial({color:'#921515',emissive:'#ff2222',emissiveIntensity:.25});
+ carGroup.userData.indicatorSide='left';carGroup.userData.indicatorLamps={left,right};carGroup.userData.indicatorBaseIntensity=.25;
+ visualizer.trafficGroup.add(carGroup);
+ CarVisualizer3D.prototype.updateTrafficIndicators.call(visualizer,0);
+ assert.equal(left.color.getHex(),new THREE.Color('#ffb52e').getHex());
+ assert.equal(right.color.getHex(),new THREE.Color('#921515').getHex());
+ CarVisualizer3D.prototype.updateTrafficIndicators.call(visualizer,400);
+ assert.equal(left.color.getHex(),new THREE.Color('#921515').getHex());
+ carGroup.userData.indicatorSide=null;
+ CarVisualizer3D.prototype.updateTrafficIndicators.call(visualizer,800);
+ assert.equal(left.emissiveIntensity,.25);
 });

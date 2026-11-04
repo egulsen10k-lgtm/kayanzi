@@ -10,9 +10,9 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 const poseFields=['x','y','heading','roadHeight'];
 export class TrafficManager {
-  constructor(parent,{camera=null}={}) {
+  constructor(parent,{camera=null,random=Math.random}={}) {
     this.scene=parent;this.root=new THREE.Group();this.root.name='persistent-road-traffic';parent.add(this.root);
-    this.camera=camera;this.cars=[];this.maxCars=8;this.network=null;this.origin=null;
+    this.camera=camera;this.random=random;this.cars=[];this.maxCars=8;this.network=null;this.origin=null;
     this.roads=new Map();this.buildings=new Map();this.time=0;this.nextId=0;this.spawnClock=0;
     this.controls=new TrafficControls(this.root);this.frustum=new THREE.Frustum();
     this.signs=new RoadSigns(this.root);this.roadInfo=null;this.infoClock=0;
@@ -84,7 +84,8 @@ export class TrafficManager {
     const car={...model,id,edge:candidate.edge,s:candidate.s,turn:null,...candidate.pose,speed:0,
       cruise:type==='bus'||type==='firetruck'?80:type==='van'?90:120,
       offsetX:0,offsetY:0,yawOffset:0,impactTime:Infinity,vx:0,vy:0,angularVelocity:0,
-      opacity:0,materials:[...materials],alertUntil:0,noticeAt:0};
+      laneOffset:0,targetLaneOffset:0,laneChangeTimer:4+this.random()*8,indicatorSide:null,
+      opacity:0,materials:[...materials],alertUntil:0,noticeAt:0,honkEvent:false};
     this.root.add(car.group);this.cars.push(car);this.renderCar(car,0);return true;
   }
   safe(car,pose) {
@@ -137,12 +138,57 @@ export class TrafficManager {
       remaining-=available;
     }
   }
+  updateLaneChange(car,dt,player) {
+    if(Math.abs(car.targetLaneOffset-car.laneOffset)>.001) {
+      const delta=car.targetLaneOffset-car.laneOffset,step=1.2*dt;
+      car.laneOffset=Math.abs(delta)<=step?car.targetLaneOffset:car.laneOffset+Math.sign(delta)*step;
+      if(Math.abs(car.targetLaneOffset-car.laneOffset)<=.001)car.indicatorSide=null;
+      return;
+    }
+    car.indicatorSide=null;
+    car.laneChangeTimer-=dt;
+    if(car.laneChangeTimer>0||car.turn) return;
+    const forward=[Math.sin(car.heading),Math.cos(car.heading)];
+    const sameLaneLead=this.cars.some(other=>{
+      if(other===car||Math.abs(other.roadHeight-car.roadHeight)>.7)return false;
+      const dx=other.x-car.x,dy=other.y-car.y;
+      const along=dx*forward[0]+dy*forward[1];
+      const side=Math.abs(dx*forward[1]-dy*forward[0]);
+      return along>0&&along<=18&&side<(car.width+(other.width??1.86))/2&&car.speed>other.speed+1;
+    });
+    if(!sameLaneLead) {car.laneChangeTimer=4+this.random()*8;return;}
+    const base=lanePose(car.edge,car.s),normal=[Math.cos(base.heading),-Math.sin(base.heading)];
+    const laneWidth=Math.max(3,Math.min(3.6,car.edge.lane*2));
+    const candidates=[car.laneOffset-laneWidth,car.laneOffset+laneWidth];
+    for(const target of candidates) {
+      if(Math.abs(target-car.laneOffset)<.1)continue;
+      if(Math.abs(car.edge.lane+target)>car.edge.road.width/2-car.width/2-.1)continue;
+      const targetPose={...base,x:base.x+normal[0]*target,y:base.y+normal[1]*target};
+      if(!this.safe(car,targetPose))continue;
+      const blocked=[...this.cars,player].some(other=>{
+        if(other===car||Math.abs((other.roadHeight??.08)-targetPose.roadHeight)>.7)return false;
+        const dx=other.x-targetPose.x,dy=other.y-targetPose.y;
+        const along=dx*forward[0]+dy*forward[1],side=Math.abs(dx*forward[1]-dy*forward[0]);
+        const laneClearance=(car.width+(other.width??1.86))/2+.35;
+        return Math.hypot(along,side)<10&&side<laneClearance;
+      });
+      if(blocked)continue;
+      car.targetLaneOffset=target;
+      car.indicatorSide=target<car.laneOffset?'left':'right';
+      car.laneChangeTimer=6+this.random()*8;
+      return;
+    }
+    car.laneChangeTimer=4+this.random()*8;
+  }
   renderCar(car,dt) {
     car.group.position.set(car.x,car.roadHeight,-car.y);car.group.rotation.y=Math.PI-car.heading;
     const opacity=clamp(car.opacity+(car.retiring?-dt:dt)/1.5,0,1);car.opacity=opacity;
     for(const material of car.materials)if(material.opacity!==opacity){material.transparent=opacity<1;material.opacity=opacity;material.depthWrite=opacity>.9;}
     for(const wheel of car.wheels)wheel.rotation.x+=car.speed/3.6*dt/.32;
     for(const lamp of car.brakeLamps)lamp.emissiveIntensity=car.braking?2:.25;
+    car.group.userData.indicatorSide=car.indicatorSide;
+    car.group.userData.indicatorLamps={left:car.brakeLamps[0],right:car.brakeLamps[1]};
+    car.group.userData.indicatorBaseIntensity=car.braking?2:.25;
     car.beacons.forEach((lamp,i)=>{lamp.emissiveIntensity=(car.type!=='police'||car.alertUntil>this.time)&&Math.floor(this.time*5+i)%2===0?3:.15;});
   }
   update(dt,player) {
@@ -160,6 +206,7 @@ export class TrafficManager {
     this.refreshFrustum();
     let retireBudget=Math.max(0,this.cars.length-this.maxCars-this.cars.filter(car=>car.retiring).length);
     for(const car of this.cars) {
+      car.honkEvent=false;
       if(car.retiring&&!this.offscreen(car))car.retiring=false;
       if(!car.retiring&&(retireBudget>0||(!car.turn&&!this.nextEdge(car,p)&&car.edge.length-car.s<1)||distance(car,p)>650)&&distance(car,p)>180&&this.offscreen(car)){car.retiring=true;if(retireBudget>0)retireBudget--;}
       if(car.type==='police'&&distance(car,p)<40&&Math.abs(car.roadHeight-p.roadHeight)<1&&Math.abs(p.speed)>car.edge.limit+10&&this.time>car.noticeAt) {
@@ -168,12 +215,19 @@ export class TrafficManager {
       }
       const previous={edge:car.edge,turn:car.turn,s:car.s,x:car.x,y:car.y,heading:car.heading,roadHeight:car.roadHeight};
       integrateTrafficImpact(car,dt,distance(car,p));
+      this.updateLaneChange(car,dt,p);
       const desired=this.targetSpeed(car,p),speed=car.speed/3.6;
       car.braking=desired<speed-.3;
+      const towardPlayer=[Math.sin(car.heading),Math.cos(car.heading)],playerDx=p.x-car.x,playerDy=p.y-car.y;
+      const playerAlong=playerDx*towardPlayer[0]+playerDy*towardPlayer[1],playerSide=Math.abs(playerDx*towardPlayer[1]-playerDy*towardPlayer[0]);
+      const playerGap=playerAlong-(car.length+(p.length??4.5))/2-2.5;
+      const proximityTarget=Math.sqrt(Math.max(0,7*playerGap));
+      if(car.braking&&distance(car,p)<20&&Math.abs(car.roadHeight-p.roadHeight)<.7&&playerAlong>0&&playerSide<(car.width+(p.width??1.86))/2+.25&&speed-proximityTarget>15/3.6)car.honkEvent=true;
       const nextSpeed=speed+clamp(desired-speed,-4.5*dt,2*dt);car.speed=nextSpeed*3.6;
       this.advance(car,(speed+nextSpeed)/2*dt,p);
       const pose=car.turn?car.turn.pose(car.s):lanePose(car.edge,car.s);
       const normal=[Math.cos(pose.heading),-Math.sin(pose.heading)],forward=[Math.sin(pose.heading),Math.cos(pose.heading)];
+      pose.x+=normal[0]*car.laneOffset;pose.y+=normal[1]*car.laneOffset;
       const side=clamp(car.offsetX*normal[0]+car.offsetY*normal[1],-.35,.35),along=clamp(car.offsetX*forward[0]+car.offsetY*forward[1],-.5,.5);
       car.offsetX=side*normal[0]+along*forward[0];car.offsetY=side*normal[1]+along*forward[1];
       pose.x+=car.offsetX;pose.y+=car.offsetY;pose.heading+=clamp(car.yawOffset,-.12,.12);

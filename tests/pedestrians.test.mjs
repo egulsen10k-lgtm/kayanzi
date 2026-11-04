@@ -145,8 +145,27 @@ test('pedestrian contact follows the car footprint instead of a broad radius',()
  const sim=new Pedestrians(),c=car();sim.network=network;c.speed=35;c.heading=0;
  sim.people=[person(4.75,0),person(1,0)];
  sim.update(c,.1);
- assert.equal(sim.people[0].state,'idle');
+ assert.equal(sim.people[0].state,'scatter');
  assert.equal(sim.people[1].state,'ragdoll');
+});
+
+test('nearby pedestrians scatter at speed and return to idle when their timer expires',()=>{
+ const sim=new Pedestrians(),c=car();sim.network=network;c.speed=30;c.heading=0;
+ sim.people=[person(0,7)];sim.update(c,.1,c.speed);
+ const walker=sim.people[0];
+ assert.equal(walker.state,'scatter');assert.equal(walker.scatterTimer,2.9);
+ assert.ok(Number.isFinite(walker.fleeAngle));
+ c.speed=0;const start={x:walker.x,y:walker.y};for(let i=0;i<30;i++)sim.update(c,.1,0);
+ assert.equal(walker.state,'idle');assert.equal(walker.scatterTimer,0);
+ assert.ok(Math.hypot(walker.x-start.x,walker.y-start.y)>6);
+});
+
+test('nearby pedestrians do not scatter at or below 25 km/h',()=>{
+ for(const speed of [0,25]) {
+  const sim=new Pedestrians(),c=car();sim.network=network;c.speed=speed;
+  sim.people=[person(4.75,0)];sim.update(c,.1,speed);
+  assert.equal(sim.people[0].state,'idle');
+ }
 });
 test('a horn-chasing pedestrian can still be struck by a moving car',()=>{
  const sim=new Pedestrians(),c=car();sim.network=network;sim.people=[person(1,0)];
@@ -163,4 +182,19 @@ test('larger street crowds include goth and Turkish headscarf NPCs',()=>{
  assert.ok(sim.people.some(p=>p.style==='goth'));
  assert.ok(sim.people.some(p=>p.style==='turkish'));
  assert.ok(sim.people.some(p=>p.style==='turkish-headscarf'));
+});
+
+test('density zero stops pedestrian spawns and density two doubles the population cap',()=>{
+ const sim=new Pedestrians(),c=car();
+ assert.equal(sim.populationCap,12);
+ assert.equal(sim.setDensity(0),0);
+ sim.reset(network,c,sim.density);assert.equal(sim.people.length,0);
+ sim.setDensity(2);assert.equal(sim.populationCap,24);
+ assert.equal(sim.populationCap,12*2);
+});
+
+test('pedestrian density clamps values outside the supported range',()=>{
+ const sim=new Pedestrians();
+ assert.equal(sim.setDensity(-1),0);
+ assert.equal(sim.setDensity(4),2);
 });

@@ -17,6 +17,48 @@ function button(label, attrs = {}) {
   return make('button', { type: 'button', ...attrs }, label);
 }
 
+export function mountPlayerCountChip(container, session) {
+  if (!container || !session) return { update() {}, destroy() {} };
+  const chip = make('span', {
+    className: 'mp-player-count-chip',
+    role: 'status',
+    'aria-label': 'Connected drivers'
+  }, '👥 1');
+  Object.assign(chip.style, {
+    display: 'inline-flex', alignItems: 'center', gap: '3px',
+    padding: '4px 8px', border: '1px solid rgba(117,220,233,.55)',
+    borderRadius: '999px', background: 'rgba(9,20,29,.86)',
+    color: '#fff', font: '700 11px system-ui', pointerEvents: 'none'
+  });
+  container.append(chip);
+  const previousPeers = session.onPeers;
+  const previousStatus = session.onStatus;
+  const update = peers => {
+    const count = Math.min(8, (Array.isArray(peers) ? peers.length : 0) + 1);
+    chip.textContent = `👥 ${count}`;
+    chip.hidden = session.connected !== true;
+  };
+  const onPeers = peers => {
+    previousPeers?.(peers);
+    update(peers);
+  };
+  const onStatus = status => {
+    previousStatus?.(status);
+    chip.hidden = status?.state !== 'connected';
+  };
+  session.onPeers = onPeers;
+  session.onStatus = onStatus;
+  update(Array.from(session.peers?.values?.() || []));
+  return {
+    update,
+    destroy() {
+      if (session.onPeers === onPeers) session.onPeers = previousPeers;
+      if (session.onStatus === onStatus) session.onStatus = previousStatus;
+      chip.remove();
+    }
+  };
+}
+
 function field(label, input) {
   const wrapper = make('label', { className: 'mp-field' });
   wrapper.append(make('span', {}, label), input);
@@ -142,8 +184,15 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
   const playersSection = make('section', { className: 'mp-players', 'aria-label': 'Connected drivers' });
   const playersTitle = make('h3', {}, 'Drivers · 1 / 8');
   const playersList = make('ul');
+  const chatRow = make('div', { className: 'mp-chat-row', hidden: '', 'aria-label': 'Quick chat', role: 'group' });
+  const CHAT_PRESETS = ['👋 Hi', '🏁 Race?', '🆘 Help!', '👍 Nice!', '😄 Fun'];
+  for (const text of CHAT_PRESETS) {
+    const btn = button(text, { className: 'mp-chat-btn', 'aria-label': `Send: ${text}` });
+    btn.addEventListener('click', () => session.sendChat(text));
+    chatRow.append(btn);
+  }
   const leaveButton = button('Leave multiplayer', { className: 'mp-leave', hidden: '' });
-  playersSection.append(playersTitle, playersList, leaveButton);
+  playersSection.append(playersTitle, playersList, chatRow, leaveButton);
   advanced.append(choices, lanSection, codeSection);
   panel.append(heading, intro, status, error, nameField, shortSection, worldNote, playersSection, advanced);
   backdrop.append(panel);
@@ -393,6 +442,7 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
     trigger.dataset.connected = String(value.state === 'connected');
     trigger.textContent = value.state === 'connected' ? `Multiplayer · ${Math.min(8, currentPeers.length + 1)}` : 'Multiplayer';
     leaveButton.hidden = value.state === 'offline';
+    chatRow.hidden = value.state !== 'connected';
     if (value.state === 'offline') {
       offerOutput.value = answerOutput.value = offerInput.value = answerInput.value = '';
       offerShare.hidden = answerShare.hidden = answerField.hidden = connectAnswer.hidden = true;

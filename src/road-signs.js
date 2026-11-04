@@ -16,7 +16,24 @@ export function junctionDirections(graph,edge) {
     .map(next=>({arrow:turnArrow(edge.tangent,next.tangent),name:roadDestination(next),edgeId:next.id})).slice(0,3);
 }
 export class RoadSigns {
-  constructor(parent){this.parent=parent;this.entries=[];this.group=null;this.roads=[];}
+  constructor(parent){this.parent=parent;this.entries=[];this.radars=[];this.group=null;this.roads=[];}
+  getRadars(){return this.radars;}
+  getNearestLimit(physics) {
+    if(physics.currentEdge?.limit!=null)return physics.currentEdge.limit;
+    const network=physics.roadNetwork;if(!network)return 50;
+    const px = Number.isFinite(physics.x) ? physics.x : Number.isFinite(physics.position?.x) ? physics.position.x : null;
+    const py = Number.isFinite(physics.y) ? physics.y : Number.isFinite(physics.position?.y) ? physics.position.y : null;
+    if(px===null||py===null)return 50;
+    const forward=[Math.sin(physics.heading),Math.cos(physics.heading)];
+    let best=null,score=Infinity;
+    for(const edge of network.edges) {
+      if(edge.tangent[0]*forward[0]+edge.tangent[1]*forward[1]<.15)continue;
+      const dx=px-edge.start[0],dy=py-edge.start[1],s=Math.max(0,Math.min(edge.length,dx*edge.tangent[0]+dy*edge.tangent[1]));
+      const d=Math.hypot(dx-edge.tangent[0]*s,dy-edge.tangent[1]*s);
+      if(d<12&&d<score){score=d;best=edge;}
+    }
+    return best?.limit??50;
+  }
   rebuild(graph,focus={x:0,y:0},roads=[]) {
     this.clear();this.group=new THREE.Group();this.group.name='road-signs';this.parent.add(this.group);
     this.roads=roads;
@@ -26,6 +43,7 @@ export class RoadSigns {
       const along=Math.min(edge.length*.3,18),x=edge.start[0]+edge.tangent[0]*along+edge.normal[0]*(edge.road.width/2+.8-edge.lane),y=edge.start[1]+edge.tangent[1]*along+edge.normal[1]*(edge.road.width/2+.8-edge.lane);
       if(this.entries.some(s=>s.type==='speed'&&s.limit===edge.limit&&Math.hypot(s.x-x,s.y-y)<85))continue;
       this.entries.push({type:'speed',limit:edge.limit,edgeId:edge.id,x,y,h:edge.ha,heading:-Math.atan2(...edge.tangent),width:.9,height:.9});
+      if(edge.limit<=50)this.radars.push({type:'radar',x,y,h:edge.ha,limit:edge.limit,heading:-Math.atan2(...edge.tangent)});
       if(this.entries.length>=28)break;
     }
     for(const road of roads.filter(r=>r.width<6)) {
@@ -101,5 +119,5 @@ export class RoadSigns {
     }
     return best;
   }
-  clear(){if(this.group)disposeTrafficObject(this.group);this.group=null;this.entries=[];this.roads=[];}
+  clear(){if(this.group)disposeTrafficObject(this.group);this.group=null;this.entries=[];this.radars=[];this.roads=[];}
 }

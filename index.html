@@ -93,6 +93,16 @@
       background: #111;
       transition: all 0.3s ease;
     }
+    #akanzi-completion[hidden] { display:none; }
+    #akanzi-completion { position:absolute; inset:0; z-index:35; display:grid; place-items:center; padding:20px; background:rgba(3,8,13,.72); pointer-events:auto; }
+    #akanzi-completion-card { width:min(90vw,480px); padding:30px 28px; border:1px solid rgba(117,220,233,.55); border-radius:18px; color:#fff; text-align:center; background:#102634dc; box-shadow:0 24px 80px #0009; backdrop-filter:blur(16px); }
+    #akanzi-completion-card h2 { margin:0 0 22px; font-size:clamp(24px,5vw,34px); }
+    .akanzi-summary-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:24px; }
+    .akanzi-summary-grid strong { display:block; font-size:20px; color:#8ceef5; }
+    .akanzi-summary-grid span { display:block; margin-top:5px; color:#aab9c3; font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+    #akanzi-drive-again { min-height:46px; padding:0 22px; border:0; border-radius:12px; color:#07161e; background:#8ceef5; font-weight:800; cursor:pointer; }
+    .minimap-zoom-controls { position:absolute; right:8px; bottom:8px; z-index:20; display:flex; flex-direction:column; gap:4px; pointer-events:auto; }
+    .minimap-zoom-controls button { width:24px; height:24px; min-width:24px; min-height:24px; padding:0; border:1px solid rgba(255,255,255,.42); border-radius:4px; background:rgba(9,17,26,.74); color:#fff; font:700 16px/1 system-ui,sans-serif; cursor:pointer; }
 
     @media (min-width: 800px) {
       #map-container {
@@ -134,6 +144,9 @@
       color: var(--accent-cyan);
       font-variant-numeric: tabular-nums;
     }
+    .hud-gear-chip { display:inline-flex;align-items:center;gap:3px;min-width:32px;margin-left:5px;padding:4px 6px;border:1px solid rgba(255,255,255,.16);border-radius:7px;background:rgba(9,20,29,.86);color:#fff;font:700 9px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.01em;vertical-align:middle; }
+    .hud-gear-chip .gear-char { color:#fff; }
+    .hud-gear-chip .gear-char.active { color:#53e3f0;font-size:1.3em;text-shadow:0 0 8px #53e3f099; }
 
     @media (min-width: 800px) {
       .speedometer-val {
@@ -596,6 +609,24 @@
       accent-color: var(--accent-cyan);
       cursor: pointer;
     }
+    #performance-status, #drive-status-banner {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 30;
+      max-width: min(92vw, 460px);
+      padding: 8px 14px;
+      border: 1px solid rgba(140,238,245,.35);
+      border-radius: 999px;
+      background: rgba(6,15,23,.88);
+      color: #e8f7fa;
+      font-size: 11px;
+      text-align: center;
+      pointer-events: none;
+    }
+    #performance-status { bottom: 14px; opacity: .78; }
+    #drive-status-banner { top: 16px; }
+    #performance-status[hidden], #drive-status-banner[hidden] { display: none; }
     /* Expedition interface refinement */
 
 
@@ -1014,6 +1045,12 @@
       display:none;
     }
     #fullscreen-toggle:active { background:#1c3a50; }
+    #fuel-warning-banner {
+      position:absolute; z-index:25; top:64px; left:50%; transform:translateX(-50%);
+      background:#c47800; color:#fff; font-weight:700; font-size:13px;
+      padding:6px 18px; border-radius:20px; pointer-events:none;
+      white-space:nowrap; box-shadow:0 4px 14px #0008;
+    }
     /* On touch/small screens show fullscreen button and reposition dynamics toggle */
     @media (max-width:900px),(any-pointer:coarse) {
       #fullscreen-toggle { display:block; top:170px; right:12px; }
@@ -1232,6 +1269,20 @@
       #akanzi-hud { top:92px!important; left:175px!important; right:132px!important; }
       .mobile-drive-sheet { max-height:92dvh; }
     }
+    #pause-toggle { position:absolute; z-index:28; top:158px; right:12px; min-width:88px; min-height:44px; border:1px solid #ffffff30; border-radius:12px; background:#102634e8; color:white; font-weight:700; cursor:pointer; }
+    #controller-status { position:absolute; z-index:40; top:max(12px,env(safe-area-inset-top)); left:50%; transform:translateX(-50%); padding:9px 14px; border:1px solid #75dce9; border-radius:12px; background:#102634ee; color:white; font:700 13px system-ui; pointer-events:none; }
+    #controller-status[hidden] { display:none; }
+    #pause-overlay[hidden] { display:none; }
+    #pause-overlay { position:fixed; inset:0; z-index:1200; display:grid; place-items:center; padding:20px; background:#03080dc9; }
+    #pause-card { width:min(90vw,420px); padding:28px; border:1px solid #75dce9a0; border-radius:20px; background:#102634f2; color:#fff; box-shadow:0 24px 80px #000b; text-align:center; }
+    #pause-card h2 { margin-bottom:18px; font-size:30px; }
+    #pause-card .pause-actions { display:grid; gap:10px; }
+    #pause-card button { min-height:48px; border:1px solid #75dce966; border-radius:12px; background:#1a3a4a; color:white; font-weight:750; cursor:pointer; }
+    #pause-resume { background:#8ceef5!important; color:#07161e!important; }
+    @media (max-width:800px) { #pause-toggle { top:128px; right:12px; } }
+    @media (prefers-reduced-motion:reduce) {
+      *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; }
+    }
   </style>
 </head>
 <body>
@@ -1245,19 +1296,23 @@
     <label><input id="night-mode" type="checkbox"> Night mode</label>
     <label><input id="high-beams" type="checkbox"> High beams</label>
     <button class="start-btn" id="start-simulation-btn" type="button">Start driving</button>
-    <p class="controls-hint"><span class="keyboard-hint">Keyboard: W/↑ accelerate · S/↓ brake and reverse · A/← and D/→ steer · Space handbrake · hold Shift for nitro</span><span class="touch-hint">AUTO, D/N/R ile vites seç. AUTO'da FREN ile durup geri gidebilirsin; R'de GAZ ile geri git.</span></p>
+    <p class="controls-hint"><span class="keyboard-hint">Keyboard: W/↑ accelerate · S/↓ brake and reverse · A/← and D/→ steer · Space handbrake · hold Shift or press N for nitro</span><span class="touch-hint">AUTO, D/N/R ile vites seç. AUTO'da FREN ile durup geri gidebilirsin; R'de GAZ ile geri git.</span></p>
   </section>
 
   <div id="app-container">
     <!-- Main 3D Viewport -->
     <div id="main-viewport">
+      <div id="fuel-warning-banner" hidden aria-live="polite" role="status"></div>
+      <div id="drive-status-banner" hidden aria-live="polite" role="status"></div>
       <div id="render-canvas-container"></div>
+      <div id="performance-status" hidden aria-live="polite"></div>
 
       <!-- Heads Up Display -->
       <div class="hud-overlay">
+        <div id="hud-player-count" aria-label="Connected drivers"></div>
         <div class="hud-card" id="hud-speed-card" role="button" tabindex="0" aria-expanded="false" aria-label="Speed — tap to expand" style="cursor:pointer">
           <div class="speedometer-unit">Speed</div>
-          <div class="speedometer-val"><span id="hud-speed">0</span> <span style="font-size: 16px; color: var(--text-dim);">km/h</span> <span id="hud-speed-limit" aria-label="Current speed limit">—</span></div>
+          <div class="speedometer-val"><span id="hud-speed">0</span> <span style="font-size: 16px; color: var(--text-dim);">km/h</span> <span id="hud-speed-limit" aria-label="Current speed limit">—</span><span id="hud-gear-chip" class="hud-gear-chip" aria-label="Current gear"><span class="gear-char" data-gear="P">P</span><span class="gear-char" data-gear="R">R</span><span class="gear-char" data-gear="N">N</span><span class="gear-char" data-gear="1">1</span><span class="gear-char" data-gear="2">2</span><span class="gear-char" data-gear="3">3</span><span class="gear-char" data-gear="4">4</span><span class="gear-char" data-gear="5">5</span><span class="gear-char" data-gear="6">6</span><span class="gear-char" data-gear="7">7</span><span class="gear-char" data-gear="8">8</span></span></div>
           <div id="hud-navigation" title="Upcoming road directions"></div>
           <div id="hud-signal" hidden></div>
           <div class="energy-readout"><span id="hud-fuel">Fuel 100%</span><span id="hud-economy">0.8 L/h</span></div>
@@ -1298,6 +1353,17 @@
         <div id="akanzi-next" style="font-size:11px;margin-top:4px"></div>
         <div id="akanzi-instruction" style="font-size:11px;margin-top:4px;color:#a2adb7"></div>
       </div>
+      <div id="akanzi-completion" hidden role="dialog" aria-modal="true" aria-label="Akanzi route complete">
+        <section id="akanzi-completion-card">
+          <h2>🏁 Akanzi Complete!</h2>
+          <div class="akanzi-summary-grid">
+            <div><strong id="akanzi-completion-distance">20.3 km</strong><span>Distance</span></div>
+            <div><strong id="akanzi-completion-time">00:00</strong><span>Drive time</span></div>
+            <div><strong id="akanzi-completion-stops">0</strong><span>Stops visited</span></div>
+          </div>
+          <button id="akanzi-drive-again" type="button">Drive Again</button>
+        </section>
+      </div>
       <button id="milli-sarki-btn" type="button" aria-pressed="false" title="Milli Şarkı">♫ Milli Akanzi Song</button>
       <button id="sidebar-toggle" type="button" aria-controls="control-sidebar" aria-expanded="false">Studio</button>
       <button id="settings-toggle" type="button" aria-label="Controls and traffic settings" aria-controls="settings-panel" style="position:absolute;bottom:16px;left:16px;z-index:15;background:rgba(9,14,20,.88);color:white;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;">
@@ -1305,6 +1371,18 @@
       </button>
       <button id="drive-dynamics-toggle" type="button" aria-controls="drive-dynamics-panel" aria-expanded="false">Drive setup</button>
       <button id="fullscreen-toggle" type="button" aria-label="Toggle fullscreen" title="Fullscreen">⛶</button>
+      <button id="pause-toggle" type="button" aria-label="Pause driving" aria-pressed="false">Ⅱ Pause</button>
+      <div id="controller-status" role="status" aria-live="polite" hidden>🎮 Controller connected</div>
+      <div id="pause-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="pause-title">
+        <section id="pause-card">
+          <h2 id="pause-title">Paused</h2>
+          <div class="pause-actions">
+            <button id="pause-resume" type="button">Resume</button>
+            <button id="pause-reset-road" type="button">Reset to road</button>
+            <button id="pause-exit-menu" type="button">Exit to menu</button>
+          </div>
+        </section>
+      </div>
       <section id="drive-dynamics-panel" aria-label="Vehicle dynamics settings" hidden>
         <div class="dynamics-panel-header">
           <div><div class="dynamics-panel-kicker">Vehicle dynamics</div><h2>Drive setup</h2></div>
@@ -1393,7 +1471,7 @@
           <button type="button" data-gear="N" aria-label="Neutral" aria-pressed="false">N</button>
           <button type="button" data-gear="R" aria-label="Reverse" aria-pressed="false">R</button>
         </div>
-        <button id="nitro-button" type="button" aria-label="Hold for nitro boost" aria-pressed="false">NITRO</button>
+        <button id="nitro-button" type="button" aria-label="Hold for nitro boost" aria-pressed="false">💨 NITRO</button>
       </div>
       <button id="mobile-drive-menu-toggle" type="button" aria-controls="mobile-drive-menu" aria-expanded="false">••• Menu</button>
       <div id="mobile-drive-menu" hidden>
@@ -1414,6 +1492,10 @@
         </div>
         <div style="padding:12px;">    <label for="traffic-density">Traffic density</label>
     <select id="traffic-density"><option value="0">Off</option><option value="0.5">Low</option><option value="1" selected>Medium</option><option value="2">High</option></select>
+          <div class="settings-row" style="display:block;margin:10px 0 12px;">
+            <label for="pedestrian-density" style="display:flex;justify-content:space-between;font-size:12px;">Pedestrians <output id="pedestrian-density-value" for="pedestrian-density">1.00</output></label>
+            <input id="pedestrian-density" type="range" min="0" max="2" step="0.25" value="1" style="width:100%;accent-color:#36dce8;">
+          </div>
           <div class="settings-row" style="margin-bottom:8px;">
             <label style="font-size:12px;">Steering Style</label>
             <select id="steering-style" class="settings-select">
@@ -1452,6 +1534,10 @@
       <!-- Leaflet Interactive Map -->
       <div id="map-container">
         <div id="leaflet-map" style="width: 100%; height: 100%;"></div>
+        <div class="minimap-zoom-controls" aria-label="Minimap zoom controls">
+          <button id="minimap-zoom-in" type="button" aria-label="Zoom in">+</button>
+          <button id="minimap-zoom-out" type="button" aria-label="Zoom out">−</button>
+        </div>
       </div>
     </div>
 
@@ -1501,6 +1587,12 @@
 
       <!-- Teleport Anywhere on Earth -->
       <div class="control-group">
+        <div class="section-title">Performance &amp; comfort</div>
+        <div class="settings-row"><label for="quality-tier">Graphics</label><select id="quality-tier" class="settings-select"><option value="eco">Eco</option><option value="balanced" selected>Balanced</option><option value="high">High</option></select></div>
+        <div class="settings-row"><label for="camera-shake-toggle">Camera shake</label><input id="camera-shake-toggle" type="checkbox" checked></div>
+      </div>
+
+      <div class="control-group">
         <div class="section-title">Camera view</div>
         <div id="camera-controls" role="group" aria-label="Camera view">
           <button class="action-btn active" type="button" data-camera-mode="chase" aria-pressed="true">Chase</button>
@@ -1509,6 +1601,16 @@
           <button class="action-btn" type="button" data-camera-mode="reverse" aria-pressed="false">Reverse</button>
           <button class="action-btn" type="button" data-camera-mode="wide" aria-pressed="false">Wide</button>
           <button class="action-btn" type="button" data-camera-mode="aerial" aria-pressed="false">Aerial</button>
+          <button class="action-btn" type="button" data-camera-mode="cinematic" aria-pressed="false">Cinematic</button>
+          <button class="action-btn" type="button" data-camera-mode="bonnet" aria-pressed="false">Bonnet</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <div class="section-title">Weather &amp; Time</div>
+        <div class="btn-grid">
+          <button id="weather-cycle-btn" class="action-btn" type="button">☀ Clear</button>
+          <button id="time-cycle-btn" class="action-btn" type="button">☀ Day</button>
         </div>
       </div>
 

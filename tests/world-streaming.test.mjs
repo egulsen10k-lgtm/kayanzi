@@ -18,12 +18,12 @@ test('streaming looks ahead with bounded distance and follows reverse direction'
   const wrapped=nextWorldLocation({lat:0,lng:179.9999},Math.PI/2,200);
   assert.ok(wrapped.lng<0);
 });
-test('buildings batch by spatial chunk with only roof and wall draw groups',()=>{
+test('buildings batch roof and lit/unlit facade groups by spatial chunk',()=>{
   const buildings=Array.from({length:20},(_,i)=>({id:i,height:10,points:[[i*3,0],[i*3+2,0],[i*3+2,2],[i*3,2],[i*3,0]]}));
-  const group=buildBuildings({buildings});
+  let randomIndex=0;const group=buildBuildings({buildings},{random:()=>randomIndex++%10<3?.1:.9});
   assert.equal(group.children.length,1);
   const geometry=group.children[0].geometry;
-  assert.equal(geometry.groups.length,2);
+  assert.equal(geometry.groups.length,3);
   geometry.computeBoundingBox();
   assert.ok(geometry.boundingBox.max.y===10&&geometry.boundingBox.max.x===59);
   let disposed=false;geometry.addEventListener('dispose',()=>disposed=true);

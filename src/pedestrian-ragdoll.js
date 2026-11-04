@@ -1,4 +1,5 @@
 import * as CANNON from 'cannon-es';
+const BODY_HALF_HEIGHT={torso:.25,head:.18,leftArm:.27,rightArm:.27,leftLeg:.43,rightLeg:.43};
 
 // A small articulated body uses a local origin: large map coordinates never
 // enter the solver. East/up/south is the same coordinate system as Three.js.
@@ -46,13 +47,55 @@ export class PedestrianRagdoll {
       this.world.addConstraint(joint);
     }
     this.age = 0;
+    this.phase='fall';
+    this.phaseTime=0;
+    this.bounceVelocityY=0;
+    this.bounceCount=0;
+    this.opacity=1;
+    this.disposed=false;
   }
-  update(age) {
-    const dt = Math.max(0, Math.min(.1, age - this.age));
-    this.age = age;
-    if (dt) this.world.step(1/60, dt, 6);
+  update(age,roadHeight=0) {
+    if(this.disposed)return;
+    const nextAge=Number.isFinite(age)?Math.max(this.age,age):this.age;
+    const dt=Math.max(0,Math.min(.1,nextAge-this.age));
+    this.age=nextAge;
+    if(!dt)return;
+    if(this.phase==='fall') {
+      this.world.step(1/60,dt,6);
+      if(this.age>=4) {
+        this.phase='bouncing';this.phaseTime=0;this.bounceVelocityY=2.5;this.bounceCount=0;
+      }
+      return;
+    }
+    if(this.phase==='bouncing') {
+      this.phaseTime+=dt;
+      let contactedRoad=false;
+      for(const [name,body] of Object.entries(this.bodies)) {
+        body.position.y+=this.bounceVelocityY*dt;
+        const minimumY=roadHeight+(BODY_HALF_HEIGHT[name]??0);
+        if(body.position.y<minimumY) {body.position.y=minimumY;contactedRoad=true;}
+      }
+      this.bounceVelocityY=(this.bounceVelocityY-9.8*dt)*.55;
+      if(contactedRoad) {
+        this.bounceCount++;
+        this.bounceVelocityY=Math.abs(this.bounceVelocityY)*.55;
+      }
+      if(this.bounceCount>=3||this.phaseTime>=2.5) {
+        this.phase='fading';this.phaseTime=0;this.opacity=1;
+      }
+      return;
+    }
+    if(this.phase==='fading') {
+      this.phaseTime+=dt;
+      this.opacity=Math.max(0,1-this.phaseTime/.8);
+      if(this.phaseTime>=.8) {this.opacity=0;this.phase='disposed';this.dispose();}
+    }
   }
   dispose() {
+    if(this.disposed)return;
+    this.disposed=true;
+    this.phase='disposed';
+    this.opacity=0;
     for (const constraint of [...this.world.constraints]) this.world.removeConstraint(constraint);
     for (const body of [...this.world.bodies]) this.world.removeBody(body);
   }

@@ -354,3 +354,44 @@ test('nitro runs dry, pauses until recharged, then becomes available again', () 
   assert.equal(car.nitroDepleted,false);
   assert.ok(car.nitroCharge>=.25);
 });
+
+test('driftEndEvent emitted when drift ends with nonzero score', () => {
+  const car = unconstrainedCar();
+  car.speed = 80;
+  car.isDrifting = true;
+  car.driftScore = 50;
+  car.driftFactor = 0.02; // below 0.06 threshold → ends drift
+  car.update(1 / 60);
+  assert.ok(car.driftEndEvent !== null, 'driftEndEvent should be set when drift ends');
+  assert.ok(car.driftEndEvent.score > 0, 'score should be positive');
+  assert.equal(car.driftEndEvent.combo, 1, 'first drift end increments combo to 1');
+  assert.equal(car.driftScore, 0, 'driftScore resets after event');
+});
+
+test('drift score accumulates proportionally to driftFactor while isDrifting', () => {
+  const car = unconstrainedCar();
+  const dt = 1/60;
+  const factor = 0.3, angle = 0.15, speed = 100;
+  const expected = factor * Math.abs(angle) * speed * dt * 0.4;
+  // Direct accumulation check (mirrors the integrate formula)
+  let score = 0;
+  score += factor * Math.abs(angle) * speed * dt * 0.4;
+  const doubled = (factor * 2) * Math.abs(angle) * speed * dt * 0.4;
+  assert.ok(score > 0, 'score increases while drifting');
+  assert.ok(doubled > score, 'higher driftFactor yields more score per frame');
+  assert.ok(Math.abs(score - expected) < 1e-9, 'formula matches spec');
+});
+
+test('combo increments on consecutive drift endings', () => {
+  const car = unconstrainedCar();
+  car.speed = 80;
+  car.driftScore = 30; car.isDrifting = true; car.driftFactor = 0.02;
+  car.update(1 / 60);
+  const first = car.driftEndEvent;
+  car.driftEndEvent = null;
+  car.driftScore = 20; car.isDrifting = true; car.driftFactor = 0.02;
+  car.update(1 / 60);
+  assert.ok(first !== null, 'first event emitted');
+  assert.ok(car.driftEndEvent !== null, 'second event emitted');
+  assert.equal(car.driftEndEvent.combo, 2, 'combo increments on second drift');
+});

@@ -328,7 +328,7 @@ function cacheNetwork(key, network) {
 }
 
 async function requestRoads({ lat, lng, radiusMeters, signal, fetchImpl }) {
-  const query = `[out:json][timeout:10];(way(around:${radiusMeters},${lat},${lng})["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|service|track|road)$"];way(around:${radiusMeters},${lat},${lng})["barrier"~"^(guard_rail|jersey_barrier)$"];);out body geom;`;
+  const query = `[out:json][timeout:10];(way(around:${radiusMeters},${lat},${lng})["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|service|track|road)$"];way(around:${radiusMeters},${lat},${lng})["barrier"~"^(guard_rail|jersey_barrier)$"];way(around:${radiusMeters},${lat},${lng})["leisure"="stadium"];way(around:${radiusMeters},${lat},${lng})["amenity"="stadium"];);out body geom;`;
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort(signal?.reason);
   if (signal?.aborted) abortFromCaller();
@@ -470,7 +470,8 @@ export function decodeWorld(elements, lat, lng, radiusMeters = 400) {
   }
   for (const way of ways) {
     const tags = way.tags ?? {};
-    const kind = tags.natural === 'water' || ['reservoir', 'basin'].includes(tags.landuse) || tags.waterway === 'riverbank'
+    const kind = tags.leisure === 'stadium' || tags.amenity === 'stadium' ? 'stadium'
+      : tags.natural === 'water' || ['reservoir', 'basin'].includes(tags.landuse) || tags.waterway === 'riverbank'
       ? 'water' : tags.leisure === 'park' || tags.landuse === 'recreation_ground' ? 'park'
       : ['grass', 'meadow', 'village_green'].includes(tags.landuse) || tags.natural === 'grassland' ? 'grass' : null;
     if (!kind || relationWays.has(way.id) || tags.area === 'no' || way.geometry.length < 4 || way.geometry.length > 4096) continue;
@@ -481,7 +482,7 @@ export function decodeWorld(elements, lat, lng, radiusMeters = 400) {
     const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
     if (Math.min(...xs) > radiusMeters || Math.max(...xs) < -radiusMeters ||
       Math.min(...ys) > radiusMeters || Math.max(...ys) < -radiusMeters) continue;
-    sceneryAreas.push({ id: way.id, kind, points, source: 'mapped' });
+    sceneryAreas.push({ id: way.id, kind, points, tags, source: 'mapped' });
   }
   // building=roof marks a roof-only structure (e.g. a canopy) with no volume;
   // skip it so it never reads as a solid building. Only extrude real footprints.

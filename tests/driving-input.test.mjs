@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bindDrivingInput } from '../src/driving-input.js';
+import { bindDrivingInput, GamepadInput, applyDeadzone, updateWithGamepad } from '../src/driving-input.js';
 class Target extends EventTarget {
   attrs = {}; captures = new Set();
   getAttribute(k) { return this.attrs[k]; }
@@ -55,4 +55,31 @@ for (const reason of ['blur','resize','visibilitychange']) test(`${reason} clear
   fire(reason==='visibilitychange'?doc:win,reason);
   assert.equal(physics.keys.ArrowUp,false);assert.equal(gas.attrs['aria-pressed'],'false');assert.equal(gas.captures.size,0);
   physics.keys={};fire(gas,'pointerdown',{pointerId:2,button:0});assert.equal(physics.keys.ArrowUp,true);
+});
+
+const makePad=({axis=0,rt=0,lt=0,a=false,y=false,up=false,down=false}={})=>({connected:true,axes:[axis,0],buttons:[{pressed:a},null,null,{pressed:y},null,null,{value:lt},{value:rt},null,null,null,null,{pressed:up},{pressed:down}]});
+
+test('gamepad maps left stick, triggers, handbrake, horn and camera d-pad',()=>{
+  const events=[];
+  const input=new GamepadInput({navigatorRef:{getGamepads:()=>[makePad({axis:.8,rt:.7,lt:.2,a:true,y:true,up:true})]},onHornStart:()=>events.push('horn'),onCameraCycle:n=>events.push(`camera:${n}`)});
+  const state=input.poll();
+  assert.equal(state.connected,true);assert.ok(state.steering>.7);assert.equal(state.throttle,.7);assert.equal(state.brake,.2);assert.equal(state.handbrake,true);
+  assert.deepEqual(events,['horn','camera:1']);
+});
+
+test('gamepad stick deadzone suppresses drift and rescales active input',()=>{
+  assert.equal(applyDeadzone(.1),0);assert.equal(applyDeadzone(-.16),0);
+  assert.ok(Math.abs(applyDeadzone(.58)-.5)<1e-9);
+});
+
+test('held keyboard and touch keys take precedence over gamepad analogs',()=>{
+  const physics={keys:{ArrowLeft:true,ArrowUp:true,Space:false},tiltInput:null,wheelSteering:0};let result;
+  updateWithGamepad(physics,{steering:1,throttle:1,brake:0,handbrake:true},()=>{result={...physics.tiltInput,space:physics.keys.Space};});
+  assert.equal(result.steering,0);assert.equal(result.throttle,0);assert.equal(result.space,true);
+  assert.equal(physics.tiltInput,null);assert.equal(physics.keys.Space,false);
+});
+
+test('missing Gamepad API is safe and reports no controller',()=>{
+  const input=new GamepadInput({navigatorRef:undefined});
+  assert.deepEqual(input.poll(),{steering:0,throttle:0,brake:0,handbrake:false,connected:false});
 });

@@ -4,7 +4,7 @@ import { CarAudio } from '../src/audio.js';
 
 class Param {
   constructor() { this.value = 0; }
-  setValueAtTime(value) { assert.ok(Number.isFinite(value) && value >= 0); this.value = value; }
+  setValueAtTime(value) { assert.ok(Number.isFinite(value)); this.value = value; }
   setTargetAtTime(value) { this.setValueAtTime(value); }
   linearRampToValueAtTime(value) { this.setValueAtTime(value); }
   exponentialRampToValueAtTime(value) { assert.ok(value > 0); this.setValueAtTime(value); }
@@ -12,7 +12,7 @@ class Param {
 }
 class Node {
   constructor() {
-    for (const key of ['gain', 'frequency', 'Q', 'threshold', 'knee', 'ratio']) this[key] = new Param();
+    for (const key of ['gain', 'frequency', 'detune', 'Q', 'threshold', 'knee', 'ratio']) this[key] = new Param();
   }
   setPeriodicWave(wave) { this.wave = wave; this.type = 'custom'; }
   connect() {}
@@ -79,6 +79,24 @@ test('remote engine voices are capped at seven peers', () => {
     peerId: `remote-${i}`, lat: 48, lng: 11 + i * 0.00001, speed: 45
   })), local);
   assert.equal(audio.remoteVoices.size, 7);
+  audio.dispose();
+});
+
+test('idle thump fires on the 0.7 second interval',()=>{
+  const audio=create();
+  const baseline=audio.sources.size;
+  for(let i=0;i<2;i++)audio.update(800,0,0,false,{dt:.25});
+  assert.equal(audio.sources.size,baseline);
+  audio.update(800,0,0,false,{dt:.25});
+  assert.equal(audio.sources.size,baseline+1);
+  audio.dispose();
+});
+
+test('idle thump is suppressed while motion is reported',()=>{
+  const audio=create();
+  const baseline=audio.sources.size;
+  audio.update(800,0,0,false,{dt:.25,motion:true});
+  assert.equal(audio.sources.size,baseline);
   audio.dispose();
 });
 
@@ -149,6 +167,32 @@ test('horn exists, respects channel/mute, and repeated key events are rate-limit
   assert.equal(audio.sources.size, steady);
   audio.toggleMute(); audio.triggerHorn(); audio.triggerHorn();
   assert.equal(audio.sources.size, steady + 2);
+  audio.dispose();
+});
+
+test('remote horn emits a short 380 Hz burst and has its own cooldown',()=>{
+  const audio=create(),before=audio.sources.size;
+  assert.equal(audio.remoteHorn(),true);
+  assert.equal(audio.sources.size,before+1);
+  const source=[...audio.sources].at(-1);
+  assert.equal(source.type,'sawtooth');assert.equal(source.frequency.value,380);
+  assert.equal(audio.remoteHorn(),false);
+  assert.equal(audio.sources.size,before+1);
+  audio.ctx.currentTime+=.8;
+  assert.equal(audio.remoteHorn(),true);
+  assert.equal(audio.sources.size,before+2);
+  audio.dispose();
+});
+
+test('crowd ambience gain follows distance to a stadium',()=>{
+  const audio=create();
+  assert.equal(audio.setCrowdProximity(0),0);
+  assert.ok(audio.crowdGain.gain.value>0);
+  assert.equal(audio.setCrowdProximity(120),120);
+  assert.equal(audio.crowdGain.gain.value,0);
+  assert.equal(audio.crowdFilter.frequency.value,800);
+  assert.equal(audio.crowdFilter.Q.value,2);
+  assert.equal(audio.crowdLfo.frequency.value,.3);
   audio.dispose();
 });
 

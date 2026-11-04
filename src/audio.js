@@ -21,7 +21,15 @@ export class CarAudio {
     this.waveProfile = null;
     this.shiftUntil = -Infinity;
     this.popCooldown = -Infinity;
+    this.backfireCooldown = -Infinity;
     this.hornCooldown = -Infinity;
+    this.remoteHornCooldown=-Infinity;
+    this.idleTimer=2+Math.random()*2;
+    this.idleThumpTimer=.7;
+    this.idleDetuneTimer=0;
+    this.idleDetuneOsc=null;
+    this.idleActive=false;
+    this.crowdProximity=120;
     this.hornVoice = null;
     this.remoteVoices = new Map();
     this.nodes = new Set();
@@ -120,7 +128,9 @@ export class CarAudio {
       this.createTurboSound(); this.createTireScreech(); this.createWindSound();
       this.noiseChannel('road', 'lowpass', 220, 0.7);
       this.noiseChannel('intake', 'bandpass', 700, 0.9, this.engineGain);
+      this.createCrowdAmbience();
       this.initialized = true;
+      this.setCrowdProximity(this.crowdProximity);
       if (this.ctx.state === 'suspended') this.ctx.resume()?.catch(() => {});
     } catch (error) {
       this.dispose();
@@ -138,6 +148,21 @@ export class CarAudio {
   createTurboSound() { this.noiseChannel('turbo', 'bandpass', 1800, 2); }
   createTireScreech() { this.noiseChannel('screech', 'bandpass', 1600, 2); }
   createWindSound() { this.noiseChannel('wind', 'lowpass', 400, 0.7); }
+  createCrowdAmbience() {
+    this.crowdSource=this.source(this.ctx.createBufferSource());this.crowdSource.buffer=this.noiseBuffer;this.crowdSource.loop=true;
+    this.crowdFilter=this.filterNode('bandpass',800,2);this.crowdGain=this.gain(0);this.crowdModDepth=this.gain(0);
+    this.crowdSource.connect(this.crowdFilter);this.crowdFilter.connect(this.crowdGain);this.crowdGain.connect(this.masterGain);
+    this.crowdLfo=this.source(this.ctx.createOscillator());this.crowdLfo.type='sine';this.crowdLfo.frequency.setValueAtTime(.3,this.ctx.currentTime);
+    this.crowdLfo.connect(this.crowdModDepth);this.crowdModDepth.connect(this.crowdGain.gain);this.crowdSource.start();this.crowdLfo.start();
+  }
+  setCrowdProximity(distance) {
+    this.crowdProximity=clamp(distance,0,120);
+    if(!this.initialized||!this.crowdGain)return this.crowdProximity;
+    const mix=1-this.crowdProximity/120,now=this.ctx.currentTime;
+    this.crowdGain.gain.setTargetAtTime(.07*mix,now,.35);
+    this.crowdModDepth.gain.setTargetAtTime(.028*mix,now,.35);
+    return this.crowdProximity;
+  }
 
   // Schedule one-shots in audio time, avoiding timers surviving context restarts.
   burst({ frequency = 90, endFrequency = 35, volume = 0.2, duration = 0.15, noise = false, delay = 0, type = 'sine' } = {}) {
@@ -179,6 +204,12 @@ export class CarAudio {
     if (!this.initialized || this.isMuted || !this.channels.horn || this.ctx.currentTime - this.hornCooldown < 0.3) return;
     this.hornCooldown = this.ctx.currentTime;
     for (const frequency of [420, 510]) this.burst({ frequency, endFrequency: frequency, volume: 0.15, duration: 0.32, type: 'sawtooth' });
+  }
+  remoteHorn() {
+    if(!this.initialized||this.isMuted||!this.channels.horn||this.ctx.currentTime-this.remoteHornCooldown<.8)return false;
+    this.remoteHornCooldown=this.ctx.currentTime;
+    this.burst({frequency:380,endFrequency:380,volume:.14,duration:.18,type:'sawtooth'});
+    return true;
   }
   startHorn() {
     if (!this.initialized || this.isMuted || !this.channels.horn || this.hornVoice) return;
@@ -268,8 +299,42 @@ export class CarAudio {
     if (profile !== this.profile) { this.lastThrottle = 0; this.lastGear = null; }
     this.profile = profile;
     const electric = profile === 'electric', now = this.ctx.currentTime;
+    const dt=clamp(options.dt??0,0,.25);
+    const idling=!electric&&rpm>0&&speed<2&&this.channels.engine&&options.motion!==true;
+    if(idling&&!this.idleActive){this.idleActive=true;this.idleTimer=2+Math.random()*2;this.idleThumpTimer=.7;}
+    if(!idling&&this.idleActive){
+      this.idleActive=false;this.idleTimer=2+Math.random()*2;this.idleThumpTimer=.7;
+      this.idleDetuneOsc?.detune?.setTargetAtTime(0,now,.04);this.idleDetuneOsc=null;this.idleDetuneTimer=0;
+    }
+    if(idling&&dt>0){
+      this.idleTimer-=dt;this.idleThumpTimer-=dt;
+      if(this.idleThumpTimer<=0){this.burst({frequency:28,volume:.04,duration:.18,type:'sine'});this.idleThumpTimer+=.7;}
+      if(this.idleDetuneOsc){
+        this.idleDetuneTimer-=dt;
+        if(this.idleDetuneTimer<=0){this.idleDetuneOsc.detune?.setTargetAtTime(0,now,.04);this.idleDetuneOsc=null;}
+      }
+      if(this.idleTimer<=0&&!this.idleDetuneOsc){
+        this.idleDetuneOsc=[this.osc1,this.osc2,this.osc3,this.osc4][Math.floor(Math.random()*4)];
+        this.idleDetuneOsc.detune?.setTargetAtTime((Math.random()<.5?-1:1)*50,now,.04);
+        this.idleDetuneTimer=.3;this.idleTimer=2+Math.random()*2;
+      }
+    }
     if (!electric && this.lastThrottle > 0.5 && load < 0.1 && rpm > 3000 && now - this.popCooldown > 0.65) {
       this.triggerExhaustPop(); this.triggerBOV(); this.popCooldown = now;
+    }
+    if (!electric && this.lastThrottle > 0.7 && throttle < 0.2 && speed > 60 && now - this.backfireCooldown >= 0.6) {
+      const count = 1 + Math.floor(Math.random() * 3);
+      for (let index = 0; index < count; index++) {
+        this.burst({
+          frequency: 90 + Math.random() * 60,
+          endFrequency: 30,
+          volume: 0.18,
+          duration: 0.06 + Math.random() * 0.04,
+          noise: true,
+          delay: Math.random() * 0.12
+        });
+      }
+      this.backfireCooldown = now;
     }
     if (!electric && options.gear != null && this.lastGear != null && options.gear !== this.lastGear && speed > 8 && this.channels.engine) {
       this.shiftUntil = now + 0.12;
@@ -327,7 +392,8 @@ export class CarAudio {
     this.sources.clear(); this.nodes.clear();
     if (this.ctx) { try { this.ctx.close()?.catch(() => {}); } catch {} }
     this.ctx = null; this.initialized = false; this.noiseBuffer = null;
+    this.crowdSource=null;this.crowdLfo=null;this.crowdFilter=null;this.crowdGain=null;this.crowdModDepth=null;
     this.waveProfile = null; this.shiftUntil = -Infinity;
-    this.lastThrottle = 0; this.lastGear = null; this.popCooldown = -Infinity; this.hornCooldown = -Infinity; this.hornVoice = null;
+    this.lastThrottle = 0; this.lastGear = null; this.popCooldown = -Infinity; this.hornCooldown = -Infinity; this.remoteHornCooldown=-Infinity;this.hornVoice = null;
   }
 }

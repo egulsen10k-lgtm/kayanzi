@@ -62,9 +62,9 @@ export function lanSocketUrl(url) {
 
 export class MultiplayerSession {
   constructor({ getState = () => null, onPeerState = noop, onPeerLeave = noop, onStatus = noop, onPeers = noop,
-    onWorldSnapshot = noop, onWorldAuthority = noop, getNpcs = null, onNpcs = noop,
+    onWorldSnapshot = noop, onWorldAuthority = noop, getNpcs = null, onNpcs = noop, onChat = noop,
     name = 'Driver', WebSocketClass = globalThis.WebSocket, RTCPeerConnectionClass = globalThis.RTCPeerConnection } = {}) {
-    Object.assign(this, { getState, onPeerState, onPeerLeave, onStatus, onPeers, onWorldSnapshot, onWorldAuthority, getNpcs, onNpcs, WebSocketClass, RTCPeerConnectionClass });
+    Object.assign(this, { getState, onPeerState, onPeerLeave, onStatus, onPeers, onWorldSnapshot, onWorldAuthority, getNpcs, onNpcs, onChat, WebSocketClass, RTCPeerConnectionClass });
     this.name = sanitizeName(name);
     this.peers = new Map(); this.channels = new Map();
     this.connected = false; this.transport = null; this.room = null; this.id = null;
@@ -124,6 +124,12 @@ export class MultiplayerSession {
     } else if (this.connected && (message.type === 'state' || message.type === 'peer-join')) {
       this._upsert(message.id, message.name, message.state);
     } else if (this.connected && message.type === 'peer-leave') this._remove(message.id);
+    else if (this.connected && message.type === 'chat') {
+      const id = validId(message.id) ? message.id : null;
+      const name = String(message.name || '').slice(0, 24) || 'Driver';
+      const text = String(message.text || '').slice(0, 60);
+      if (id && text) this.onChat({ id, name, text });
+    }
   }
 
   connectLan({ url, room, name = this.name }) {
@@ -308,6 +314,11 @@ export class MultiplayerSession {
         (this.pending !== pending && !pending.joined)) throw new Error('Invitation cancelled.');
     if (pending.joined) this._status('connected', `Hosting · ${this.peers.size + 1} drivers`);
     else this._status('connecting', 'Connecting to your friend…');
+  }
+
+  sendChat(text) {
+    if (!this.connected) return;
+    this._broadcast({ type: 'chat', id: this.id, name: this.name, text: String(text).slice(0, 60) });
   }
 
   sendState(raw) {

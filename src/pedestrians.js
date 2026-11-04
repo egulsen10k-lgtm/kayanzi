@@ -50,12 +50,24 @@ function sidewalkSurfaceAt(network, point) {
 }
 export class Pedestrians {
   constructor() { this.people = []; this.passengers = 0; this.network = null; this.density = 1; this.message = 'Korna çal: yakındaki yayaları çağır'; }
+  get populationCap() { return Math.min(24,Math.round(12*this.density)); }
+  setDensity(value) {
+    const number=Number(value);
+    this.density=Number.isFinite(number)?Math.max(0,Math.min(2,number)):1;
+    if(this.network&&this.lastCar)this.reset(this.network,this.lastCar,this.density);
+    else while(this.people.length>this.populationCap) {
+      let index=-1;for(let i=this.people.length-1;i>=0;i--)if(['idle','walking','scatter'].includes(this.people[i].state)){index=i;break;}
+      if(index<0)break;this.people.splice(index,1);
+    }
+    return this.density;
+  }
   clearNetwork() {
     this.network = null;
     this.people = [];
     this.passengers = 0;
     this.lastCarPoint = null;
     this.trunkOpen = 0;
+    this.lastCar=null;
   }
   reset(network, car, density = this.density) {
     const pursuers=this.network ? this.people.filter(person=>['chasing','trunk-approach','trunk-entering','trunk-rider'].includes(person.state)).map(person=>{
@@ -63,7 +75,8 @@ export class Pedestrians {
       const [x,y]=projectCoordinate(coordinate.lat,coordinate.lng,network.center);
       return {...person,x,y};
     }) : [];
-    this.network = network; this.people = []; this.lastCarPoint = null; this.density = Math.max(0, Math.min(2, Number(density) || 0));
+    this.network = network; this.people = []; this.lastCarPoint = null; this.lastCar=car;
+    const numericDensity=Number(density);this.density=Number.isFinite(numericDensity)?Math.max(0,Math.min(2,numericDensity)):1;
     const p = projectCoordinate(car.lat, car.lng, network.center);
     const candidates = [];
     for (const road of network.roads ?? []) {
@@ -85,12 +98,13 @@ export class Pedestrians {
     }
     candidates.sort((a,b)=>a.distance-b.distance);
     for (const candidate of candidates) {
+      if(this.people.length>=this.populationCap)break;
       if(this.people.some(n=>Math.hypot(n.x-candidate.point[0],n.y-candidate.point[1])<4.5))continue;
       const id=this.people.length;
       this.people.push({id,style:['goth','turkish-headscarf','casual','goth','turkish'][id%5],x:candidate.point[0],y:candidate.point[1],height:candidate.height,heading:candidate.heading,state:'idle',phase:0});
-      if(this.people.length>=Math.min(24,Math.round(20 * this.density)))break;
+      if(this.people.length>=this.populationCap)break;
     }
-    this.people=[...pursuers,...this.people].slice(0,24);
+    this.people=[...pursuers,...this.people].slice(0,Math.max(this.populationCap,pursuers.length));
   }
   highBeam(car) {
     if (!this.network || !car || !this.people.length) return 0;
@@ -116,7 +130,8 @@ export class Pedestrians {
     this.message=count ? `${count} kişi geliyor! Binmeleri için yavaşla.` : 'Yakında korna duyacak yaya yok.';
     return count;
   }
-  update(car, dt) {
+  update(car, dt, carSpeed = car.speed) {
+    this.lastCar=car;
     const capacity=seatCapacity(car.bmwModel);
     if(!car.roadNetwork) {this.people=[];this.network=null;this.passengers=0;this.lastCarPoint=null;return;}
     const boarded=this.people.filter(person=>person.state==='boarded');
@@ -168,6 +183,11 @@ export class Pedestrians {
           continue;
         }
       }
+      if(['idle','walking'].includes(person.state) && Math.abs(carSpeed)>25 && Math.hypot(person.x-p[0],person.y-p[1])<=8) {
+        person.state='scatter';
+        person.scatterTimer=3;
+        person.fleeAngle=(car.heading??0)+Math.PI+(Math.random()*2-1)*(130*Math.PI/180);
+      }
       if(person.state==='clinging') {
         const heading=car.heading ?? 0, side=person.gripSlot%2 ? 1 : -1, along=person.gripSlot<2 ? .65 : -.8;
         person.x=p[0]+Math.sin(heading)*along+Math.cos(heading)*side*1.25;
@@ -195,6 +215,16 @@ export class Pedestrians {
       if(person.state==='recovering') {
         person.recoveryTime+=dt;
         if(person.recoveryTime>=1.2){person.state='idle';person.fall=null;person.recoveryPoint=null;}
+        continue;
+      }
+      if(person.state==='scatter') {
+        person.heading=person.fleeAngle??person.heading??0;
+        person.x+=Math.sin(person.heading)*2.2*dt;
+        person.y+=Math.cos(person.heading)*2.2*dt;
+        person.height=roadSurfaceAt(this.network,[person.x,person.y],person.height)??.08;
+        person.phase+=dt*10;
+        person.scatterTimer=Math.max(0,(person.scatterTimer??0)-dt);
+        if(person.scatterTimer<=0)person.state='idle';
         continue;
       }
       if(person.state==='idle') {
@@ -229,7 +259,7 @@ export class Pedestrians {
       if(person.state!=='chasing')continue;
       const dx=p[0]-person.x,dy=p[1]-person.y,distance=Math.hypot(dx,dy);
       if(distance<2.3 && Math.abs(car.speed)<8) {
-        if(this.passengers<capacity-1){this.passengers++;person.state='boarded';this.message=`Yolcu bindi · ${this.passengers+1}/${capacity} kişi`;} 
+        if(this.passengers<capacity-1){this.passengers++;person.state='boarded';this.message=`Yolcu bindi · ${this.passengers+1}/${capacity} kişi`;this.boardEvent={lat:person.lat??0,lng:person.lng??0,count:this.passengers+1};}
         else {
           const trunkSlots=new Set(this.people.filter(n=>['trunk-approach','trunk-entering','trunk-rider'].includes(n.state)).map(n=>n.trunkSlot));
           const trunkSlot=[0,1].find(slot=>!trunkSlots.has(slot));

@@ -2,7 +2,8 @@ import { Pedestrians, seatCapacity } from './pedestrians.js';
 import { PedestrianView } from './pedestrian-view.js';
 import { TrafficManager } from './traffic.js';
 import { bindTiltInput } from './tilt-input.js';
-import { bindDrivingInput } from './driving-input.js';
+import { bindDrivingInput, GamepadInput, updateWithGamepad } from './driving-input.js';
+import { PauseState } from './pause-state.js';
 import { bindSteeringWheelInput } from './steering-wheel-input.js';
 import { assetUrl } from './resource-urls.js';
 import { CarPhysics } from './physics.js';
@@ -18,7 +19,7 @@ import { createRobotModel, RobotRunnerView } from './robot-runner-view.js';
 import { animateRobot } from './robot-animation.js';
 import { RobotJump } from './robot-jump.js';
 import { ShortCodeMultiplayerSession } from './multiplayer-short-code.js';
-import { mountMultiplayerUI } from './multiplayer-ui.js';
+import { mountMultiplayerUI, mountPlayerCountChip } from './multiplayer-ui.js';
 import { NpcSync, serializeNpcs, applyNpcs } from './npc-sync.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -40,6 +41,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const stopHorn = () => audio.stopHorn();
   let routeGuide = null;
   let routeGeneration = 0;
+  let routeCompletionShown=false;
+  let trafficHornCooldown=0;
   function endRoute() {
     routeGeneration++;
     routeGuide = null;
@@ -49,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
     mapController.setRoute(null);
     document.getElementById('akanzi-hud').hidden = true;
     document.getElementById('akanzi-end').hidden = true;
+    document.getElementById('akanzi-completion').hidden=true;routeCompletionShown=false;
     const button=document.getElementById('akanzi-start');button.disabled=false;button.textContent='Drive Akanzi';
     const oldRibbon=visualizer.roadGroup.getObjectByName('akanzi-route');
     if(oldRibbon){oldRibbon.geometry.dispose();oldRibbon.material.dispose();oldRibbon.removeFromParent();}
@@ -72,6 +76,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const roadStatusDot = document.getElementById('road-status-dot');
   const roadStatusText = document.getElementById('road-status-text');
 
+  const driveStatusBanner = document.getElementById('drive-status-banner');
+  let driveStatusTimer;
+  const showDriveStatus = message => {
+    if (!driveStatusBanner || !message) return;
+    driveStatusBanner.textContent = message;
+    driveStatusBanner.hidden = false;
+    clearTimeout(driveStatusTimer);
+    driveStatusTimer = setTimeout(() => { driveStatusBanner.hidden = true; }, 3200);
+  };
+
   canvasContainer.addEventListener('roadstatus', (e) => {
     const detail = e.detail || {};
     if (!roadStatusDot || !roadStatusText) return;
@@ -86,6 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'loading':
         roadStatusDot.style.background = '#eab308';
         roadStatusText.textContent = physics.roadNetwork ? 'Loading next district…' : 'Loading roads · car held safely';
+        showDriveStatus(physics.roadNetwork ? 'Loading the next mapped district…' : 'Loading mapped roads…');
         break;
       case 'ready':
         roadStatusDot.style.background = '#22c55e';
@@ -112,6 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
           }
           physics.setRoadNetwork(network);
+          mapController.addFuelStations(network);
           if (!npcSync?.isFollower && pedestrians.network !== network) {
             pedestrians.reset(network, physics, pedestrians.density);
             trafficManager.reset(network, physics);
@@ -131,6 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
       case 'error': {
         roadStatusDot.style.background = '#ff3366';
+        showDriveStatus(detail.message || 'Road data unavailable · retrying safely');
         roadStatusText.textContent = physics.roadNetwork ? 'Next district unavailable · staying on loaded roads' : 'Roads unavailable · car held safely';
         roadStatusText.title = detail.message || 'The map service could not be reached. Retry or return to Munich.';
         const retryBtn = document.createElement('button');
@@ -188,7 +205,8 @@ document.addEventListener('DOMContentLoaded', () => {
     onPeers: (peers) => multiplayerUI?.updatePeers(peers),
     getNpcs: () => serializeNpcs({ pedestrians, traffic: trafficManager }),
     onNpcs: (snapshot) => applyNpcs(snapshot, { pedestrians, traffic: trafficManager }),
-    onWorldAuthority: () => npcSync?.syncRole(physics)
+    onWorldAuthority: () => npcSync?.syncRole(physics),
+    onChat: ({ name, text }) => showChatBubble(name, text)
   });
   npcSync = new NpcSync({ session: multiplayer, trafficManager, pedestrians, pedestrianView, scene: visualizer.scene });
   multiplayerUI = mountMultiplayerUI({
@@ -205,7 +223,13 @@ document.addEventListener('DOMContentLoaded', () => {
       visualizer.loadRoadsAt(state.lat, state.lng).catch(() => {});
     }
   });
-  window.addEventListener('pagehide', () => multiplayer.leave());
+  const playerCountChip = mountPlayerCountChip(
+    document.getElementById('hud-player-count'), multiplayer
+  );
+  window.addEventListener('pagehide', () => {
+    playerCountChip.destroy();
+    multiplayer.leave();
+  });
 
   // Ignition Start Overlay & Real Road Network Loading
   const startOverlay = document.getElementById('start-overlay');
@@ -218,6 +242,18 @@ document.addEventListener('DOMContentLoaded', () => {
   song.addEventListener('ended',songState);
   document.addEventListener('visibilitychange',()=>{if(document.hidden){song.pause();songState();}});
   const densitySelect = document.getElementById('traffic-density');
+  const pedestrianDensityInput=document.getElementById('pedestrian-density');
+  const pedestrianDensityValue=document.getElementById('pedestrian-density-value');
+  let savedPedDensity=null;try{const rawPedDensity=localStorage.getItem('bmw-ped-density');if(rawPedDensity!==null)savedPedDensity=Number(rawPedDensity);}catch{}
+  const initialPedDensity=Number.isFinite(savedPedDensity)&&savedPedDensity>=0&&savedPedDensity<=2?savedPedDensity:1;
+  pedestrians.setDensity(initialPedDensity);
+  if(pedestrianDensityInput)pedestrianDensityInput.value=String(initialPedDensity);
+  if(pedestrianDensityValue)pedestrianDensityValue.value=initialPedDensity.toFixed(2);
+  pedestrianDensityInput?.addEventListener('input',event=>{
+    const value=pedestrians.setDensity(Number(event.target.value));
+    if(pedestrianDensityValue)pedestrianDensityValue.value=value.toFixed(2);
+    try{localStorage.setItem('bmw-ped-density',String(value));}catch{}
+  });
   const nightToggle = document.getElementById('night-mode');
   const beamsToggle = document.getElementById('high-beams');
   densitySelect?.addEventListener('change', e => {
@@ -227,6 +263,61 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   nightToggle?.addEventListener('change', e => visualizer.setNightMode(e.target.checked));
   beamsToggle?.addEventListener('change', e => visualizer.setHighBeams(e.target.checked));
+
+  // Weather cycle button
+  let _weatherIndex = 0;
+  const _weatherStates = ['clear', 'rain', 'fog'];
+  const _weatherLabels = ['☀ Clear', '🌧 Rain', '🌫 Fog'];
+  const weatherBtn = document.getElementById('weather-cycle-btn');
+  const applyWeather = () => {
+    const type = _weatherStates[_weatherIndex];
+    visualizer.setWeather(type);
+    physics.setWeatherGrip(visualizer.weatherGrip);
+    if (weatherBtn) weatherBtn.textContent = _weatherLabels[_weatherIndex];
+  };
+  weatherBtn?.addEventListener('click', () => { _weatherIndex = (_weatherIndex + 1) % _weatherStates.length; applyWeather(); });
+
+  // Time-of-day cycle button
+  let autoDay = false;
+  let gameHour = 14;
+  const _timeStates = ['day', 'night', 'auto'];
+  let _timeIndex = 0;
+  const timeBtn = document.getElementById('time-cycle-btn');
+  const applyTime = () => {
+    if (_timeStates[_timeIndex] === 'day') { autoDay = false; gameHour = 12; visualizer.setTimeOfDay(12); if (timeBtn) timeBtn.textContent = '☀ Day'; }
+    else if (_timeStates[_timeIndex] === 'night') { autoDay = false; gameHour = 22; visualizer.setTimeOfDay(22); if (timeBtn) timeBtn.textContent = '🌙 Night'; }
+    else { autoDay = true; if (timeBtn) timeBtn.textContent = '⏱ Auto'; }
+  };
+  timeBtn?.addEventListener('click', () => { _timeIndex = (_timeIndex + 1) % _timeStates.length; applyTime(); });
+
+  // Camera cycle button
+  const _cameraModes = ['chase', 'hood', 'cockpit', 'reverse', 'wide', 'aerial', 'cinematic', 'bonnet'];
+  const _cameraLabels = ['📷 Chase', '📷 Hood', '📷 Cockpit', '📷 Reverse', '📷 Wide', '📷 Aerial', '📷 Cinematic', '📷 Bonnet'];
+  let _cameraIndex = 0;
+  const camCycleBtn = document.getElementById('camera-cycle-btn');
+  const cycleCamera = direction => {
+    _cameraIndex = (_cameraIndex + direction + _cameraModes.length) % _cameraModes.length;
+    visualizer.setCameraMode(_cameraModes[_cameraIndex]);
+    if (camCycleBtn) camCycleBtn.textContent = _cameraLabels[_cameraIndex];
+    document.querySelectorAll('[data-camera-mode]').forEach(button=>{
+      const selected=button.dataset.cameraMode===_cameraModes[_cameraIndex];
+      button.classList.toggle('active',selected);button.setAttribute('aria-pressed',String(selected));
+    });
+  };
+  camCycleBtn?.addEventListener('click', () => cycleCamera(1));
+  const controllerStatus=document.getElementById('controller-status');
+  let controllerStatusTimer=0;
+  const gamepadInput=new GamepadInput({
+    onConnectionChange:connected=>{
+      clearTimeout(controllerStatusTimer);
+      controllerStatus.hidden=!connected;
+      if(connected)controllerStatusTimer=setTimeout(()=>{controllerStatus.hidden=true;},3000);
+    },
+    onHornStart:()=>{if(!runnerActive)startHorn();},
+    onHornEnd:()=>stopHorn(),
+    onCameraCycle:direction=>{if(!runnerActive)cycleCamera(direction);}
+  });
+  let gamepadState=gamepadInput.state;
 
   startBtn.addEventListener('click', () => {
     audio.init();
@@ -256,6 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const enabled = !visualizer.previewActive;
     if (!visualizer.setPhotorealPreview(enabled)) return;
     physics.speed = 0; physics.keys = {}; physics.throttle = 0;
+    if (!enabled) visualizer.introActive = false;
     previewButton.textContent = enabled ? 'Return to driving' : 'Open 3D preview';
     previewButton.setAttribute('aria-pressed',String(enabled));
     previewAttribution.hidden = !enabled;
@@ -302,6 +394,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }));
       if(generation!==routeGeneration)return;
       setWorldRoute(route,startData);visualizer.roadCache.clear();visualizer.routeData=route;routeGuide=createRouteGuide(route);
+      routeTimer=0;
+      routeCompletionShown=false;document.getElementById('akanzi-completion').hidden=true;
       mapController.setRoute(route);
       document.getElementById('akanzi-hud').hidden=false;
       document.getElementById('akanzi-end').hidden=false;
@@ -325,6 +419,17 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('akanzi-end').addEventListener('click',()=>{
     endRoute();physics.setRoadNetwork(null);physics.speed=0;
     visualizer.loadRoadsAt(physics.lat,physics.lng).catch(()=>{});
+  });
+  document.getElementById('akanzi-drive-again').addEventListener('click',async()=>{
+    if(!routeGuide?.restart){document.getElementById('akanzi-completion').hidden=true;document.getElementById('akanzi-start').click();return;}
+    const guide=routeGuide,start=guide.data.stops[0];guide.restart();routeTimer=0;routeCompletionShown=false;
+    document.getElementById('akanzi-completion').hidden=true;
+    physics.teleport(start.lat,start.lng);mapController.teleport(start.lat,start.lng);
+    const next=guide.data.coordinates[1],offset=projectCoordinate(next[1],next[0],start);
+    physics.heading=Math.atan2(offset[0],offset[1]);
+    document.getElementById('akanzi-progress').textContent='Akanzi · Ready';
+    document.getElementById('akanzi-next').textContent=`Next: ${guide.data.stops[1]?.name??'Pendik Sahil'}`;
+    await visualizer.loadRoadsAt(start.lat,start.lng).catch(()=>{});
   });
 
   // Settings Panel & Driving Style Switching
@@ -467,8 +572,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const nitroSources = new Set();
   const syncNitro = () => {
     const active = nitroSources.size > 0 && !nitroButton.disabled;
-    physics.setNitroActive(active);
-    nitroButton.setAttribute('aria-pressed', String(active));
+    if (active) physics.activateNitro();
+    else physics.setNitroActive(false);
+    nitroButton.setAttribute('aria-pressed', String(active && physics.nitroActive));
   };
   const releaseNitro = () => {
     nitroSources.clear();
@@ -487,6 +593,13 @@ document.addEventListener('DOMContentLoaded', () => {
       syncNitro();
     });
   window.addEventListener('keydown', event => {
+    if (event.code === 'KeyN') {
+      const active = document.activeElement;
+      if (active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)) return;
+      event.preventDefault();
+      physics.activateNitro();
+      return;
+    }
     if (event.code !== 'ShiftLeft' && event.code !== 'ShiftRight') return;
     const active = document.activeElement;
     if (active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)) return;
@@ -524,6 +637,22 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   });
+
+  const qualitySelect = document.getElementById('quality-tier');
+  const performanceStatus = document.getElementById('performance-status');
+  const cameraShakeToggle = document.getElementById('camera-shake-toggle');
+  const applyQuality = tier => {
+    const selected = visualizer.setQualityTier(tier);
+    if (qualitySelect && qualitySelect.value !== selected) qualitySelect.value = selected;
+    if (performanceStatus) {
+      performanceStatus.textContent = `Graphics: ${selected[0].toUpperCase()}${selected.slice(1)}`;
+      performanceStatus.hidden = false;
+      clearTimeout(applyQuality.timer);
+      applyQuality.timer = setTimeout(() => { performanceStatus.hidden = true; }, 1800);
+    }
+  };
+  qualitySelect?.addEventListener('change', event => applyQuality(event.currentTarget.value));
+  cameraShakeToggle?.addEventListener('change', event => visualizer.setCameraShakeEnabled(event.currentTarget.checked));
 
   document.querySelectorAll('[data-camera-mode]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -708,6 +837,12 @@ document.addEventListener('DOMContentLoaded', () => {
       mapContainer.style.display = e.target.checked ? 'block' : 'none';
     });
   }
+  document.getElementById('minimap-zoom-in')?.addEventListener('click', () => {
+    mapController.setMinimapZoom(mapController.minimapZoom + .5);
+  });
+  document.getElementById('minimap-zoom-out')?.addEventListener('click', () => {
+    mapController.setMinimapZoom(mapController.minimapZoom - .5);
+  });
 
   const trailToggle = document.getElementById('trail-toggle');
   if (trailToggle) {
@@ -727,6 +862,51 @@ document.addEventListener('DOMContentLoaded', () => {
   const hudGear = document.getElementById('hud-gear');
   const hudRpmBar = document.getElementById('hud-rpm-bar');
 
+  const driftToast = document.createElement('div');
+  driftToast.id = 'drift-toast';
+  Object.assign(driftToast.style, {
+    position:'absolute', bottom:'88px', left:'50%', transform:'translateX(-50%)',
+    background:'#102634dc', border:'1px solid #75dce9', borderRadius:'12px',
+    color:'white', font:'700 13px system-ui', padding:'8px 18px',
+    pointerEvents:'none', zIndex:'25', opacity:'0', transition:'opacity .25s'
+  });
+  driftToast.setAttribute('role','status');driftToast.setAttribute('aria-live','polite');
+  document.getElementById('main-viewport')?.appendChild(driftToast);
+  let driftToastTimer = 0;
+
+  const stopToast = document.createElement('div');
+  stopToast.id = 'stop-toast';
+  stopToast.setAttribute('role', 'status');
+  stopToast.setAttribute('aria-live', 'polite');
+  Object.assign(stopToast.style, {
+    position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
+    background:'#102634ee', border:'1px solid #75dce9', borderRadius:'16px',
+    color:'white', font:'700 16px system-ui', padding:'12px 28px',
+    pointerEvents:'none', zIndex:'26', opacity:'0', transition:'opacity .3s',
+    textAlign:'center', whiteSpace:'nowrap', boxShadow:'0 8px 24px #0009'
+  });
+  document.getElementById('main-viewport')?.appendChild(stopToast);
+  let stopToastTimer = 0;
+
+  const chatBubbles = [];
+  function showChatBubble(name, text) {
+    const bubble = document.createElement('div');
+    bubble.textContent = `${String(name || 'Driver').slice(0,24)}: ${String(text).slice(0,60)}`;
+    Object.assign(bubble.style, { position:'absolute', top:`${72 + chatBubbles.length * 42}px`, right:'14px', zIndex:'26', background:'#102634dc', border:'1px solid #75dce9', borderRadius:'12px', color:'white', font:'700 12px system-ui', padding:'8px 12px', maxWidth:'260px' });
+    bubble.setAttribute('role','status');
+    bubble.setAttribute('aria-live','polite');
+    document.getElementById('main-viewport')?.appendChild(bubble);
+    chatBubbles.push(bubble);
+    while (chatBubbles.length > 3) chatBubbles.shift()?.remove();
+    setTimeout(() => { bubble.remove(); const index=chatBubbles.indexOf(bubble); if(index>=0) chatBubbles.splice(index,1); }, 4000);
+  }
+  const boardToast = document.createElement('div');
+  Object.assign(boardToast.style, { position:'absolute', top:'72px', left:'50%', transform:'translateX(-50%)', zIndex:'25', background:'#102634dc', border:'1px solid #75dce9', borderRadius:'12px', color:'white', font:'700 13px system-ui', padding:'8px 16px', opacity:'0', transition:'opacity .25s', pointerEvents:'none' });
+  boardToast.setAttribute('role','status');
+  boardToast.setAttribute('aria-live','polite');
+  document.getElementById('main-viewport')?.appendChild(boardToast);
+  let boardToastTimer = 0;
+
   const mainViewport = document.getElementById('main-viewport');
   const modeStyle = document.createElement('style');
   modeStyle.textContent = `
@@ -744,6 +924,8 @@ document.addEventListener('DOMContentLoaded', () => {
     .runner-hint[hidden]{display:none}
     .runner-controls{position:absolute;bottom:calc(20px + env(safe-area-inset-bottom));left:0;right:0;display:flex;justify-content:center;gap:14px;padding:0 12px}
     .runner-controls button{min-width:76px;min-height:68px!important;font-size:17px!important;background:#0c5068e8!important}
+    .runner-trick-toast{position:absolute;left:50%;bottom:calc(112px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 18px;border:1px solid #75dce9;border-radius:12px;background:#102634dc;color:white;font:800 15px system-ui;box-shadow:0 8px 24px #0007;opacity:0;transition:opacity .2s}
+    .runner-trick-toast[hidden]{display:none}
     @media(max-width:800px){#transform-controls{top:168px;right:10px;width:112px}#transform-controls button{font-size:11px;padding:8px 5px}.runner-controls button{flex:1;max-width:120px}}
     @media(max-height:500px){#transform-controls{top:108px}.runner-hint{top:17%}.runner-controls{bottom:8px}.runner-controls button{min-height:52px!important}}
   `;
@@ -756,6 +938,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="runner-ui" hidden>
       <div class="runner-top"><div class="runner-stats" aria-live="polite"><div>TRUCK RUN · ROBOT</div><div id="runner-score">0 m · 0 rescued</div><div id="runner-lives">♥ ♥ ♥</div></div><button id="runner-exit" type="button">↩ Return to world</button></div>
       <div class="runner-hint" id="runner-hint">Jump onto truck roofs and meet the blonde adults.<br>← → change lanes · Space / ↑ jump</div>
+      <div id="runner-trick-toast" class="runner-trick-toast" role="status" aria-live="polite" hidden></div>
       <div class="runner-controls" role="group" aria-label="Truck run controls"><button type="button" data-runner-action="left" aria-label="Move left">←</button><button type="button" data-runner-action="jump" aria-label="Jump">JUMP</button><button type="button" data-runner-action="right" aria-label="Move right">→</button></div>
     </div>`);
   const transformButton=document.getElementById('transform-button');
@@ -764,12 +947,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const runnerHint=document.getElementById('runner-hint');
   const runnerScore=document.getElementById('runner-score');
   const runnerLives=document.getElementById('runner-lives');
+  const runnerTrickToast=document.getElementById('runner-trick-toast');
   const worldRobot=createRobotModel(visualizer.currentColor);
   worldRobot.visible=false;
   visualizer.scene.add(worldRobot);
   const robotJump=new RobotJump();
   const spaceButton=document.querySelector('[data-drive-key="Space"]');
-  let robotMode=false,runnerActive=false,runnerGame=null,runnerView=null,hintTimer=0;
+  let robotMode=false,runnerActive=false,runnerGame=null,runnerView=null,hintTimer=0,runnerTrickToastTimer=0;
+  const hudGearChip=document.getElementById('hud-gear-chip');
+  let lastHudGearKey=null;
   const setRobotMode=enabled=>{
     robotMode=enabled;
     robotJump.reset();
@@ -802,17 +988,56 @@ document.addEventListener('DOMContentLoaded', () => {
     runnerGame=new RunnerGame();
     runnerView??=new RobotRunnerView(visualizer.renderer,canvasContainer,visualizer.currentColor);
     runnerView.reset();
-    runnerActive=true;runnerUi.hidden=false;mainViewport.classList.add('runner-active');
+    runnerActive=true;runnerUi.hidden=false;mainViewport.classList.add('runner-active');hudGearChip.hidden=true;pauseToggle.hidden=true;
     runnerHint.hidden=false;runnerHint.textContent='Jump onto truck roofs and meet the blonde adults. ← → change lanes · Space / ↑ jump';
     hintTimer=3.5;
     audio.update(800,0,0,false,{model:physics.bmwModel,gear:1});
   });
   const exitRunner=()=>{
-    runnerActive=false;runnerUi.hidden=true;mainViewport.classList.remove('runner-active');
+    runnerActive=false;runnerUi.hidden=true;mainViewport.classList.remove('runner-active');pauseToggle.hidden=false;
+    hudGearChip.hidden=false;
     robotJump.reset();
     driveInput.clear();lastTime=performance.now();
+    visualizer.introActive=false;
   };
   document.getElementById('runner-exit').addEventListener('click',exitRunner);
+  const pauseOverlay=document.getElementById('pause-overlay');
+  const pauseToggle=document.getElementById('pause-toggle');
+  const pauseResume=document.getElementById('pause-resume');
+  const pauseState=new PauseState(paused=>{
+    pauseOverlay.hidden=!paused;
+    pauseToggle.setAttribute('aria-pressed',String(paused));
+    pauseToggle.setAttribute('aria-label',paused?'Resume driving':'Pause driving');
+    pauseToggle.textContent=paused?'▶ Resume':'Ⅱ Pause';
+    if(paused){
+      driveInput.clear();releaseNitro();stopHorn();
+      const now=audio.ctx?.currentTime??0;
+      audio.engineGain?.gain.setTargetAtTime(0,now,.04);
+      for(const voice of audio.remoteVoices.values())voice.gain.gain.setTargetAtTime(0,now,.04);
+      pauseResume.focus();
+    }else{
+      syncTimer=0;lastTime=performance.now();
+      multiplayer.sendState({...physics.serializeState(),robot:robotMode});
+      pauseToggle.focus();
+    }
+  });
+  const resumeWorld=()=>pauseState.set(false);
+  pauseToggle.addEventListener('click',()=>{if(!runnerActive)pauseState.toggle();});
+  pauseResume.addEventListener('click',resumeWorld);
+  document.getElementById('pause-reset-road').addEventListener('click',()=>{
+    document.getElementById('reset-road-btn')?.click();
+    resumeWorld();
+  });
+  document.getElementById('pause-exit-menu').addEventListener('click',()=>{
+    resumeWorld();
+    driveInput.clear();physics.speed=0;
+    multiplayer.sendState({...physics.serializeState(),robot:robotMode});
+    startOverlay.style.display='flex';startOverlay.style.opacity='1';
+  });
+  window.addEventListener('keydown',event=>{
+    if(event.code!=='Escape'||runnerActive)return;
+    event.preventDefault();event.stopImmediatePropagation();pauseState.toggle();
+  },true);
   document.querySelectorAll('[data-runner-action]').forEach(button=>button.addEventListener('pointerdown',event=>{
     event.preventDefault();runnerAction(button.dataset.runnerAction);
   }));
@@ -830,7 +1055,9 @@ document.addEventListener('DOMContentLoaded', () => {
   visualizer.renderer.domElement.addEventListener('pointerup',event=>{
     if(!runnerActive||!swipeStart)return;
     const dx=event.clientX-swipeStart.x,dy=event.clientY-swipeStart.y;
-    if(Math.abs(dx)>35&&Math.abs(dx)>Math.abs(dy))runnerAction(dx<0?'left':'right');
+    if(Math.abs(dx)>35&&Math.abs(dx)>Math.abs(dy)){
+      runnerAction(dx<0?'left':'right');runnerGame?.trickInput(dx<0?'flip':'spin');
+    }
     else if(dy< -30)runnerAction('jump');
     swipeStart=null;
   });
@@ -909,12 +1136,58 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastTime = performance.now();
   let syncTimer = 0;
   let routeTimer = 0;
+  let crowdScanTimer=1;
   let mapUpdateTimer = 0;
   let instrumentTimer = 0;
+  let speedCamFlash = 0;
+  let tickets = 0;
+  let sparkSpawnTimer = 0;
+  const speedCamBanner = document.createElement('div');
+  Object.assign(speedCamBanner.style, {
+    position:'fixed', top:'18px', left:'50%', transform:'translateX(-50%)',
+    background:'#b00020', color:'#fff', fontWeight:'bold', fontSize:'15px',
+    padding:'8px 20px', borderRadius:'6px', zIndex:'27', pointerEvents:'none',
+    display:'none', whiteSpace:'nowrap'
+  });
+  speedCamBanner.setAttribute('role','alert');
+  document.body.appendChild(speedCamBanner);
+  const ticketChip = document.createElement('div');
+  Object.assign(ticketChip.style, {
+    position:'fixed', top:'18px', right:'80px',
+    background:'rgba(0,0,0,.55)', color:'#fff', fontSize:'12px',
+    padding:'4px 9px', borderRadius:'10px', zIndex:'27', pointerEvents:'none',
+    display:'none'
+  });
+  document.body.appendChild(ticketChip);
+  ticketChip.setAttribute('role','status');ticketChip.setAttribute('aria-live','polite');
+
+  const stadiumDistance=()=>{
+    const network=physics.roadNetwork;if(!network?.center)return 120;
+    const point=projectCoordinate(physics.lat,physics.lng,network.center);if(!point)return 120;
+    let nearest=120;
+    for(const area of network.sceneryAreas??[]) {
+      if(area.tags?.leisure!=='stadium'&&area.tags?.amenity!=='stadium')continue;
+      const points=area.points??[];if(points.length<3)continue;
+      let inside=false,min=Infinity;
+      for(let i=0,j=points.length-1;i<points.length;j=i++){
+        const [xi,yi]=points[i],[xj,yj]=points[j];
+        if((yi>point[1])!==(yj>point[1])&&point[0]<(xj-xi)*(point[1]-yi)/(yj-yi||1e-9)+xi)inside=!inside;
+        const dx=xj-xi,dy=yj-yi,t=Math.max(0,Math.min(1,((point[0]-xi)*dx+(point[1]-yi)*dy)/(dx*dx+dy*dy||1)));
+        min=Math.min(min,Math.hypot(point[0]-xi-dx*t,point[1]-yi-dy*t));
+      }
+      nearest=Math.min(nearest,inside?0:min);
+      if(nearest===0)break;
+    }
+    return nearest;
+  };
 
   function gameLoop(currentTime) {
     const dt = Math.min(0.1, (currentTime - lastTime) / 1000);
     lastTime = currentTime;
+    if(pauseState.shouldSkipFrame(runnerActive)){requestAnimationFrame(gameLoop);return;}
+    gamepadState=gamepadInput.poll();
+    crowdScanTimer-=dt;
+    if(crowdScanTimer<=0){crowdScanTimer=1;audio.setCrowdProximity(stadiumDistance());}
     npcSync.syncRole(physics);
     audio.updateRemotePeers?.([...visualizer.peerCars].map(([peerId, peer]) => ({ ...peer.state, peerId })), { lat: physics.lat, lng: physics.lng });
 
@@ -928,7 +1201,17 @@ document.addEventListener('DOMContentLoaded', () => {
       npcSync.update(dt, physics, {hidden:true});
       if (!multiplayerPanelOpen && !mobileMenuOpen) runnerGame.update(dt);
       runnerView.update(runnerGame,dt);
-      runnerScore.textContent=`${Math.floor(runnerGame.distance)} m · ${runnerGame.collected} met`;
+      const runnerBest = (() => { try { return Number(localStorage.getItem('bmw-runner-best')) || 0; } catch { return 0; } })();
+      const runnerDist = Math.floor(runnerGame.distance);
+      if (!runnerGame.over && runnerDist > runnerBest) { try { localStorage.setItem('bmw-runner-best', runnerDist); } catch {} }
+      const bestLabel = runnerBest > 0 ? ` 🏆 BEST: ${runnerBest}m` : '';
+      const comboEvent=runnerGame.comboChangeEvent;runnerGame.comboChangeEvent=null;
+      const displayedCombo=comboEvent?.combo??runnerGame.combo;
+      const comboLabel=displayedCombo>1?` · ×${displayedCombo} COMBO`:'';
+      runnerScore.textContent=`LVL ${runnerGame.level} · ${runnerDist} m${comboLabel} · ${runnerGame.collected} met${bestLabel}`;
+      const trickEvent=runnerGame.trickEvent;runnerGame.trickEvent=null;
+      if(trickEvent){runnerTrickToast.textContent=`✨ TRICK +${trickEvent.bonus}pts`;runnerTrickToast.hidden=false;runnerTrickToast.style.opacity='1';runnerTrickToastTimer=1.6;}
+      if(runnerTrickToastTimer>0){runnerTrickToastTimer-=dt;if(runnerTrickToastTimer<=0){runnerTrickToast.style.opacity='0';setTimeout(()=>{if(runnerTrickToast.style.opacity==='0')runnerTrickToast.hidden=true;},220);}}
       runnerLives.textContent='♥ '.repeat(runnerGame.lives).trim()||'No hearts';
       if(runnerGame.over){runnerHint.hidden=false;runnerHint.textContent='Run over · tap a control to restart';}
       else if(hintTimer>0){hintTimer-=dt;if(hintTimer<=0)runnerHint.hidden=true;}
@@ -937,22 +1220,111 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     physics.setPeerCars?.([...visualizer.peerCars].map(([peerId, peer]) => ({ ...peer.state, peerId })));
-    if (!visualizer.previewActive && !multiplayerPanelOpen && !mobileMenuOpen) physics.update(dt);
+    if (!visualizer.previewActive && !multiplayerPanelOpen && !mobileMenuOpen) updateWithGamepad(physics,gamepadState,()=>physics.update(dt));
     if (physics.impactEvent && physics.impactEvent.timestamp) {
       audio.triggerImpact(physics.impactEvent.speed);
+      visualizer.triggerImpact(physics.impactEvent.speed);
       physics.impactEvent = null;
+    }
+    if (physics.driftEndEvent) {
+      const { score, combo } = physics.driftEndEvent;
+      physics.driftEndEvent = null;
+      let bestCombo = 0; try { bestCombo = Number(localStorage.getItem('bmw-drift-best')) || 0; } catch {}
+      const beaten = combo > bestCombo;
+      if (beaten) { try { localStorage.setItem('bmw-drift-best', combo); } catch {} }
+      driftToast.textContent = `+${score} pts · combo ×${combo}${beaten ? ' 🏆 BEST!' : ''}`;
+      driftToast.style.opacity = '1';
+      driftToastTimer = 1.5;
+    }
+    if (driftToastTimer > 0) {
+      driftToastTimer -= dt;
+      if (driftToastTimer <= 0) driftToast.style.opacity = '0';
+    }
+    if (pedestrians.boardEvent) {
+      const { count } = pedestrians.boardEvent;
+      pedestrians.boardEvent = null;
+      boardToast.textContent = `🎉 +1 passenger · ${count} aboard`;
+      boardToast.style.opacity = '1';
+      boardToastTimer = 1.5;
+      audio.burst({ frequency: 880, volume: 0.12, duration: 0.08 });
+      audio.burst({ frequency: 1100, volume: 0.08, duration: 0.06, delay: 0.09 });
+    }
+    if (boardToastTimer > 0) {
+      boardToastTimer -= dt;
+      if (boardToastTimer <= 0) boardToast.style.opacity = '0';
+    }
+    // Speed-camera radar checks and drift sparks.
+    const roadSigns = trafficManager.signs;
+    const radars = roadSigns?.getRadars?.() ?? [];
+    const carPoint = physics.roadNetwork?.center ? projectCoordinate(physics.lat, physics.lng, physics.roadNetwork.center) : null;
+    const speedLimit = carPoint && roadSigns?.getNearestLimit ? roadSigns.getNearestLimit({ x: carPoint[0], y: carPoint[1], heading: physics.heading, roadHeight: physics.roadHeight, currentEdge: physics.currentEdge, roadNetwork: physics.roadNetwork }) : 50;
+    const nearRadar = carPoint && radars.some(r => Math.hypot(carPoint[0] - r.x, carPoint[1] - r.y) <= 30);
+    if (nearRadar && Math.abs(physics.speed) > speedLimit * 1.15 && speedCamFlash <= 0) {
+      speedCamFlash = 1.5;
+      tickets++;
+      ticketChip.textContent = `🎫 ${tickets}`;
+      ticketChip.style.display = 'block';
+    }
+    if (speedCamFlash > 0) {
+      speedCamFlash -= dt;
+      speedCamBanner.textContent = `📷 SPEED CAMERA — ${Math.round(Math.abs(physics.speed))} km/h in ${Math.round(speedLimit)} zone`;
+      speedCamBanner.style.display = 'block';
+      speedCamBanner.style.opacity = Math.floor(speedCamFlash * 8) % 2 === 0 ? '1' : '0';
+      if (speedCamFlash <= 0) speedCamBanner.style.display = 'none';
+    }
+    if (physics.handbrake && Math.abs(physics.speed) > 20 && physics.isDrifting) {
+      sparkSpawnTimer -= dt;
+      if (sparkSpawnTimer <= 0) {
+        sparkSpawnTimer = .06;
+        visualizer.spawnSparks(visualizer.carGroup.position, 3);
+      }
+    } else sparkSpawnTimer = 0;
+    // Auto day/night clock
+    if (autoDay && !visualizer.previewActive) {
+      gameHour = (gameHour + dt * (24 / 600)) % 24;
+      visualizer.setTimeOfDay(gameHour);
     }
     routeTimer += dt;
     if (routeGuide && routeTimer > .2) {
+      const routeDelta=routeTimer;
       routeTimer=0;
-      const guidance=routeGuide.update(physics.lat,physics.lng);
-      document.getElementById('akanzi-progress').textContent=guidance.complete?'Akanzi complete · Pendik Sahil':`Akanzi · ${(guidance.remaining/1000).toFixed(1)} km remaining`;
+      const guidance=routeGuide.update(physics.lat,physics.lng,Math.abs(physics.speed)/3.6,routeDelta);
+      const eta=guidance.etaSeconds<90?`${Math.round(guidance.etaSeconds)} s`:`${Math.round(guidance.etaSeconds/60)} min`;
+      document.getElementById('akanzi-progress').textContent=guidance.complete?'Akanzi complete · Pendik Sahil':`Akanzi · ${(guidance.remaining/1000).toFixed(1)} km · ETA ${eta}`;
       document.getElementById('akanzi-next').textContent=guidance.complete?'You drove the full coastal route.':`Next: ${guidance.nextStop}`;
       document.getElementById('akanzi-instruction').textContent=guidance.instruction;
+      if(guidance.complete&&!routeCompletionShown) {
+        routeCompletionShown=true;
+        const elapsed=Math.max(0,Math.floor(guidance.elapsedSeconds));
+        const minutes=Math.floor(elapsed/60),seconds=String(elapsed%60).padStart(2,'0');
+        document.getElementById('akanzi-completion-distance').textContent=`${(routeGuide.data.distance/1000).toFixed(1)} km`;
+        document.getElementById('akanzi-completion-time').textContent=`${minutes}:${seconds}`;
+        document.getElementById('akanzi-completion-stops').textContent=String(guidance.stopsVisited);
+        document.getElementById('akanzi-completion').hidden=false;
+        document.getElementById('akanzi-drive-again').focus();
+      }
+      const stopEvt=routeGuide.stopEvent;
+      if(stopEvt){
+        routeGuide.stopEvent=null;
+        stopToast.textContent=`📍 ${stopEvt.name} · stop ${stopEvt.number} of ${stopEvt.total}`;
+        stopToast.style.opacity='1';
+        stopToastTimer=2;
+        audio.burst?.({frequency:660,volume:0.15,duration:0.12});
+        setTimeout(()=>audio.burst?.({frequency:880,volume:0.1,duration:0.1}),130);
+      }
     }
-    if (!visualizer.previewActive && multiplayer.npcAuthority) pedestrians.update(physics, dt);
+    if(stopToastTimer>0){stopToastTimer-=dt;if(stopToastTimer<=0)stopToast.style.opacity='0';}
+    if (!visualizer.previewActive && multiplayer.npcAuthority) pedestrians.update(physics, dt, physics.speed);
     trafficManager.root.visible = !visualizer.previewActive && !npcSync.isFollower;
     if (!visualizer.previewActive && multiplayer.npcAuthority) trafficManager.update(dt, physics);
+    trafficHornCooldown=Math.max(0,trafficHornCooldown-dt);
+    if(!visualizer.previewActive&&multiplayer.npcAuthority&&trafficHornCooldown<=0&&trafficManager.origin) {
+      const playerPoint=trafficManager.playerPoint(physics);
+      for(const vehicle of trafficManager.cars)if(vehicle.honkEvent&&Math.hypot(vehicle.x-playerPoint.x,vehicle.y-playerPoint.y)<20&&Math.abs(vehicle.roadHeight-playerPoint.roadHeight)<1) {
+        if(audio.remoteHorn())trafficHornCooldown=.8;
+        break;
+      }
+    }
     const trafficStatus=document.getElementById('traffic-status');
     const drivingStatus=physics.energy.remaining<=0?`${physics.energy.electric?'Battery':'Fuel'} empty · Refill in Setup`:trafficManager.status;
     if(trafficStatus.textContent!==drivingStatus)trafficStatus.textContent=drivingStatus;
@@ -963,6 +1335,7 @@ document.addEventListener('DOMContentLoaded', () => {
         densitySelect.disabled = npcSync.isFollower;
         densitySelect.title = npcSync.isFollower ? 'NPC density is controlled by the room host' : '';
       }
+      if(pedestrianDensityInput){pedestrianDensityInput.disabled=npcSync.isFollower;pedestrianDensityInput.title=npcSync.isFollower?'Pedestrian density is controlled by the room host':'';}
       const info=trafficManager.roadInfo,limit=document.getElementById('hud-speed-limit');
       limit.textContent=info?Math.round(info.limit):'—';limit.dataset.speeding=String(info&&Math.abs(physics.speed)>info.limit+1);
       const navigation=document.getElementById('hud-navigation');
@@ -978,9 +1351,21 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('energy-average').textContent=energy.average===null?'Average economy appears after driving 50 m.':`Trip ${(energy.distanceKm).toFixed(1)} km · Average ${energy.average.toFixed(1)} ${energy.electric?'kWh':'L'}/100 km`;
       refuelButton.disabled=Math.abs(physics.speed)>1;
       refuelButton.textContent=refuelButton.disabled?'Stop to refuel / charge':energy.electric?'Charge battery':'Refill tank';
+      // Low fuel/charge warning banner
+      const fuelWarning = document.getElementById('fuel-warning-banner');
+      if (fuelWarning && !visualizer.previewActive && !runnerActive) {
+        const ratio = energy.remaining / energy.capacity;
+        if (ratio < 0.12) {
+          const pct = Math.ceil(ratio * 100);
+          fuelWarning.textContent = energy.electric ? `🔋 LOW CHARGE — ${pct}%` : `⛽ LOW FUEL — ${pct}%`;
+          fuelWarning.hidden = false;
+        } else {
+          fuelWarning.hidden = true;
+        }
+      }
     }
     if (visualizer.highBeams && !visualizer.previewActive && !npcSync.isFollower) pedestrians.highBeam(physics);
-    if (!npcSync.isFollower) pedestrianView.update(pedestrians, physics, visualizer.carGroup, visualizer.previewActive);
+    if (!npcSync.isFollower) pedestrianView.update(pedestrians, physics, visualizer.carGroup, visualizer.previewActive, dt);
     npcSync.update(dt, physics, {hidden:visualizer.previewActive});
     const clinging = pedestrians.people.filter(person => person.state === 'clinging').length;
     const trunkPassengers=pedestrians.people.filter(person=>person.state==='trunk-rider').length;
@@ -1001,9 +1386,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const headingDeg = (physics.heading * 180) / Math.PI;
     mapUpdateTimer+=dt;
-    if(mapUpdateTimer>=.1){mapUpdateTimer=0;mapController.updateCarPosition(physics.lat, physics.lng, headingDeg);}
+    if(mapUpdateTimer>=.1){mapUpdateTimer=0;mapController.updateCarPosition(physics.lat, physics.lng, headingDeg, physics.energy.remaining/physics.energy.capacity);}
 
-    audio.update(physics.rpm, physics.throttle, physics.speed, physics.isDrifting, {model:physics.bmwModel,gear:physics.gear,slip:physics.driftFactor,brake:physics.handbrake || (physics.throttle < 0 && physics.speed > 0)});
+    audio.update(physics.rpm, physics.throttle, physics.speed, physics.isDrifting, {model:physics.bmwModel,gear:physics.gear,slip:physics.driftFactor,brake:physics.handbrake || (physics.throttle < 0 && physics.speed > 0),dt,motion:physics.speed>2});
     if (physics.nitroEngaged && physics.bmwModel !== 'i4 M50 (EV)') {
       visualizer.triggerExhaustFlames();
     }
@@ -1020,9 +1405,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const boundary = document.getElementById('road-boundary-status');
     if (boundary) boundary.textContent = physics.roadBlocked ? (physics.roadNetwork ? 'Road edge · brake / reverse or reset' : 'Waiting for drivable roads') : 'Road boundaries active';
     hudRpm.innerText = Math.round(physics.rpm);
-    hudGear.innerText = physics.driveGear === 'auto' ?
-      (physics.bmwModel === 'i4 M50 (EV)' ? 'A' : `A${physics.gear}`) :
-      (physics.driveGear === 'D' && physics.bmwModel !== 'i4 M50 (EV)' ? `D${physics.gear}` : physics.driveGear);
+    const gearDisplay=physics.driveGear==='P'?'P':physics.driveGear==='R'||physics.gear<0?'R':physics.driveGear==='N'||(physics.driveGear==='auto'&&Math.abs(physics.speed)<.1)?'N':String(Math.max(1,Math.min(8,Math.round(physics.gear||1))));
+    if(gearDisplay!==lastHudGearKey){
+      lastHudGearKey=gearDisplay;
+      for(const character of hudGearChip.querySelectorAll('[data-gear]'))character.classList.toggle('active',character.dataset.gear===gearDisplay);
+      hudGear.innerText=gearDisplay;hudGearChip.setAttribute('aria-label',`Current gear ${gearDisplay}`);
+    }
     document.getElementById('hud-drive-mode').textContent = physics.driveMode;
     document.getElementById('hud-dsc').textContent = physics.dscMode;
     const nitroMeter = document.getElementById('hud-nitro-meter');

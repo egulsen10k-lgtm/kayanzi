@@ -31,6 +31,13 @@ test('rejects open, incomplete, invalid and remote area geometry', () => {
   assert.deepEqual(network.sceneryAreas, []);
 });
 
+test('preserves mapped stadium area tags for proximity ambience',()=>{
+  const network=decodeWorld([polygon(10,{leisure:'stadium'}),polygon(11,{amenity:'stadium'})],0,0,400);
+  assert.deepEqual(network.sceneryAreas.map(area=>area.kind),['stadium','stadium']);
+  assert.equal(network.sceneryAreas[0].tags.leisure,'stadium');
+  assert.equal(network.sceneryAreas[1].tags.amenity,'stadium');
+});
+
 test('decorative park trees are bounded, deterministic and outside road/building/water clearance', () => {
   const network = { radiusMeters: 100,
     sceneryAreas: [{ kind: 'park', points: [[-90,-90],[90,-90],[90,90],[-90,90],[-90,-90]] },

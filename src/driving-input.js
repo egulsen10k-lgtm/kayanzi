@@ -1,4 +1,6 @@
 // Keep keyboard and individual fingers independent: releasing one cannot cancel another.
+export { GamepadInput, applyDeadzone, updateWithGamepad } from './gamepad-input.js';
+
 export function bindDrivingInput({ physics, buttons, onHorn = () => {}, onHornStart = onHorn, onHornEnd = () => {}, isRobotMode = () => false, onRobotJump = () => {}, win = window, doc = document }) {
   const codes = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space']);
   const keyboard = new Set();

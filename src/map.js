@@ -10,6 +10,11 @@ export class WorldMapController {
     this.trackCoords = [];
     this.followCar = true;
     this.peerMarkers = new Map();
+    this.minimapZoom = 1.0;
+    this.minimapBaseZoom = 16;
+    this.minimapDirty = false;
+    this.fuelStations = [];
+    this.fuelPinMarkers = [];
 
     this.initMap();
   }
@@ -21,6 +26,7 @@ export class WorldMapController {
     this.map = L.map(this.mapContainerId, {
       center: [initialLat, initialLng],
       zoom: 16,
+      zoomSnap: 0.1,
       zoomControl: true,
       attributionControl: true
     });
@@ -162,7 +168,54 @@ export class WorldMapController {
     this.peerMarkers.delete(id);
   }
 
-  updateCarPosition(lat, lng, headingDeg) {
+  setMinimapZoom(z) {
+    const value=Number(z);
+    if(Number.isFinite(value))this.minimapZoom=Math.max(.5,Math.min(3,value));
+    this.minimapDirty=true;
+    return this.minimapZoom;
+  }
+
+  addFuelStations(roadNetwork) {
+    if (!roadNetwork?.elements) { this.fuelStations = []; return; }
+    const stations = [];
+    for (const el of roadNetwork.elements) {
+      if (el.type !== 'node' || !el.lat || !el.lng) continue;
+      const tags = el.tags ?? {};
+      const name = String(tags.name ?? '').toLowerCase();
+      if (tags.amenity === 'fuel' || name.includes('petrol') || name.includes('benzin') || name.includes('gas station')) {
+        stations.push({ lat: el.lat, lng: el.lng, name: tags.name ?? 'Fuel' });
+      }
+    }
+    this.fuelStations = stations;
+  }
+
+  _updateFuelPins(carLat, carLng, fuelFraction) {
+    if (!this.map) return;
+    // Remove existing pins
+    for (const m of this.fuelPinMarkers) this.map.removeLayer(m);
+    this.fuelPinMarkers = [];
+    if (fuelFraction >= 0.20 || this.fuelStations.length === 0) return;
+    // Sort by distance, take nearest 3
+    const R = 111195;
+    const scaleX = R * Math.cos(carLat * Math.PI / 180);
+    const sorted = this.fuelStations
+      .map(s => ({ ...s, dist: Math.hypot((s.lng - carLng) * scaleX, (s.lat - carLat) * R) }))
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 3);
+    for (const s of sorted) {
+      const km = (s.dist / 1000).toFixed(1);
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="text-align:center;font-size:18px;line-height:1">⛽<div style="font:700 10px system-ui;color:#22cc55;background:#102634cc;border-radius:6px;padding:1px 4px;margin-top:1px">${km} km</div></div>`,
+        iconAnchor: [14, 8]
+      });
+      const m = L.marker([s.lat, s.lng], { icon, interactive: false });
+      m.addTo(this.map);
+      this.fuelPinMarkers.push(m);
+    }
+  }
+
+  updateCarPosition(lat, lng, headingDeg, fuelFraction) {
     if (!this.map || !this.carMarker) return;
     const now = performance.now();
     if (this.lastMapUpdate && now - this.lastMapUpdate < 100) return;
@@ -170,6 +223,11 @@ export class WorldMapController {
 
     const latLng = [lat, lng];
     this.carMarker.setLatLng(latLng);
+
+    if(this.minimapDirty) {
+      this.map.setZoom(this.minimapBaseZoom+Math.log2(this.minimapZoom),{animate:false});
+      this.minimapDirty=false;
+    }
 
     const arrow = document.getElementById('marker-arrow');
     if (arrow) {
@@ -187,6 +245,7 @@ export class WorldMapController {
       this.trackCoords.shift();
     }
     this.trackLine.setLatLngs(this.trackCoords);
+    if (Number.isFinite(fuelFraction)) this._updateFuelPins(lat, lng, fuelFraction);
   }
 
   teleport(lat, lng, zoom = 16) {
@@ -194,7 +253,9 @@ export class WorldMapController {
     this.selectLocation = false;
     this.trackCoords = [];
     this.trackLine.setLatLngs([]);
-    this.map.setView([lat, lng], zoom);
+    this.minimapBaseZoom=Number.isFinite(zoom)?zoom:this.minimapBaseZoom;
+    this.map.setView([lat, lng], this.minimapBaseZoom+Math.log2(this.minimapZoom), {animate:false});
+    this.minimapDirty=false;
     this.carMarker.setLatLng([lat, lng]);
   }
 }

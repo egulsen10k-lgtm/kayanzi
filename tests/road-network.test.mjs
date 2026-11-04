@@ -37,6 +37,8 @@ test('loads drivable OSM ways as clipped local-meter road geometry', async () =>
   assert.match(query, /motorway_link/);
   assert.match(query, /tertiary_link/);
   assert.match(query, /residential/);
+  assert.match(query, /leisure.*stadium/);
+  assert.match(query, /amenity.*stadium/);
   assert.equal(result.center.lat, 0);
   assert.equal(result.roads.length, 1);
   assert.equal(result.roads[0].id, 'way/12/0');

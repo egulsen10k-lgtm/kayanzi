@@ -37,7 +37,22 @@ export class PedestrianView {
     this.ragdolls=new Map();
     this.bindParts=this.models.map((model,i)=>ragdollBindings(model,this.parts[i]));
   }
-  update(sim, car, carGroup, hidden=false) {
+  createFadeView(index) {
+    const group=new THREE.Group();group.name=`pedestrian-ragdoll-fade-${index}`;
+    const meshes=this.parts[index].map((part,j)=>{
+      const material=this.batches[j].material.clone();
+      material.transparent=true;material.opacity=1;material.depthWrite=false;
+      const mesh=new THREE.Mesh(part.geometry,material);mesh.matrixAutoUpdate=false;mesh.frustumCulled=false;
+      group.add(mesh);return mesh;
+    });
+    this.group.add(group);return {group,meshes};
+  }
+  disposeFadeView(fadeView) {
+    if(!fadeView)return;
+    for(const mesh of fadeView.meshes)mesh.material.dispose();
+    fadeView.group.removeFromParent();
+  }
+  update(sim, car, carGroup, hidden=false, dt=1/60) {
     this.group.visible=!hidden;
     const p=sim.network ? projectCoordinate(car.lat,car.lng,sim.network.center) : [0,0];
     const activeRagdolls=new Set();
@@ -59,33 +74,52 @@ export class PedestrianView {
           });
           this.currentStyles[i]=style;
         }
-        if(person.state==='ragdoll') {
-          activeRagdolls.add(person);
-          let ragdoll=this.ragdolls.get(person);
+        let ragdoll=this.ragdolls.get(person);
+        if(person.state==='ragdoll'&&ragdoll&&ragdoll.physics.phase!=='fall') {
+          ragdoll.physics.dispose();this.disposeFadeView(ragdoll.fadeView);this.ragdolls.delete(person);ragdoll=null;
+        }
+        if(person.state==='ragdoll'||(ragdoll&&ragdoll.physics.phase!=='disposed')) {
           if(!ragdoll) {
             const floor=roadSurfaceAt(sim.network,[person.x,person.y],person.height)??person.height-.12;
-            ragdoll={physics:new PedestrianRagdoll({heading:person.heading,height:person.height-floor,velocity:person.fall}),origin:{x:person.x,y:person.y,height:floor}};
+            ragdoll={physics:new PedestrianRagdoll({heading:person.heading,height:person.height-floor,velocity:person.fall}),origin:{x:person.x,y:person.y,height:floor},fadeView:null};
             this.ragdolls.set(person,ragdoll);
           }
-          ragdoll.physics.update(person.fall.age);
-          const torso=ragdoll.physics.bodies.torso;
-          const point=[ragdoll.origin.x+torso.position.x,ragdoll.origin.y-torso.position.z];
-          const ground=roadSurfaceAt(sim.network,point,ragdoll.origin.height);
-          person.recoveryPoint={x:ground===null?ragdoll.origin.x:point[0],y:ground===null?ragdoll.origin.y:point[1],height:ground??ragdoll.origin.height};
-          const origin=new THREE.Matrix4().makeTranslation(ragdoll.origin.x-p[0],ragdoll.origin.height,-(ragdoll.origin.y-p[1]));
-          this.batches.forEach((batch,j)=>{
-            const bind=this.bindParts[i][j],body=ragdoll.physics.bodies[bind.name],center=ragdoll.physics.bindCenters[bind.name];
-            const transform=new THREE.Matrix4().compose(new THREE.Vector3(body.position.x,body.position.y,body.position.z),new THREE.Quaternion(body.quaternion.x,body.quaternion.y,body.quaternion.z,body.quaternion.w),new THREE.Vector3(1,1,1));
-            transform.premultiply(origin).multiply(new THREE.Matrix4().makeTranslation(-center[0],-center[1],-center[2])).multiply(bind.matrix);
-            batch.setMatrixAt(i,transform);
-          });
-          return;
-        } else {
+          ragdoll.physics.update(person.state==='ragdoll'&&person.fall?person.fall.age:ragdoll.physics.age+dt);
+          if(ragdoll.physics.phase==='disposed') {
+            this.disposeFadeView(ragdoll.fadeView);this.ragdolls.delete(person);ragdoll=null;
+          } else {
+            activeRagdolls.add(person);
+            const fading=ragdoll.physics.phase==='fading';
+            if(fading&&!ragdoll.fadeView)ragdoll.fadeView=this.createFadeView(i);
+            const torso=ragdoll.physics.bodies.torso;
+            if(person.state==='ragdoll'&&person.fall) {
+              const point=[ragdoll.origin.x+torso.position.x,ragdoll.origin.y-torso.position.z];
+              const ground=roadSurfaceAt(sim.network,point,ragdoll.origin.height);
+              person.recoveryPoint={x:ground===null?ragdoll.origin.x:point[0],y:ground===null?ragdoll.origin.y:point[1],height:ground??ragdoll.origin.height};
+            }
+            const origin=new THREE.Matrix4().makeTranslation(ragdoll.origin.x-p[0],ragdoll.origin.height,-(ragdoll.origin.y-p[1]));
+            this.batches.forEach((batch,j)=>{
+              const bind=this.bindParts[i][j],body=ragdoll.physics.bodies[bind.name],center=ragdoll.physics.bindCenters[bind.name];
+              const transform=new THREE.Matrix4().compose(new THREE.Vector3(body.position.x,body.position.y,body.position.z),new THREE.Quaternion(body.quaternion.x,body.quaternion.y,body.quaternion.z,body.quaternion.w),new THREE.Vector3(1,1,1));
+              transform.premultiply(origin).multiply(new THREE.Matrix4().makeTranslation(-center[0],-center[1],-center[2])).multiply(bind.matrix);
+              if(fading) {
+                const mesh=ragdoll.fadeView.meshes[j];mesh.matrix.copy(transform);mesh.matrixWorldNeedsUpdate=true;
+                mesh.material.opacity=ragdoll.physics.opacity;
+                batch.setMatrixAt(i,this.hiddenMatrix);
+              } else batch.setMatrixAt(i,transform);
+            });
+            return;
+          }
+        }
+        if(ragdoll) {
+          ragdoll.physics.dispose();this.disposeFadeView(ragdoll.fadeView);this.ragdolls.delete(person);
+        }
+        {
           model.position.set(person.x-p[0],person.height,-(person.y-p[1]));model.rotation.set(0,Math.PI-person.heading,0);
           const holding=person.state==='clinging';
           const entering=person.state==='trunk-entering',progress=person.trunkProgress??0;
           model.scale.set(1,entering?1-progress*.5:1,1);
-          const swing=['idle','chasing','trunk-approach'].includes(person.state)?Math.sin(person.phase)*(person.state==='idle'?.3:.65):0;
+          const swing=['idle','chasing','trunk-approach','scatter'].includes(person.state)?Math.sin(person.phase)*(person.state==='idle'?.3:person.state==='scatter'?.9:.65):0;
           model.rotation.x=holding ? -.18 : person.state==='recovering' ? (1-Math.min(1,person.recoveryTime/1.2))*1.3 : 0;
           model.userData.legs.forEach((limb,j)=>{limb.rotation.x=holding ? (j ? -.42 : -.25) : swing*(j%2?1:-1);});
           model.userData.arms.forEach((limb,j)=>{limb.rotation.x=holding ? -1.32+(j ? -.12 : .12) : swing*(j%2?-1:1);});
@@ -95,7 +129,7 @@ export class PedestrianView {
       }
       this.batches.forEach((batch,j)=>batch.setMatrixAt(i,visible?this.parts[i][j].matrixWorld:this.hiddenMatrix));
     });
-    for(const [person,ragdoll] of this.ragdolls) if(!activeRagdolls.has(person)) {ragdoll.physics.dispose();this.ragdolls.delete(person);}
+    for(const [person,ragdoll] of this.ragdolls) if(!activeRagdolls.has(person)) {ragdoll.physics.dispose();this.disposeFadeView(ragdoll.fadeView);this.ragdolls.delete(person);}
     this.batches.forEach(batch=>{batch.instanceMatrix.needsUpdate=true;});
     const trunkLid=carGroup.getObjectByName('trunk-lid');
     if(trunkLid)trunkLid.rotation.x=(sim.trunkOpen??0)*1.2;

@@ -36,3 +36,29 @@ test('narrow roads retain speed signs and a limit readout without spawning traff
  signs.rebuild(g,{x:0,y:0},roads);assert.equal(g.edges.length,0);
  assert.ok(signs.entries.some(s=>s.limit===20));assert.equal(signs.nearby(g,{x:0,y:0,heading:0,roadHeight:.08}).limit,20);
 });
+
+test('radar entries are generated for limit<=50 signs and not for limit>50',()=>{
+ const g=buildTrafficGraph({roads:[
+   {name:'Slow St',width:8,maxspeed:30,points:[[0,-100],[0,100]]},
+   {name:'Fast Ave',width:8,maxspeed:100,points:[[-100,0],[100,0]]}
+ ]});
+ const signs=new RoadSigns(new THREE.Group());
+ signs.rebuild(g,{x:0,y:0});
+ const radars=signs.getRadars();
+ assert.ok(Array.isArray(radars),'getRadars returns array');
+ assert.ok(radars.length>0,'radar entries exist for slow road');
+ assert.ok(radars.every(r=>r.limit<=50),'all radars have limit<=50');
+ assert.ok(radars.every(r=>r.type==='radar'),'all entries have type radar');
+ // fast road must not produce a radar
+ assert.ok(!radars.some(r=>r.limit===100),'no radar for 100 km/h road');
+});
+
+test('clear() resets radars alongside entries',()=>{
+ const g=buildTrafficGraph({roads:[{name:'X',width:8,maxspeed:30,points:[[0,-50],[0,50]]}]});
+ const signs=new RoadSigns(new THREE.Group());
+ signs.rebuild(g);
+ assert.ok(signs.getRadars().length>0);
+ signs.clear();
+ assert.equal(signs.getRadars().length,0);
+ assert.equal(signs.entries.length,0);
+});

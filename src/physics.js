@@ -56,11 +56,15 @@ export class CarPhysics {
     this.nitroActive = false;
     this.nitroEngaged = false;
     this.nitroDepleted = false;
+    this.driftDuration = 0;
 
     this.driftFactor = 0;
     this.driftAngle = 0;
     this.driftDirection = 0;
     this.isDrifting = false;
+    this.driftScore = 0;
+    this.driftCombo = 0;
+    this.driftEndEvent = null;
     this.keys = {};
     this.roadConstrained = true;
     this.roadBlocked = false;
@@ -115,6 +119,8 @@ export class CarPhysics {
     return true;
   }
 
+  setWeatherGrip(g) { this.weatherGrip = g ?? 1; }
+
   setBrakeMode(mode) {
     if (!['Comfort', 'Sport'].includes(mode)) return false;
     this.brakeMode = mode;
@@ -144,6 +150,24 @@ export class CarPhysics {
 
   setNitroActive(active) {
     this.nitroActive = Boolean(active);
+  }
+
+  refillNitro(amount) {
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value <= 0) return this.nitroCharge;
+    this.nitroCharge = Math.min(1, this.nitroCharge + value);
+    this.nitroDepleted = this.nitroCharge <= 0;
+    return this.nitroCharge;
+  }
+
+  activateNitro() {
+    if (this.nitroCharge < 0.1) {
+      this.nitroActive = false;
+      return false;
+    }
+    this.nitroActive = true;
+    this.nitroDepleted = false;
+    return true;
   }
 
   setRoadNetwork(network) {
@@ -255,7 +279,12 @@ export class CarPhysics {
     this.nitroEngaged = hasPower && this.nitroActive && !this.nitroDepleted && this.nitroCharge > 0 &&
       this.driveGear !== 'N' && this.driveGear !== 'R' && forward && this.speed > 5 && !this.handbrake;
     this.nitroCharge = Math.max(0, Math.min(1, this.nitroCharge +
-      (this.nitroEngaged ? -0.16 : 0.045) * dt));
+      (this.nitroEngaged ? -0.4 : 0.045) * dt));
+    if (this.nitroCharge <= 0) {
+      this.nitroActive = false;
+      this.nitroDepleted = true;
+      this.nitroEngaged = false;
+    }
     if (serviceBrake) {
       this.speed = stop(this.braking * (this.brakeMode === 'Sport' ? 1.25 : 1) * pressure * dt);
       this.throttle = -0.6 * pressure;
@@ -305,9 +334,9 @@ export class CarPhysics {
     // lateral acceleration, preventing unrealistically rapid highway-speed spins.
     const wheelAngle = this.steering * 0.61 / (1 + (absMs / 18) ** 2);
     const requestedYaw = -speedMs * Math.tan(wheelAngle) / 2.85;
-    const grip = (this.handlingMode === 'Drift' ? 4.2 : 8.8) +
+    const grip = ((this.handlingMode === 'Drift' ? 4.2 : 8.8) +
       (this.suspensionMode === 'Sport' ? .8 : 0) +
-      (this.dscMode === 'Traction' ? .5 : this.dscMode === 'Off' ? 1.5 : 0);
+      (this.dscMode === 'Traction' ? .5 : this.dscMode === 'Off' ? 1.5 : 0)) * (this.weatherGrip ?? 1);
     const yawLimit = grip / Math.max(absMs, 0.1);
     const normalYaw = Math.max(-yawLimit, Math.min(yawLimit, requestedYaw));
     const steerDirection = Math.sign(this.steering);
@@ -330,7 +359,22 @@ export class CarPhysics {
     if (this.driftFactor > .02 && steerDirection && (!this.driftDirection || !counterSteering)) this.driftDirection = steerDirection;
     if (this.driftFactor < .008) this.driftDirection = 0;
     this.driftAngle = this.driftDirection * this.driftFactor * (.12 + .52 * speedSlip);
+    const wasDrifting = this.isDrifting;
     this.isDrifting = this.driftFactor > .06;
+    if (this.isDrifting) {
+      this.driftDuration += dt;
+      if (this.driftDuration >= 0.5) {
+        this.refillNitro(0.08);
+        this.driftDuration = 0;
+      }
+      this.driftScore += this.driftFactor * Math.abs(this.driftAngle) * Math.abs(this.speed) * dt * 0.4;
+    } else {
+      this.driftDuration = 0;
+    }
+    if (!this.isDrifting && wasDrifting && this.driftScore > 0) {
+      this.driftEndEvent = { score: Math.round(this.driftScore), combo: ++this.driftCombo };
+      this.driftScore = 0;
+    }
     const yaw = normalYaw;
     this.heading = ((oldHeading + yaw * dt) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
     const distanceMeters = speedMs * dt;
@@ -399,6 +443,8 @@ export class CarPhysics {
     this.driftAngle = 0;
     this.driftDirection = 0;
     this.isDrifting = false;
+    this.driftScore = 0;
+    this.driftEndEvent = null;
     this.handbrake = false;
     this.keys = {};
     this.reverseDelay = 0;

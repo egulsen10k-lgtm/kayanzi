@@ -1,9 +1,21 @@
 import * as THREE from 'three';
 import { createPerson } from './person-model.js';
-import { RUNNER_LANES, TRUCK_ROOF_HEIGHT } from './runner-game.js';
+import { RUNNER_LANES, TRUCK_ROOF_HEIGHT, POWERUP_WRENCH, POWERUP_ROCKET } from './runner-game.js';
 import { animateRobot } from './robot-animation.js';
 
 const paint = (color, metalness = .2) => new THREE.MeshStandardMaterial({ color, metalness, roughness:.45 });
+
+const _iconTextureCache = new Map();
+function makeIconTexture(icon) {
+  if (_iconTextureCache.has(icon)) return _iconTextureCache.get(icon);
+  const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 32;
+  const ctx = canvas.getContext('2d');
+  ctx.font = '24px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(icon, 16, 16);
+  const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
+  _iconTextureCache.set(icon, tex);
+  return tex;
+}
 
 export function createRobotModel(color = '#1c3fa8') {
   const robot = new THREE.Group();
@@ -86,7 +98,12 @@ export class RobotRunnerView {
       this.buildings.push({mesh:building, depth, initialZ});
     }
     this.robot=createRobotModel(color);this.root.add(this.robot);
-    this.trucks=new Map();this.pickups=new Map();this.lowObstacles=new Map();this.roadsters=new Map();
+    this.trucks=new Map();this.pickups=new Map();this.lowObstacles=new Map();this.roadsters=new Map();this.powerups=new Map();
+    // Warning sprite pool (max 6)
+    this._warnSprites = Array.from({length: 6}, () => {
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false }));
+      sprite.scale.set(1.1, 1.1, 1); sprite.visible = false; this.root.add(sprite); return sprite;
+    });
   }
 
   createTruck(item) {
@@ -121,6 +138,16 @@ export class RobotRunnerView {
     this.root.add(group);return group;
   }
 
+  createPowerup(item) {
+    const group=new THREE.Group();group.name=`runner-powerup-${item.type}`;
+    const material=paint(item.type===POWERUP_WRENCH?'#ffd22e':'#f04b2c',.35);
+    const geometry=item.type===POWERUP_WRENCH
+      ? new THREE.BoxGeometry(.4,.4,.4)
+      : new THREE.ConeGeometry(.22,.7,6);
+    const mesh=new THREE.Mesh(geometry,material);mesh.castShadow=true;group.add(mesh);
+    this.root.add(group);return group;
+  }
+
   createPickup() {
     const group=new THREE.Group();group.name='adult-blonde-pickup';
     const person=createPerson({style:'casual'});person.scale.setScalar(.82);group.add(person);
@@ -134,12 +161,15 @@ export class RobotRunnerView {
     for(const group of this.pickups.values())disposeGroup(group);
     for(const group of this.lowObstacles.values())disposeGroup(group);
     for(const group of this.roadsters.values())disposeGroup(group);
+    for(const group of this.powerups.values())disposeGroup(group);
     this.trucks.clear();this.pickups.clear();this.lowObstacles.clear();this.roadsters.clear();
+    this.powerups.clear();
     for(const building of this.buildings) building.mesh.position.z=building.initialZ;
     this.camera.position.set(0,5.7,10.5);
   }
 
   update(game,dt) {
+    if (!(this.powerups instanceof Map)) this.powerups=new Map();
     if (!(this.roadsters instanceof Map)) this.roadsters=new Map();
     if (!(this.lowObstacles instanceof Map)) this.lowObstacles=new Map();
     const speed=game.over?0:Math.min(25,14+game.distance/500);
@@ -155,7 +185,9 @@ export class RobotRunnerView {
     const visiblePickups=new Set(game.pickups.map(item=>item.id));
     const visibleObstacles=new Set((game.lowObstacles??[]).map(item=>item.id));
     const visibleRoadsters=new Set((game.roadsters??[]).map(item=>item.id));
+    const visiblePowerups=new Set((game.powerups??[]).map(item=>item.id));
     for(const [id,group] of this.roadsters) if(!visibleRoadsters.has(id)){disposeGroup(group);this.roadsters.delete(id);}
+    for(const [id,group] of this.powerups) if(!visiblePowerups.has(id)){disposeGroup(group);this.powerups.delete(id);}
     for(const [id,group] of this.lowObstacles) if(!visibleObstacles.has(id)){disposeGroup(group);this.lowObstacles.delete(id);}
     for(const [id,group] of this.trucks)if(!visibleTrucks.has(id)){disposeGroup(group);this.trucks.delete(id);}
     for(const [id,group] of this.pickups)if(!visiblePickups.has(id)){disposeGroup(group);this.pickups.delete(id);}
@@ -176,6 +208,12 @@ export class RobotRunnerView {
       group.position.set(RUNNER_LANES[item.lane],item.height??2.8,item.z);
       group.rotation.x=Number.isFinite(item.roll)?item.roll:0;
     }
+    for(const item of game.powerups??[]) {
+      const group=this.powerups.get(item.id)??this.createPowerup(item);
+      this.powerups.set(item.id,group);
+      group.position.set(RUNNER_LANES[item.lane],.55+Math.sin((game.distance+item.id)*2.2)*.08,item.z);
+      group.rotation.y+=dt*1.7;
+    }
     for(const item of game.lowObstacles??[]) {
       let group=this.lowObstacles.get(item.id);
       if(!group) {
@@ -194,6 +232,18 @@ export class RobotRunnerView {
     this.camera.updateProjectionMatrix();
     this.camera.position.lerp(new THREE.Vector3(game.x*.35,5.7,10.5),Math.min(1,dt*5));
     this.camera.lookAt(game.x*.45,1.4,-9);
+    // Warning sprites for upcoming hazards
+    const hazards = game.getUpcomingHazards ? game.getUpcomingHazards() : [];
+    for (let i = 0; i < this._warnSprites.length; i++) {
+      const sprite = this._warnSprites[i];
+      const hazard = hazards[i];
+      if (!hazard) { sprite.visible = false; continue; }
+      const icon = hazard.kind === 'powerup' ? '🚀' : '⚠️';
+      const tex = makeIconTexture(icon);
+      if (sprite.material.map !== tex) sprite.material.map = tex;
+      sprite.position.set(RUNNER_LANES[hazard.lane ?? 1], 3.5, hazard.z);
+      sprite.visible = true;
+    }
     this.renderer.render(this.scene,this.camera);
   }
 }
