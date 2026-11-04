@@ -7,6 +7,7 @@ globalThis.window={
   screen:{deviceXDPI:1,logicalXDPI:1}
 };
 globalThis.document={documentElement:{style:{}},createElement:()=>({style:{},getContext:()=>null})};
+if(typeof globalThis.navigator==='undefined')Object.defineProperty(globalThis,'navigator',{value:{userAgent:'node'},configurable:true});
 const {WorldMapController}=await import('../src/map.js');
 
 function controller() {
