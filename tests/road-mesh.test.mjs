@@ -10,7 +10,8 @@ test('road surfaces have thickness and raised curbs only at their edges', () => 
   const asphalt = bounds(group.getObjectByName('asphalt'));
   assert.equal(asphalt.min.x, -3);
   assert.equal(asphalt.max.x, 3);
-  assert.equal(asphalt.min.z, -103);
+  assert.equal(asphalt.min.z, -100);
+  assert.equal(asphalt.max.z, 0);
   assert.ok(asphalt.min.y < 0 && Math.abs(asphalt.max.y - ROAD_SURFACE_HEIGHT) < 1e-6);
   const curbs = group.getObjectByName('curbs').geometry.attributes.position;
   for (let i=0; i<curbs.count; i++) {
@@ -20,6 +21,18 @@ test('road surfaces have thickness and raised curbs only at their edges', () => 
   }
   assert.ok(Math.abs(bounds(group.getObjectByName('curbs')).max.x-4.6)<1e-6, 'sidewalk is 1.6m wide');
   assert.ok(bounds(group.getObjectByName('curbs')).max.y > asphalt.max.y);
+});
+
+test('roadside rails follow non-urban road edges without changing the road surface', () => {
+  const group = buildRoadMeshes({roads:[{points:[[0,0],[0,40]],width:8,highway:'motorway'}]});
+  const rails = group.getObjectByName('roadside-rails');
+  assert.ok(rails);
+  assert.ok(rails.geometry.attributes.position.count > 0);
+  for (const value of rails.geometry.attributes.position.array) assert.ok(Number.isFinite(value));
+  const box = bounds(rails);
+  assert.ok(box.min.x <= -4.7 && box.max.x >= 4.7, 'rails use road edge plus safety clearance');
+  assert.ok(box.max.y > .7, 'rails have a visible top bar');
+  assert.equal(group.getObjectByName('asphalt').geometry.attributes.position.count > 0, true);
 });
 
 test('joined corners have shared cross-sections and bounded miters', () => {
@@ -37,6 +50,18 @@ test('joined corners have shared cross-sections and bounded miters', () => {
   }
   const shared = triangles.flatMap(t=>[[t[0],t[2]],[t[3],t[5]],[t[6],t[8]]]).filter(([x,z])=>x===3&&z===-7);
   assert.ok(shared.length >= 2);
+});
+
+test('ordinary OSM vertices use joined strips instead of circular asphalt pads',()=>{
+  const group=make([[0,0],[0,10],[10,10]]);
+  const positions=group.getObjectByName('asphalt').geometry.attributes.position;
+  const centerlineVertices=[[0,0],[0,-10],[10,-10]];
+  for(let i=0;i<positions.count;i++) {
+    if(Math.abs(positions.getY(i)-ROAD_SURFACE_HEIGHT)>1e-6)continue;
+    const point=[positions.getX(i),positions.getZ(i)];
+    assert.ok(centerlineVertices.every(([x,z])=>Math.hypot(point[0]-x,point[1]-z)>1e-5),'no center vertex fan is emitted at an OSM node');
+  }
+  assert.ok(positions.count>0);
 });
 
 test('invalid vertices do not bridge gaps and motorway edges have no urban curbs', () => {

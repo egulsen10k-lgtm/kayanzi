@@ -14,8 +14,31 @@ function controller() {
   const instance=Object.create(WorldMapController.prototype);
   instance.minimapZoom=1;
   instance.minimapDirty=false;
+  instance.peerMarkers=new Map();
   return instance;
 }
+function markerStub(){return {removed:false,remove(){this.removed=true;},setLatLng(value){this.latLng=value;}};}
+
+
+test('peer marker updates reject malformed coordinates and ids',()=>{
+ const map=controller();map.map={};
+ assert.equal(map.updatePeerPosition({peerId:'bad',lat:NaN,lng:0}),false);
+ assert.equal(map.updatePeerPosition({peerId:'bad',lat:91,lng:0}),false);
+ assert.equal(map.updatePeerPosition({peerId:'',lat:0,lng:0}),false);
+ assert.equal(map.peerMarkers.size,0);
+});
+
+test('peer marker removal is safe and idempotent',()=>{
+ const map=controller(),marker=markerStub();map.map={removeLayer(value){value.removed=true;}};map.peerMarkers.set('peer-1',marker);
+ assert.equal(map.removePeerPosition('missing'),false);
+ assert.equal(map.removePeerPosition('peer-1'),true);
+ assert.equal(marker.removed,true);assert.equal(map.removePeerPosition('peer-1'),false);
+});
+
+test('clearPeerPositions removes every marker and tolerates repeated cleanup',()=>{
+ const map=controller(),a=markerStub(),b=markerStub();map.map={removeLayer(value){value.removed=true;}};map.peerMarkers.set('a',a);map.peerMarkers.set('b',b);
+ map.clearPeerPositions();assert.equal(map.peerMarkers.size,0);assert.equal(a.removed,true);assert.equal(b.removed,true);map.clearPeerPositions();
+});
 
 test('minimap zoom clamps to a maximum scale of three and marks the map dirty',()=>{
   const map=controller();

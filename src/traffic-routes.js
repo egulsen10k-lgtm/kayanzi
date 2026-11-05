@@ -2,7 +2,11 @@
 const distance=(a,b)=>Math.hypot(b[0]-a[0],b[1]-a[1]);
 const key=(p,h)=>`${Math.round(p[0]*2)},${Math.round(p[1]*2)},${Math.round(h*2)}`;
 const cross=(a,b)=>a[0]*b[1]-a[1]*b[0];
-export function trafficSpeedLimit(road) {
+const validPoint = point => Array.isArray(point) && point.length >= 2 && Number.isFinite(point[0]) && Number.isFinite(point[1]);
+const validRoad = road => Boolean(road && Number.isFinite(road.width) && road.width >= 6 && road.width <= 40 &&
+  Array.isArray(road.points) && road.points.length >= 2 && road.points.every(validPoint) &&
+  (!road.elevations || (Array.isArray(road.elevations) && road.elevations.length === road.points.length && road.elevations.every(Number.isFinite))));
+export function trafficSpeedLimit(road = {}) {
   const raw=String(road.maxspeed??road.speedLimit??'');
   const value=parseFloat(raw);
   const posted=Number.isFinite(value)?value*(raw.toLowerCase().includes('mph')?1.609344:1):null;
@@ -13,9 +17,11 @@ export function trafficSpeedLimit(road) {
   return Math.max(15,Math.min(160,zone?Math.max(zone,posted??0):posted??defaults[road.highway]??50));
 }
 function simplified(road) {
+  if (!validRoad(road)) return [];
   const points=road.points, result=[];
   for(let i=0;i<points.length;i++) {
     const h=road.elevations?.[i]??0;
+    if (!Number.isFinite(h)) continue;
     if(i>0&&i<points.length-1) {
       const a=result.at(-1),b=points[i],c=points[i+1],ab=[b[0]-a.p[0],b[1]-a.p[1]],bc=[c[0]-b[0],c[1]-b[1]];
       const la=Math.hypot(...ab),lb=Math.hypot(...bc);
@@ -25,10 +31,10 @@ function simplified(road) {
   }
   return result;
 }
-export function buildTrafficGraph(network) {
+export function buildTrafficGraph(network = {}) {
   const segments=[],cells=new Map();
-  for(const road of network.roads??[]) {
-    if(!Number.isFinite(road.width)||road.width<6)continue;
+  for(const road of Array.isArray(network.roads) ? network.roads : []) {
+    if(!validRoad(road))continue;
     const points=simplified(road);
     for(let i=1;i<points.length;i++) {
       const a=points[i-1],b=points[i],length=distance(a.p,b.p);if(length<1)continue;

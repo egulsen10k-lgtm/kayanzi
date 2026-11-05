@@ -290,3 +290,44 @@ test('node-based map decoding preserves elevated roads like Overpass', () => {
   assert.deepEqual(network.roads.map(r=>r.id), ['way/3/0','way/4/0']);
   assert.equal(network.omittedGradeSeparatedRoads, 0);
 });
+
+test('closed building footprints normalize their closing vertex and exclude roof-only ways',()=>{
+  const at=(east,north)=>({lat:north/111195,lon:east/111195});
+  const network=decodeWorld([
+    {type:'way',id:'near-closed',tags:{building:'house'},geometry:[at(10,10),at(20,10),at(20,20),at(10,20),at(10,10.5)]},
+    {type:'way',id:'open',tags:{building:'yes'},geometry:[at(40,10),at(50,10),at(50,20),at(40,20)]},
+    {type:'way',id:'roof',tags:{building:'roof'},geometry:[at(60,10),at(70,10),at(70,20),at(60,20),at(60,10)]}
+  ],0,0,200);
+  assert.deepEqual(network.buildings.map(building=>building.id),['near-closed']);
+  const footprint=network.buildings[0];
+  assert.deepEqual(footprint.points.at(-1),footprint.points[0]);
+  assert.equal(footprint.height,6);
+  assert.equal(footprint.estimated,true);
+});
+
+test('building heights use valid tagged data and conservative level/type fallbacks',()=>{
+  const at=(east,north)=>({lat:north/111195,lon:east/111195});
+  const rectangle=(east,north)=>[at(east,north),at(east+10,north),at(east+10,north+10),at(east,north+10),at(east,north)];
+  const network=decodeWorld([
+    {type:'way',id:'levels',tags:{building:'apartments','building:levels':'3'},geometry:rectangle(10,10)},
+    {type:'way',id:'height',tags:{building:'commercial',height:'12 m',min_height:'1.5'},geometry:rectangle(30,10)},
+    {type:'way',id:'invalid-height',tags:{building:'house',height:'900'},geometry:rectangle(50,10)}
+  ],0,0,200);
+  assert.deepEqual(network.buildings.map(({id,height,minHeight,estimated})=>({id,height,minHeight,estimated})),[
+    {id:'levels',height:9,minHeight:0,estimated:false},
+    {id:'height',height:12,minHeight:1.5,estimated:false},
+    {id:'invalid-height',height:6,minHeight:0,estimated:true}
+  ]);
+});
+
+test('building extrusion footprints overlapping ground roads are omitted with bounded large-footprint handling',()=>{
+  const at=(east,north)=>({lat:north/111195,lon:east/111195});
+  const rectangle=(id,x0,y0,x1,y1)=>({type:'way',id,tags:{building:'yes'},geometry:[at(x0,y0),at(x1,y0),at(x1,y1),at(x0,y1),at(x0,y0)]});
+  const network=decodeWorld([
+    {type:'way',id:'street',tags:{highway:'residential'},geometry:[at(0,-40),at(0,40)]},
+    rectangle('in-road',-2,-10,2,10),
+    rectangle('clear',6,-10,16,10),
+    rectangle('oversized',-100,-100,1200,1200)
+  ],0,0,200);
+  assert.deepEqual(network.buildings.map(building=>building.id),['clear']);
+});

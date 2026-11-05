@@ -1272,6 +1272,13 @@
     #pause-toggle { position:absolute; z-index:28; top:158px; right:12px; min-width:88px; min-height:44px; border:1px solid #ffffff30; border-radius:12px; background:#102634e8; color:white; font-weight:700; cursor:pointer; }
     #controller-status { position:absolute; z-index:40; top:max(12px,env(safe-area-inset-top)); left:50%; transform:translateX(-50%); padding:9px 14px; border:1px solid #75dce9; border-radius:12px; background:#102634ee; color:white; font:700 13px system-ui; pointer-events:none; }
     #controller-status[hidden] { display:none; }
+    #hud-driving-assist { position:absolute; z-index:28; top:max(12px,env(safe-area-inset-top)); left:50%; transform:translateX(-50%); display:flex; gap:6px; pointer-events:none; }
+    #hud-driving-assist[hidden] { display:none; }
+    #hud-driving-assist span { padding:5px 8px; border:1px solid #f5d16f; border-radius:999px; background:#392e16e8; color:#fff3c4; font:800 10px/1 system-ui; letter-spacing:.04em; }
+    #onboarding-hint { position:absolute; z-index:27; left:16px; bottom:calc(92px + env(safe-area-inset-bottom)); width:min(300px,calc(100% - 32px)); padding:12px 14px; border:1px solid #75dce9a0; border-radius:14px; background:#102634f2; color:#fff; box-shadow:0 12px 30px #0008; }
+    #onboarding-hint[hidden] { display:none; }
+    #onboarding-hint p { margin:0 0 8px; font-size:12px; line-height:1.35; }
+    #onboarding-hint button { min-height:34px; padding:5px 10px; border:1px solid #75dce966; border-radius:8px; background:#1a3a4a; color:#fff; font-size:11px; font-weight:700; cursor:pointer; }
     #pause-overlay[hidden] { display:none; }
     #pause-overlay { position:fixed; inset:0; z-index:1200; display:grid; place-items:center; padding:20px; background:#03080dc9; }
     #pause-card { width:min(90vw,420px); padding:28px; border:1px solid #75dce9a0; border-radius:20px; background:#102634f2; color:#fff; box-shadow:0 24px 80px #000b; text-align:center; }
@@ -1282,6 +1289,19 @@
     @media (max-width:800px) { #pause-toggle { top:128px; right:12px; } }
     @media (prefers-reduced-motion:reduce) {
       *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; }
+    }
+    @media (max-width:900px), (any-pointer:coarse) {
+      /* The connected-player slot is first, so the speed card is the second child. */
+      #hud-speed-card { display:block!important; }
+      #hud-speed-card .energy-readout { display:flex!important; }
+      #hud-speed-card #hud-fuel-meter { display:block!important; }
+      /* Keep first-run tips clear of the lower thumb controls and quickbar. */
+      #onboarding-hint { left:50%; transform:translateX(-50%); top:max(180px,calc(env(safe-area-inset-top) + 170px)); bottom:auto; }
+    }
+    @media (max-height:500px) and (orientation:landscape) {
+      #onboarding-hint { top:max(68px,calc(env(safe-area-inset-top) + 56px)); }
+      #pause-toggle { top:max(12px,env(safe-area-inset-top)); right:calc(128px + env(safe-area-inset-right)); }
+      #fullscreen-toggle { top:max(108px,calc(env(safe-area-inset-top) + 96px)); right:max(12px,env(safe-area-inset-right)); }
     }
   </style>
 </head>
@@ -1303,6 +1323,12 @@
     <!-- Main 3D Viewport -->
     <div id="main-viewport">
       <div id="fuel-warning-banner" hidden aria-live="polite" role="status"></div>
+      <div id="hud-driving-assist" hidden role="status" aria-live="polite" aria-label="Driving assistance status"></div>
+      <aside id="onboarding-hint" hidden aria-live="polite" aria-label="Driving tips">
+        <p id="onboarding-hint-text"></p>
+        <button id="onboarding-hint-next" type="button">Next</button>
+        <button id="onboarding-hint-dismiss" type="button">Don't show again</button>
+      </aside>
       <div id="drive-status-banner" hidden aria-live="polite" role="status"></div>
       <div id="render-canvas-container"></div>
       <div id="performance-status" hidden aria-live="polite"></div>

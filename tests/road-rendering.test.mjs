@@ -13,8 +13,8 @@ test('real-road centerlines become drivable-width ground surfaces', () => {
   surface.geometry.computeBoundingBox();
   assert.equal(surface.geometry.boundingBox.min.x, -3);
   assert.equal(surface.geometry.boundingBox.max.x, 3);
-  assert.equal(surface.geometry.boundingBox.min.z, -103);
-  assert.equal(surface.geometry.boundingBox.max.z, 3);
+  assert.equal(surface.geometry.boundingBox.min.z, -100);
+  assert.equal(surface.geometry.boundingBox.max.z, 0);
   assert.ok(view.roadGroup.getObjectByName('curbs').geometry.attributes.position.count > 0);
   const oldGeometry = surface.geometry;
   let disposed = false;
@@ -70,4 +70,22 @@ test('streaming cannot replace safe current roads with an uncovered district', a
     assert.ok(view.roadGroup.getObjectByName('asphalt'));
     assert.ok(view.roadRetryAt>performance.now());
   } finally {globalThis.fetch=originalFetch;}
+});
+
+test('roads become ready before asynchronous buildings finish',async()=>{
+  const view=Object.create(CarVisualizer3D.prototype);
+  view.roadGroup=new THREE.Group();view.roadCache=new Map();view.container=new EventTarget();
+  const network={center:{lat:0,lng:0},radiusMeters:500,roads:[{width:8,points:[[0,-50],[0,50]]}],buildings:[{height:6,points:[[20,20],[25,20],[25,25],[20,25],[20,20]]}]};
+  view.roadCache.set('0,0',{network,savedAt:Date.now()});
+  let release;const saved=globalThis.scheduler;
+  Object.defineProperty(globalThis,'scheduler',{configurable:true,value:{yield:()=>new Promise(resolve=>{release=resolve;})}});
+  const statuses=[];view.container.addEventListener('roadstatus',e=>statuses.push(e.detail.state));
+  try {
+    const loading=view.loadRoadsAt(0,0);
+    assert.ok(statuses.includes('ready'));
+    assert.ok(view.roadGroup.getObjectByName('asphalt'));
+    assert.ok(release);
+    release();await loading;
+    assert.ok(view.roadGroup.getObjectByName('buildings'));
+  } finally {Object.defineProperty(globalThis,'scheduler',{configurable:true,writable:true,value:saved});}
 });

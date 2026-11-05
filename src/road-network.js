@@ -16,6 +16,11 @@ const ROAD_WIDTHS = {
 };
 const ROAD_CLEARANCE_METERS = 1.1;
 const MAX_NETWORK_AGE_MS = 5 * 60 * 1000;
+const BUILDING_ROAD_CELL_METERS = 64;
+const MAX_BUILDING_RING_POINTS = 1024;
+const MAX_BUILDING_CELLS = 256;
+const MAX_BUILDING_CANDIDATES = 512;
+const MAX_BUILDING_ROAD_CHECKS = 100000;
 
 const RESPONSE_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_RESPONSE_CACHE_ENTRIES = 16;
@@ -227,6 +232,105 @@ function decodeBarriers(elements, lat, lng, radiusMeters) {
       type: element.tags.barrier,
       points
     }));
+}
+
+function buildingRoadIndex(roads) {
+  const cells = new Map(), size = BUILDING_ROAD_CELL_METERS;
+  for (const road of roads) {
+    if (road.bridge || road.tunnel || road.layer !== 0 || !Number.isFinite(road.width)) continue;
+    const radius = road.width / 2 + .35;
+    for (let i = 1; i < road.points.length; i++) {
+      const a = road.points[i - 1], b = road.points[i];
+      const segment = { a, b, radius };
+      const minX = Math.floor((Math.min(a[0], b[0]) - radius) / size);
+      const maxX = Math.floor((Math.max(a[0], b[0]) + radius) / size);
+      const minY = Math.floor((Math.min(a[1], b[1]) - radius) / size);
+      const maxY = Math.floor((Math.max(a[1], b[1]) + radius) / size);
+      for (let x = minX; x <= maxX; x++) for (let y = minY; y <= maxY; y++) {
+        const key = `${x},${y}`;
+        if (!cells.has(key)) cells.set(key, []);
+        cells.get(key).push(segment);
+      }
+    }
+  }
+  return { cells, size };
+}
+
+function pointInRing(point, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i], b = ring[j];
+    if ((a[1] > point[1]) !== (b[1] > point[1]) &&
+      point[0] < (b[0] - a[0]) * (point[1] - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+
+function pointSegmentDistanceSquared(point, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const t = Math.max(0, Math.min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+  const x = a[0] + dx * t - point[0], y = a[1] + dy * t - point[1];
+  return x * x + y * y;
+}
+
+function segmentsIntersect(a, b, c, d) {
+  const cross = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const abC = cross(a, b, c), abD = cross(a, b, d), cdA = cross(c, d, a), cdB = cross(c, d, b);
+  return abC * abD <= 0 && cdA * cdB <= 0 &&
+    Math.max(Math.min(a[0], b[0]), Math.min(c[0], d[0])) <= Math.min(Math.max(a[0], b[0]), Math.max(c[0], d[0])) + 1e-8 &&
+    Math.max(Math.min(a[1], b[1]), Math.min(c[1], d[1])) <= Math.min(Math.max(a[1], b[1]), Math.max(c[1], d[1])) + 1e-8;
+}
+
+function segmentDistanceSquared(a, b, c, d) {
+  if (segmentsIntersect(a, b, c, d)) return 0;
+  return Math.min(pointSegmentDistanceSquared(a, c, d), pointSegmentDistanceSquared(b, c, d),
+    pointSegmentDistanceSquared(c, a, b), pointSegmentDistanceSquared(d, a, b));
+}
+
+function overlapsGroundRoad(ring, index, budget) {
+  if (budget.checks >= MAX_BUILDING_ROAD_CHECKS) return true;
+  const points = ring.slice(0, -1);
+  const minX = Math.min(...points.map(p => p[0])), maxX = Math.max(...points.map(p => p[0]));
+  const minY = Math.min(...points.map(p => p[1])), maxY = Math.max(...points.map(p => p[1]));
+  const minCellX = Math.floor(minX / index.size), maxCellX = Math.floor(maxX / index.size);
+  const minCellY = Math.floor(minY / index.size), maxCellY = Math.floor(maxY / index.size);
+  if ((maxCellX - minCellX + 1) * (maxCellY - minCellY + 1) > MAX_BUILDING_CELLS) return true;
+  const candidates = new Set();
+  for (let x = minCellX; x <= maxCellX; x++) for (let y = minCellY; y <= maxCellY; y++) {
+    for (const segment of index.cells.get(`${x},${y}`) ?? []) {
+      candidates.add(segment);
+      if (candidates.size > MAX_BUILDING_CANDIDATES) return true;
+    }
+  }
+  for (const { a, b, radius } of candidates) {
+    if (++budget.checks > MAX_BUILDING_ROAD_CHECKS) return true;
+    if (pointInRing(a, points) || pointInRing(b, points)) return true;
+    const radiusSquared = radius * radius;
+    for (let i = 0; i < points.length; i++) {
+      if (segmentDistanceSquared(a, b, points[i], points[(i + 1) % points.length]) <= radiusSquared) return true;
+    }
+  }
+  return false;
+}
+
+function taggedBuildingHeight(tags) {
+  const parseMeters = value => {
+    if (typeof value !== 'string' && typeof value !== 'number') return NaN;
+    const match = String(value).trim().match(/^([\d.]+)\s*(m|metres?|meters?|ft|feet|')?$/i);
+    if (!match) return NaN;
+    const valueMeters = Number(match[1]) * (/^(ft|feet|')$/i.test(match[2] ?? '') ? .3048 : 1);
+    return Number.isFinite(valueMeters) && valueMeters >= 0 && valueMeters <= 180 ? valueMeters : NaN;
+  };
+  const parsedHeight = parseMeters(tags.height);
+  const explicitHeight = Number.isFinite(parsedHeight) && parsedHeight >= 3 ? parsedHeight : NaN;
+  const levels = Number.parseFloat(tags['building:levels']);
+  const explicitLevels = Number.isFinite(levels) && levels >= 1 && levels <= 60 ? levels * 3 : NaN;
+  const typeFallbacks = { house: 6, detached: 6, bungalow: 4, garage: 3.5, shed: 3.5, apartments: 9, residential: 7, commercial: 8, office: 8, retail: 6, industrial: 6, warehouse: 6 };
+  const height = Math.min(60, explicitHeight || explicitLevels || typeFallbacks[tags.building] || 6);
+  const minHeightTag = parseMeters(tags.min_height);
+  const minLevel = Number.parseFloat(tags['building:min_level']);
+  const rawMinHeight = Number.isFinite(minHeightTag) ? minHeightTag : Number.isFinite(minLevel) && minLevel > 0 ? minLevel * 3 : 0;
+  return { height, minHeight: Math.min(Math.max(0, height - 3), rawMinHeight), estimated: !Number.isFinite(explicitHeight) && !Number.isFinite(explicitLevels) };
 }
 
 export function projectCoordinate(lat, lng, center) {
@@ -451,6 +555,8 @@ export function decodeWorld(elements, lat, lng, radiusMeters = 400) {
   const ways = elements.filter(e => e.type === 'way').map(e => ({...e,
     geometry: e.geometry ?? (e.nodes ?? []).map(id => { const n = nodes.get(id); return {lat:n?.lat, lon:n?.lon}; })
   }));
+  const roads = decodeRoads(ways, lat, lng, radiusMeters);
+  const roadIndex = buildingRoadIndex(roads), overlapBudget = { checks: 0 };
   const buildings = [];
   const coastlines = decodeWays(ways, lat, lng, radiusMeters, tags => tags.natural === 'coastline', (element, points, index) => ({id: `coast/${element.id}/${index}`, points}));
   // Multipolygon boundaries cannot be filled independently: inner rings are holes.
@@ -489,16 +595,19 @@ export function decodeWorld(elements, lat, lng, radiusMeters = 400) {
   for (const way of ways) {
     const buildingTag = way.tags?.building;
     if (way.tags?.location === 'underground' || Number(way.tags?.layer) < 0) continue;
-    if (!buildingTag || buildingTag === 'no' || buildingTag === 'roof' || way.geometry.length < 4) continue;
-    if (way.tags?.natural === 'yes' || !way.geometry.every(p => Number.isFinite(p.lat) && Number.isFinite(p.lon))) continue;
+    if (!buildingTag || buildingTag === 'no' || buildingTag === 'roof' || way.geometry.length < 4 || way.geometry.length > MAX_BUILDING_RING_POINTS) continue;
+    if (way.tags?.natural === 'yes' || !way.geometry.every(p => Number.isFinite(p.lat) && Number.isFinite(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180)) continue;
     const points = way.geometry.map(p => projectInternal(p.lat,p.lon,lat,lng));
     if (Math.hypot(points[0][0]-points.at(-1)[0], points[0][1]-points.at(-1)[1]) > 1) continue;
+    points[points.length - 1] = points[0];
+    const ring = points.slice(0, -1);
+    if (new Set(ring.map(p => `${p[0].toFixed(2)},${p[1].toFixed(2)}`)).size < 3) continue;
+    const area = Math.abs(ring.reduce((sum, p, i) => sum + p[0] * ring[(i + 1) % ring.length][1] - ring[(i + 1) % ring.length][0] * p[1], 0)) / 2;
+    if (area < 1 || area > 2_000_000) continue;
     if (!points.some(p => Math.hypot(...p) < radiusMeters + 150)) continue;
-    const taggedHeight = Number.parseFloat(way.tags.height);
-    const levels = Number.parseFloat(way.tags['building:levels']);
-    const height = Number.isFinite(taggedHeight) ? taggedHeight : Number.isFinite(levels) ? levels * 3.2 : 10;
-    const minHeight = Math.max(0, Number.parseFloat(way.tags.min_height) || Number.parseFloat(way.tags['building:min_level'])*3.2 || 0);
-    buildings.push({id:way.id, points, minHeight, height:Math.max(3,Math.min(180,height)), estimated:!Number.isFinite(taggedHeight) && !Number.isFinite(levels), source:'mapped'});
+    if (overlapsGroundRoad(points, roadIndex, overlapBudget)) continue;
+    const { height, minHeight, estimated } = taggedBuildingHeight(way.tags);
+    buildings.push({id:way.id, points, minHeight, height, estimated, source:'mapped'});
   }
-  return {center:{lat,lng}, radiusMeters, fetchedAt:Date.now(), roads:decodeRoads(ways,lat,lng,radiusMeters), omittedGradeSeparatedRoads:0, barriers:decodeBarriers(ways,lat,lng,radiusMeters), buildings, sceneryAreas, trees, coastlines};
+  return {center:{lat,lng}, radiusMeters, fetchedAt:Date.now(), roads, omittedGradeSeparatedRoads:0, barriers:decodeBarriers(ways,lat,lng,radiusMeters), buildings, sceneryAreas, trees, coastlines};
 }

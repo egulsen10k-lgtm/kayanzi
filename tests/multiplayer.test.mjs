@@ -79,6 +79,28 @@ test('WebRTC host and guest exchange snapshots with assigned identities and clea
   assert.equal(guest.connected, false); assert.equal(guest.peers.size, 0); assert.ok(removed.includes(hostId));
 });
 
+test('direct WebRTC peers measure bounded latency and clear ping timers on leave',async()=>{
+  const samples=[];
+  const host=makeSession({onLatency:sample=>samples.push(sample)}),guest=makeSession();
+  await pair(host,guest);
+  assert.equal(host.pingPeer(guest.id),true);
+  await tick();
+  assert.ok(Number.isFinite(host.latencyMs)&&host.latencyMs>=0&&host.latencyMs<=60000);
+  assert.ok(samples.some(sample=>Number.isFinite(sample.latencyMs)));
+  host.leave();guest.leave();
+  assert.equal(host.pingRecords.size,0);
+  assert.equal(host.latencyMs,null);
+});
+
+test('peer snapshots with duplicate or out-of-order sequence are ignored',()=>{
+  const received=[],session=makeSession({onPeerState:value=>received.push(value)});
+  session.id='self';
+  session._upsert('remote','Remote',state(12),4);
+  session._upsert('remote','Remote',state(13),3);
+  assert.equal(received.length,1);
+  assert.equal(session.peers.get('remote').state.lng,12);
+});
+
 test('host relays multiple guests while rejecting guest-injected peer control messages', async () => {
   const host = makeSession(), first = makeSession({ name: 'One' }), second = makeSession({ name: 'Two' });
   await pair(host, first); await pair(host, second);

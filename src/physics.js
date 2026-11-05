@@ -57,6 +57,9 @@ export class CarPhysics {
     this.nitroEngaged = false;
     this.nitroDepleted = false;
     this.driftDuration = 0;
+    this.absActive = false;
+    this.tractionControlActive = false;
+    this.assistFeedbackEvent = null;
 
     this.driftFactor = 0;
     this.driftAngle = 0;
@@ -253,6 +256,7 @@ export class CarPhysics {
     this.roadHeight = spawn.roadHeight;
     this.speed = 0; this.steering = 0;
     this.driftFactor = 0; this.driftAngle = 0; this.driftDirection = 0;
+    this.absActive = false; this.tractionControlActive = false; this.assistFeedbackEvent = null;
     this.roadBlocked = false; this.blockedSeconds = 0;
     return true;
   }
@@ -274,6 +278,15 @@ export class CarPhysics {
     const previousSpeed = this.speed;
     const stop = (amount) => Math.sign(this.speed) * Math.max(0, Math.abs(this.speed) - amount);
     this.throttle = 0;
+    const previousAbs = this.absActive;
+    const previousTraction = this.tractionControlActive;
+    const brakingPressure = pedal < -0.35 && previousSpeed > 12;
+    const wheelSlip = Math.abs(this.driftFactor) > 0.18 || Math.abs(this.speed - previousSpeed) > 12 * dt;
+    this.absActive = Boolean(brakingPressure && wheelSlip && Math.abs(previousSpeed) > 12);
+    this.tractionControlActive = Boolean(!this.handbrake && forward && pressure > 0.7 && this.driftFactor > 0.12 && Math.abs(this.speed) > 18);
+    if ((this.absActive && !previousAbs) || (this.tractionControlActive && !previousTraction)) {
+      this.assistFeedbackEvent = { abs: this.absActive, tractionControl: this.tractionControlActive };
+    }
     if (this.nitroCharge <= 0) this.nitroDepleted = true;
     if (this.nitroCharge >= .25) this.nitroDepleted = false;
     this.nitroEngaged = hasPower && this.nitroActive && !this.nitroDepleted && this.nitroCharge > 0 &&
@@ -445,6 +458,9 @@ export class CarPhysics {
     this.isDrifting = false;
     this.driftScore = 0;
     this.driftEndEvent = null;
+    this.absActive = false;
+    this.tractionControlActive = false;
+    this.assistFeedbackEvent = null;
     this.handbrake = false;
     this.keys = {};
     this.reverseDelay = 0;

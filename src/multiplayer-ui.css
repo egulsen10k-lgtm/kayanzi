@@ -10,4 +10,5 @@
 .mp-world-note { color: #adbfca; font-size: 12px; margin-top: 12px; }
 .mp-advanced { margin-top: 18px; padding-top: 12px; border-top: 1px solid #304653; }
 #multiplayer-panel .mp-advanced > summary { font-size: 12px; color: #aabcc8; }
+.mp-latency-chip { display: inline-flex; margin: -4px 0 10px; padding: 4px 9px; border: 1px solid #4c778a; border-radius: 999px; background: #102634; color: #bceefa; font: 700 11px ui-monospace, monospace; }
 @media (max-width: 380px) { .mp-short-method { padding: 12px; } .mp-short-join { grid-template-columns: 1fr; } }

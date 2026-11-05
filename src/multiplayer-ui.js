@@ -98,6 +98,7 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
 
   const intro = make('p', { className: 'mp-intro' }, 'Up to 8 drivers. Join your friends, then use Meet to start on the same road.');
   const status = make('p', { id: 'multiplayer-status', className: 'mp-status', role: 'status', 'aria-live': 'polite' }, 'Not connected');
+  const latency = make('span', { id: 'multiplayer-latency', className: 'mp-latency-chip', role: 'status', 'aria-live': 'polite', hidden: '' });
   const error = make('p', { className: 'mp-error', role: 'alert', hidden: '' });
   const nameInput = make('input', { id: 'multiplayer-name', type: 'text', maxlength: String(MAX_NAME), autocomplete: 'nickname', placeholder: 'Your driver name' });
   try { nameInput.value = localStorage.getItem('earth-drive-driver-name') || ''; } catch { /* Storage can be disabled. */ }
@@ -194,7 +195,7 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
   const leaveButton = button('Leave multiplayer', { className: 'mp-leave', hidden: '' });
   playersSection.append(playersTitle, playersList, chatRow, leaveButton);
   advanced.append(choices, lanSection, codeSection);
-  panel.append(heading, intro, status, error, nameField, shortSection, worldNote, playersSection, advanced);
+  panel.append(heading, intro, status, latency, error, nameField, shortSection, worldNote, playersSection, advanced);
   backdrop.append(panel);
   (document.getElementById('main-viewport') || document.body).append(trigger);
   document.body.append(backdrop);
@@ -204,6 +205,7 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
   let infoAbort = null;
   let lastFocus = null;
   let latestStatus = { state: 'offline' };
+  let latestLatency = null;
   let currentPeers = [];
   let rosterSignature = '';
   let activeMethod = 'lan';
@@ -436,13 +438,14 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
   function updateStatus(value = {}) {
     latestStatus = value;
     status.dataset.state = value.state || 'offline';
-    status.textContent = value.message || ({ offline: 'Not connected', connecting: 'Connecting… Keep this page open.', connected: 'Connected · drive together', error: 'Connection failed. Try again.' }[value.state] || 'Not connected');
+    status.textContent = value.message || ({ offline: 'Not connected', connecting: 'Connecting… Keep this page open.', reconnecting: 'Reconnecting…', connected: 'Connected · drive together', error: 'Connection failed. Try again.' }[value.state] || 'Not connected');
     if (value.state === 'connected') showError('');
     if (value.state === 'error') showError(value.message || 'Could not connect. Check that both devices are on the same Wi-Fi.');
     trigger.dataset.connected = String(value.state === 'connected');
     trigger.textContent = value.state === 'connected' ? `Multiplayer · ${Math.min(8, currentPeers.length + 1)}` : 'Multiplayer';
-    leaveButton.hidden = value.state === 'offline';
+    leaveButton.hidden = !['connected', 'reconnecting'].includes(value.state);
     chatRow.hidden = value.state !== 'connected';
+    updateLatency(latestLatency);
     if (value.state === 'offline') {
       offerOutput.value = answerOutput.value = offerInput.value = answerInput.value = '';
       offerShare.hidden = answerShare.hidden = answerField.hidden = connectAnswer.hidden = true;
@@ -452,6 +455,17 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
       roomInput.value = value.room || session.room || roomInput.value;
     }
     updateShare();
+  }
+
+  function updateLatency(value = null) {
+    latestLatency = value;
+    const connected = latestStatus.state === 'connected' || latestStatus.state === 'reconnecting';
+    latency.hidden = !connected;
+    if (!connected) return;
+    if (latestStatus.state === 'reconnecting') latency.textContent = 'Reconnecting';
+    else if (latestStatus.transport === 'lan') latency.textContent = 'LAN · online';
+    else if (Number.isFinite(value?.latencyMs) && value.latencyMs >= 0 && value.latencyMs <= 60000) latency.textContent = `${Math.round(value.latencyMs)} ms`;
+    else latency.textContent = 'Connected · pinging';
   }
 
   function updatePeers(peers = []) {
@@ -497,6 +511,7 @@ export function mountMultiplayerUI({ session, getState = () => null, onJoinPeer 
   return {
     updateStatus,
     updatePeers,
+    updateLatency,
     open,
     close,
     destroy() {

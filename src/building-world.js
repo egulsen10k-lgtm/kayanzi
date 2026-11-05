@@ -1,6 +1,36 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
+const MAX_FOOTPRINT_COORDINATE = 1e7;
+const MAX_BUILDING_HEIGHT = 1000;
+
+function validBuilding(building) {
+  if (!building || typeof building !== 'object' || Array.isArray(building) || !Array.isArray(building.points)) return null;
+  const height = building.height;
+  const minHeight = building.minHeight === undefined ? 0 : building.minHeight;
+  if (!Number.isFinite(height) || height <= 0 || height > MAX_BUILDING_HEIGHT ||
+      !Number.isFinite(minHeight) || minHeight < 0 || minHeight >= height) return null;
+  if (building.points.length < 3) return null;
+
+  const points = [];
+  for (const point of building.points) {
+    if (!Array.isArray(point) || point.length < 2 || !Number.isFinite(point[0]) || !Number.isFinite(point[1]) ||
+        Math.abs(point[0]) > MAX_FOOTPRINT_COORDINATE || Math.abs(point[1]) > MAX_FOOTPRINT_COORDINATE) return null;
+    const previous = points.at(-1);
+    if (!previous || Math.hypot(point[0] - previous[0], point[1] - previous[1]) > 1e-6) points.push([point[0], point[1]]);
+  }
+  if (points.length > 1 && Math.hypot(points[0][0] - points.at(-1)[0], points[0][1] - points.at(-1)[1]) <= 1e-6) points.pop();
+  if (points.length < 3) return null;
+
+  let twiceArea = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i], b = points[(i + 1) % points.length];
+    twiceArea += a[0] * b[1] - b[0] * a[1];
+  }
+  if (!Number.isFinite(twiceArea) || Math.abs(twiceArea) <= 1e-6) return null;
+  return { points, height, minHeight };
+}
+
 function* buildingSteps(network,random=Math.random) {
   const group = new THREE.Group();
   group.name = 'buildings';
@@ -25,19 +55,31 @@ function* buildingSteps(network,random=Math.random) {
   const roof = new THREE.MeshStandardMaterial({color:0x656d73,roughness:.95});
   const chunks = new Map();
   let count = 0;
-  for(const building of network.buildings ?? []) {
+  const buildings = Array.isArray(network?.buildings) ? network.buildings : [];
+  for(const building of buildings) {
     if (++count % 32 === 0) yield;
-    if(building.points.length<4) continue;
-    const shape=new THREE.Shape(building.points.slice(0,-1).map(([east,north])=>new THREE.Vector2(east,north)));
-    const geometry=new THREE.ExtrudeGeometry(shape,{depth:Math.max(.1,building.height-(building.minHeight ?? 0)),bevelEnabled:false,steps:1});
+    const valid = validBuilding(building);
+    if (!valid) continue;
+    const { points, height, minHeight } = valid;
+    const shape=new THREE.Shape(points.map(([east,north])=>new THREE.Vector2(east,north)));
+    let geometry;
+    try {
+      geometry=new THREE.ExtrudeGeometry(shape,{depth:height-minHeight,bevelEnabled:false,steps:1});
+      const positions = geometry.attributes.position?.array;
+      if (!positions || !positions.every(Number.isFinite)) { geometry.dispose(); continue; }
+    } catch {
+      geometry?.dispose();
+      continue;
+    }
     geometry.rotateX(-Math.PI/2);
-    geometry.translate(0,building.minHeight ?? 0,0);
+    geometry.translate(0, minHeight, 0);
+    if (!geometry.attributes.position.array.every(Number.isFinite)) { geometry.dispose(); continue; }
     geometry.userData.windowLightsLit=random()<.3;
     const floors=Math.max(1,Math.ceil((building.height-(building.minHeight??0))/3));
     geometry.userData.windowCount=floors*4;
     group.userData.windowLighting.totalWindows+=geometry.userData.windowCount;
     if(geometry.userData.windowLightsLit)group.userData.windowLighting.litWindows+=geometry.userData.windowCount;
-    const [east,north] = building.points[0];
+    const [east,north] = points[0];
     const key = `${Math.floor(east / 100)},${Math.floor(north / 100)}`;
     if (!chunks.has(key)) chunks.set(key, []);
     chunks.get(key).push(geometry);

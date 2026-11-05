@@ -59,6 +59,14 @@ test('sunroof rider uses a real roof opening and appears only with a passenger a
  assert.equal(group.getObjectByName('passenger-0').visible,false);
 });
 
+test('pedestrian states expose bounded visual poses',async()=>{
+ const {pedestrianPose}=await import('../src/pedestrian-view.js');
+ const scatter=pedestrianPose('scatter',Math.PI/2),idle=pedestrianPose('idle',Math.PI/2),boarded=pedestrianPose('boarded');
+ assert.equal(scatter.visible,true);assert.ok(scatter.lean<0);assert.ok(Math.abs(scatter.armGait)>Math.abs(idle.armGait));
+ assert.equal(boarded.visible,false);assert.ok(boarded.scaleY>0&&boarded.scaleY<1);
+ assert.equal(idle.scaleY,1);assert.ok(Math.abs(idle.gait)<=.3);
+});
+
 test('instanced NPCs switch between goth and headscarf geometry without new draw calls',async()=>{
  const {PedestrianView}=await import('../src/pedestrian-view.js');
  const view=new PedestrianView(new THREE.Scene());

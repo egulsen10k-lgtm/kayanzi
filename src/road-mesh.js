@@ -47,6 +47,28 @@ function offsets(points, distance) {
   });
 }
 
+function addRoadsideRails(vertices, points, road) {
+  // Sidewalks already provide a visible urban road edge; rails cover open roads.
+  if (sidewalkWidth(road) || road.width < 4) return;
+  const clearance = road.elevations?.some(height => Math.abs(height) > .01) ? 0 : .75;
+  const edge = offsets(points, road.width / 2 + clearance);
+  const at = (index, side, height) => [
+    points[index][0] + edge[index][0] * side,
+    points[index][2] + height,
+    points[index][1] + edge[index][1] * side
+  ];
+  for (const side of [-1, 1]) {
+    for (let i = 1; i < points.length; i++) {
+      if (Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]) < .01) continue;
+      const topA = at(i - 1, side, .82), topB = at(i, side, .82);
+      const lowA = at(i - 1, side, .4), lowB = at(i, side, .4);
+      vertices.push(...topA, ...topB, ...lowA, ...lowB);
+      const postA = at(i - 1, side, ROAD_SURFACE_HEIGHT), postB = at(i, side, ROAD_SURFACE_HEIGHT);
+      vertices.push(...postA, ...topA, ...postB, ...topB);
+    }
+  }
+}
+
 function cleanFragments(raw, elevations = []) {
   const result = [];
   let points = [];
@@ -107,7 +129,7 @@ function exposedRuns(a, b, blocked) {
 export function buildRoadMeshes(network) {
   const group = new THREE.Group();
   group.name = 'road-surfaces';
-  const asphalt = [], markings = [], shoulders = [], curbs = [], structures = [];
+  const asphalt = [], markings = [], shoulders = [], curbs = [], structures = [], rails = [];
   const overlaps = streetOverlap(network);
   const crosswalks=buildCrosswalkMesh(network),crossings=crosswalks?.userData.crossings??[];
   const crossingAt=point=>crossings.some(c=>{
@@ -124,16 +146,10 @@ export function buildRoadMeshes(network) {
       const at = (i, offset, sign, y) => [points[i][0] + offset[i][0] * sign, y + points[i][2], points[i][1] + offset[i][1] * sign];
       // Curbs are appropriate for urban streets, not motorways or dirt tracks.
       const hasCurbs = pavement > 0;
-      // Rounded node pads match the road union used by collision checks.
-      for (const [x,z,height] of points) {
-        const radius=road.width/2;
-        for(let k=0;k<24;k++) {
-          const a=k*Math.PI/12,b=(k+1)*Math.PI/12;
-          asphalt.push(x,height+ROAD_SURFACE_HEIGHT,z,x+Math.cos(b)*radius,height+ROAD_SURFACE_HEIGHT,z+Math.sin(b)*radius,x+Math.cos(a)*radius,height+ROAD_SURFACE_HEIGHT,z+Math.sin(a)*radius);
-        }
-      }
-      // The swept side curbs already cover corners. Cap only true road ends so
-      // ordinary shape points do not become circular boundary islands.
+      addRoadsideRails(rails, points, road, overlaps, crossingAt);
+      // Shared mitered cross-sections connect vertices and junctions without
+      // filling every OSM shape point with a circular asphalt island.
+      // The swept side curbs already cover corners. Cap only true road ends.
       if (hasCurbs) for (const [x,z,height] of [points[0], points.at(-1)]) {
         const radius=road.width/2, outerRadius=radius+pavement;
         for(let k=0;k<64;k++) {
@@ -198,24 +214,29 @@ export function buildRoadMeshes(network) {
   }
   for (const [name, vertices, color] of [
     ['asphalt', asphalt, 0x34383d], ['markings', markings, 0xf0eee4],
-    ['structures', structures, 0x8c9296], ['shoulders', shoulders, 0x78786e], ['curbs', curbs, 0xb7b4ab]
+    ['structures', structures, 0x8c9296], ['shoulders', shoulders, 0x78786e], ['curbs', curbs, 0xb7b4ab],
+    ['roadside-rails', rails, 0x737b80]
   ]) {
     if (!vertices.length) continue;
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
-    const material = new THREE.MeshStandardMaterial({ color, roughness: .95, side: THREE.DoubleSide });
+    const material = name === 'roadside-rails'
+      ? new THREE.LineBasicMaterial({ color, transparent: true, opacity: .9 })
+      : new THREE.MeshStandardMaterial({ color, roughness: .95, side: THREE.DoubleSide });
     if (name === 'asphalt') {
       const uv = [];
       for (let i = 0; i < vertices.length; i += 3) uv.push(vertices[i] / 3, vertices[i + 2] / 3);
       geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
       material.map = asphaltTexture();
     }
-    const mesh = new THREE.Mesh(geometry, material);
+    const mesh = name === 'roadside-rails'
+      ? new THREE.LineSegments(geometry, material)
+      : new THREE.Mesh(geometry, material);
     mesh.name = name;
-    mesh.receiveShadow = true;
-    mesh.castShadow = ['curbs','structures','asphalt'].includes(name);
+    mesh.receiveShadow = name !== 'roadside-rails';
+    mesh.castShadow = ['curbs','structures','asphalt','roadside-rails'].includes(name);
     group.add(mesh);
   }
   if(crosswalks)group.add(crosswalks);

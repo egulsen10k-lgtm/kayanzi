@@ -2,9 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {buildTrafficGraph} from '../src/traffic-routes.js';
-import {RoadSigns,junctionDirections,turnArrow} from '../src/road-signs.js';
+import {RoadSigns,junctionDirections,roadDestination,turnArrow} from '../src/road-signs.js';
 import {TrafficControls} from '../src/traffic-controls.js';
 const graph=()=>buildTrafficGraph({roads:[{name:'North Street',width:8,maxspeed:30,points:[[0,-100],[0,100]]},{name:'Market Road',width:8,maxspeed:50,points:[[-100,0],[100,0]]}]});
+test('malformed sign metadata returns bounded safe labels and directions',()=>{
+ assert.doesNotThrow(()=>roadDestination());
+ assert.equal(roadDestination(), 'Local road');
+ assert.equal(roadDestination({road:{destination:'  A; B\u0000 '.repeat(30)}}).length,45);
+ assert.equal(roadDestination({road:{},tangent:[0,1]}),'Local road · North');
+ assert.equal(turnArrow(null,[1,0]),'↑');
+ assert.deepEqual(junctionDirections(null,null),[]);
+ assert.deepEqual(junctionDirections({nodes:new Map()}, {to:{id:'missing'},from:{id:'from'},tangent:[0,1],hb:0}),[]);
+ const graphLike={nodes:new Map([['n',{out:[null,{to:{id:'next'},tangent:null,ha:0,id:'bad'},{to:{id:'ok'},tangent:[1,0],ha:0}]}]])};
+ const directions=junctionDirections(graphLike,{to:{id:'n'},from:{id:'from'},tangent:[0,1],hb:0});
+ assert.equal(directions.length,1);assert.equal(directions[0].name,'Local road · East');
+});
+
 test('roadside signs use mapped limits, road names, and actual turn directions',()=>{
  const g=graph(),signs=new RoadSigns(new THREE.Group());signs.rebuild(g);
  assert.ok(signs.entries.some(s=>s.type==='speed'&&s.limit===30));assert.ok(signs.entries.some(s=>s.type==='speed'&&s.limit===50));

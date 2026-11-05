@@ -5,6 +5,28 @@ import { createRouteGuide } from '../src/route-guide.js';
 const route={coordinates:[[0,0],[.001,0]],distance:1000,
   stops:[{name:'Start',distance:0},{name:'Finish',distance:1000}],steps:[]};
 
+test('route progress is clamped and tracks distance since the current instruction',()=>{
+  const guide=createRouteGuide(route);
+  const start=guide.update(0,0,10,1);
+  assert.equal(start.progressPercent,0);
+  assert.equal(start.distanceSinceLastInstruction,0);
+  const finish=guide.update(0,.001,10,1);
+  assert.equal(finish.progressPercent,100);
+  assert.ok(finish.distanceSinceLastInstruction>=0);
+  guide.restart();
+  const reset=guide.update(0,0,10,1);
+  assert.equal(reset.progressPercent,0);
+  assert.equal(reset.distanceSinceLastInstruction,0);
+});
+
+test('rerouteNeeded requires five seconds far off route and clears with recovery hysteresis',()=>{
+  const guide=createRouteGuide(route);
+  for(let i=0;i<5;i++) assert.equal(guide.update(.001,.001,8,1).rerouteNeeded,false);
+  assert.equal(guide.update(.001,.001,8,.1).rerouteNeeded,true);
+  assert.equal(guide.update(.00054,.00054,8,1).rerouteNeeded,true);
+  assert.equal(guide.update(0,0,8,1).rerouteNeeded,false);
+});
+
 test('route ETA uses the measured average speed in metres per second',()=>{
   const guide=createRouteGuide(route);
   const info=guide.update(0,0,10,1);

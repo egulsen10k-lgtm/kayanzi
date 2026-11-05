@@ -20,6 +20,7 @@ export class WorldMapController {
   }
 
   initMap() {
+    this.clearPeerPositions();
     const initialLat = 48.1764;
     const initialLng = 11.5583;
 
@@ -134,8 +135,9 @@ export class WorldMapController {
   }
 
   updatePeerPosition(peerState) {
-    if (!this.map || !peerState || !Number.isFinite(peerState.lat) || !Number.isFinite(peerState.lng)) return;
-    let marker = this.peerMarkers.get(peerState.peerId);
+    const id=typeof peerState?.peerId==='string'?peerState.peerId.trim():'';
+    if (!this.map || !id || id.length>64 || !Number.isFinite(peerState.lat) || !Number.isFinite(peerState.lng) || Math.abs(peerState.lat)>90 || Math.abs(peerState.lng)>180) return false;
+    let marker = this.peerMarkers.get(id);
     if (!marker) {
       const peerIcon = L.divIcon({
         className: 'peer-car-marker',
@@ -154,18 +156,29 @@ export class WorldMapController {
       });
       marker = L.marker([peerState.lat, peerState.lng], { icon: peerIcon }).addTo(this.map);
       const label = document.createElement('span');
-      label.textContent = `Driver: ${peerState.name || peerState.peerId}`;
+      label.textContent = `Driver: ${String(peerState.name ?? id).slice(0,64)}`;
       marker.bindTooltip(label, { permanent: false, direction: 'top' });
-      this.peerMarkers.set(peerState.peerId, marker);
+      this.peerMarkers.set(id, marker);
     } else {
       marker.setLatLng([peerState.lat, peerState.lng]);
     }
+    return true;
   }
 
   removePeerPosition(id) {
-    const marker = this.peerMarkers.get(id);
-    if (marker && this.map) this.map.removeLayer(marker);
-    this.peerMarkers.delete(id);
+    const key=typeof id==='string'?id.trim():'';
+    if (!key) return false;
+    const marker = this.peerMarkers.get(key);
+    if (!marker) return false;
+    marker.remove?.();
+    this.map?.removeLayer?.(marker);
+    this.peerMarkers.delete(key);
+    return true;
+  }
+
+  clearPeerPositions() {
+    for(const id of [...this.peerMarkers.keys()]) this.removePeerPosition(id);
+    this.peerMarkers.clear();
   }
 
   setMinimapZoom(z) {

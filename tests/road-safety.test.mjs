@@ -5,8 +5,31 @@ import { CarPhysics } from '../src/physics.js';
 import { decodeWorld, projectCoordinate } from '../src/road-network.js';
 import { footprintOnRoad, nearestRoadSpawn, localToCoordinate, sweepRoadMotion, roadSurfaceAt, sweepRoadMotionResult } from '../src/road-safety.js';
 import { buildBuildings } from '../src/building-world.js';
+import { sidewalkWidth } from '../src/sidewalks.js';
 const road = () => ({center:{lat:0,lng:0},radiusMeters:500,roads:[{width:8,points:[[0,-400],[0,400]],name:'Test street'}]});
 const location = (p,heading=0) => ({...localToCoordinate(p,{lat:0,lng:0}),heading});
+
+test('sidewalk width rejects malformed roads and invalid mapped metadata safely',()=>{
+  const valid={width:8,highway:'residential',points:[[0,0],[0,10]]};
+  for(const malformed of [null,undefined,0,{},[],
+    {...valid,highway:null},{...valid,highway:{tag:'residential'}},
+    {...valid,width:NaN},{...valid,width:Infinity},{...valid,width:1},{...valid,width:41},
+    {...valid,points:null},{...valid,points:[[0,0],[NaN,10]]},
+    {...valid,elevations:null},{...valid,elevations:[0]},{...valid,elevations:[0,Infinity]},
+    {...valid,bridge:true},{...valid,tunnel:true}]) {
+    assert.doesNotThrow(()=>sidewalkWidth(malformed));
+    assert.equal(sidewalkWidth(malformed),0);
+  }
+});
+
+test('sidewalk width preserves valid ground urban roads and rejects elevated roads',()=>{
+  for(const highway of ['residential','living_street','service','unclassified','tertiary','secondary','primary']) {
+    assert.equal(sidewalkWidth({width:8,highway,points:[[0,0],[0,10]],elevations:[0,0]}),1.6);
+  }
+  assert.equal(sidewalkWidth({width:8,highway:'residential',points:[[0,0],[0,10]]}),1.6);
+  assert.equal(sidewalkWidth({width:8,highway:'residential',points:[[0,0],[0,10]],elevations:[5,5]}),0);
+  assert.equal(sidewalkWidth({width:8,highway:'motorway',points:[[0,0],[0,10]]}),0);
+});
 
 test('car is held safely without road data and teleport clears old coverage',()=>{
   const car=new CarPhysics();car.keys.KeyW=true;car.update(.1);

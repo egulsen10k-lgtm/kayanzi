@@ -9,6 +9,14 @@ function partsOf(model) {
   model.traverse(object=>{if(object.isMesh)parts.push(object);});
   return parts;
 }
+export function pedestrianPose(state, phase = 0, recoveryTime = 0, trunkProgress = 0) {
+  if (state === 'scatter') return { visible: true, lean: -.22, gait: Math.sin(phase) * 1.15, armGait: Math.sin(phase) * 1.35, scaleY: 1 };
+  if (state === 'boarded') return { visible: false, lean: 0, gait: 0, armGait: 0, scaleY: .45 };
+  if (state === 'idle') return { visible: true, lean: 0, gait: Math.sin(phase) * .3, armGait: Math.sin(phase) * .3, scaleY: 1 };
+  if (state === 'trunk-entering') return { visible: true, lean: -.5, gait: -trunkProgress * .9, armGait: -1.3, scaleY: 1 - trunkProgress * .5 };
+  return { visible: true, lean: recoveryTime > 0 ? (1 - Math.min(1, recoveryTime / 1.2)) * 1.3 : 0, gait: 0, armGait: 0, scaleY: 1 };
+}
+
 function ragdollBindings(model,parts) {
   model.updateMatrixWorld(true);
   return parts.map(part=>{
@@ -58,7 +66,7 @@ export class PedestrianView {
     const activeRagdolls=new Set();
     this.models.forEach((initialModel,i)=>{
       let model=initialModel;
-      const person=sim.people[i],visible=!!person&&!['boarded','trunk-rider'].includes(person.state);
+      const person=sim.people[i],pose=person?pedestrianPose(person.state,person.phase??0,person.recoveryTime??0,person.trunkProgress??0):null,visible=Boolean(pose?.visible)&&!['trunk-rider'].includes(person.state);
       if(visible){
         const style=this.styleColors[person.style] ? person.style : 'casual';
         if(model.userData.style!==style) {
@@ -118,12 +126,11 @@ export class PedestrianView {
           model.position.set(person.x-p[0],person.height,-(person.y-p[1]));model.rotation.set(0,Math.PI-person.heading,0);
           const holding=person.state==='clinging';
           const entering=person.state==='trunk-entering',progress=person.trunkProgress??0;
-          model.scale.set(1,entering?1-progress*.5:1,1);
-          const swing=['idle','chasing','trunk-approach','scatter'].includes(person.state)?Math.sin(person.phase)*(person.state==='idle'?.3:person.state==='scatter'?.9:.65):0;
-          model.rotation.x=holding ? -.18 : person.state==='recovering' ? (1-Math.min(1,person.recoveryTime/1.2))*1.3 : 0;
-          model.userData.legs.forEach((limb,j)=>{limb.rotation.x=holding ? (j ? -.42 : -.25) : swing*(j%2?1:-1);});
-          model.userData.arms.forEach((limb,j)=>{limb.rotation.x=holding ? -1.32+(j ? -.12 : .12) : swing*(j%2?-1:1);});
-          if(entering){model.rotation.x=-.5;model.userData.arms.forEach(limb=>{limb.rotation.x=-1.3;});model.userData.legs.forEach(limb=>{limb.rotation.x=-progress*.9;});}
+          model.scale.set(1,pose.scaleY,1);
+          model.rotation.x=holding ? -.18 : pose.lean;
+          model.userData.legs.forEach((limb,j)=>{limb.rotation.x=holding ? (j ? -.42 : -.25) : pose.gait*(j%2?1:-1);});
+          model.userData.arms.forEach((limb,j)=>{limb.rotation.x=holding ? -1.32+(j ? -.12 : .12) : pose.armGait*(j%2?-1:1);});
+          if(entering){model.rotation.x=pose.lean;model.userData.arms.forEach(limb=>{limb.rotation.x=-1.3;});model.userData.legs.forEach(limb=>{limb.rotation.x=-progress*.9;});}
         }
         model.updateMatrixWorld(true);
       }

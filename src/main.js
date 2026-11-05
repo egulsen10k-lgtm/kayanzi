@@ -8,7 +8,7 @@ import { bindSteeringWheelInput } from './steering-wheel-input.js';
 import { assetUrl } from './resource-urls.js';
 import { CarPhysics } from './physics.js';
 import { CarAudio } from './audio.js';
-import { CarVisualizer3D } from './visualizer.js';
+import { CarVisualizer3D, roadNetworkHasEdges } from './visualizer.js';
 import { WorldMapController } from './map.js';
 import { nearestRoadSpawn, footprintOnRoad } from './road-safety.js';
 import { projectCoordinate } from './road-network.js';
@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
   physics.onPeerImpact = ({ relativeSpeed = 0 } = {}) => audio.triggerImpact(Math.min(100, Math.max(8, relativeSpeed * 3.6)));
   const canvasContainer = document.getElementById('render-canvas-container');
   const visualizer = new CarVisualizer3D(canvasContainer);
+  audio.setRemoteVoiceCap?.(visualizer.remoteVoiceCap);
   const pedestrians = new Pedestrians();
   const trafficManager = new TrafficManager(visualizer.trafficGroup ?? visualizer.scene, {camera:visualizer.camera});
   let npcSync;
@@ -202,6 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
       mapController.removePeerPosition(id);
     },
     onStatus: (status) => multiplayerUI?.updateStatus(status),
+    onLatency: latency => multiplayerUI?.updateLatency(latency),
     onPeers: (peers) => multiplayerUI?.updatePeers(peers),
     getNpcs: () => serializeNpcs({ pedestrians, traffic: trafficManager }),
     onNpcs: (snapshot) => applyNpcs(snapshot, { pedestrians, traffic: trafficManager }),
@@ -319,6 +321,30 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   let gamepadState=gamepadInput.state;
 
+  const onboardingHint = document.getElementById('onboarding-hint');
+  const onboardingText = document.getElementById('onboarding-hint-text');
+  const onboardingNext = document.getElementById('onboarding-hint-next');
+  const onboardingDismiss = document.getElementById('onboarding-hint-dismiss');
+  const onboardingSteps = ['Accelerate with W or ↑, or use the gas pedal.', 'Steer with A/D or ←/→ and follow the road.', 'Press Shift or N for nitro; Space uses the handbrake.'];
+  let onboardingIndex = 0;
+  let onboardingDismissed = false;
+  try { onboardingDismissed = localStorage.getItem('bmw-onboarding-dismissed') === '1'; } catch {}
+  const showOnboarding = () => {
+    if (onboardingDismissed || visualizer.previewActive || runnerActive || !onboardingHint) return;
+    onboardingText.textContent = onboardingSteps[onboardingIndex];
+    onboardingNext.textContent = onboardingIndex === onboardingSteps.length - 1 ? 'Done' : 'Next';
+    onboardingHint.hidden = false;
+  };
+  const hideOnboarding = persist => {
+    onboardingHint.hidden = true;
+    if (persist) { onboardingDismissed = true; try { localStorage.setItem('bmw-onboarding-dismissed', '1'); } catch {} }
+  };
+  onboardingNext?.addEventListener('click', () => {
+    if (onboardingIndex >= onboardingSteps.length - 1) hideOnboarding(true);
+    else { onboardingIndex++; showOnboarding(); }
+  });
+  onboardingDismiss?.addEventListener('click', () => hideOnboarding(true));
+
   startBtn.addEventListener('click', () => {
     audio.init();
     if (!npcSync.isFollower) trafficManager.setDensity(Number(densitySelect?.value ?? 1), physics);
@@ -326,6 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
     startOverlay.style.opacity = '0';
     setTimeout(() => {
       startOverlay.style.display = 'none';
+      showOnboarding();
     }, 500);
 
     // Refresh imagery status even if its first event preceded the listener.
@@ -643,6 +670,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const cameraShakeToggle = document.getElementById('camera-shake-toggle');
   const applyQuality = tier => {
     const selected = visualizer.setQualityTier(tier);
+    audio.setRemoteVoiceCap?.(visualizer.remoteVoiceCap);
     if (qualitySelect && qualitySelect.value !== selected) qualitySelect.value = selected;
     if (performanceStatus) {
       performanceStatus.textContent = `Graphics: ${selected[0].toUpperCase()}${selected.slice(1)}`;
@@ -861,6 +889,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const hudRpm = document.getElementById('hud-rpm');
   const hudGear = document.getElementById('hud-gear');
   const hudRpmBar = document.getElementById('hud-rpm-bar');
+  const drivingAssist = document.getElementById('hud-driving-assist');
+  let assistTickCooldown = 0;
 
   const driftToast = document.createElement('div');
   driftToast.id = 'drift-toast';
@@ -988,13 +1018,13 @@ document.addEventListener('DOMContentLoaded', () => {
     runnerGame=new RunnerGame();
     runnerView??=new RobotRunnerView(visualizer.renderer,canvasContainer,visualizer.currentColor);
     runnerView.reset();
-    runnerActive=true;runnerUi.hidden=false;mainViewport.classList.add('runner-active');hudGearChip.hidden=true;pauseToggle.hidden=true;
+    runnerActive=true;runnerUi.hidden=false;mainViewport.classList.add('runner-active');hudGearChip.hidden=true;pauseToggle.hidden=true;hideOnboarding(false);
     runnerHint.hidden=false;runnerHint.textContent='Jump onto truck roofs and meet the blonde adults. ← → change lanes · Space / ↑ jump';
     hintTimer=3.5;
     audio.update(800,0,0,false,{model:physics.bmwModel,gear:1});
   });
   const exitRunner=()=>{
-    runnerActive=false;runnerUi.hidden=true;mainViewport.classList.remove('runner-active');pauseToggle.hidden=false;
+    runnerActive=false;runnerUi.hidden=true;mainViewport.classList.remove('runner-active');pauseToggle.hidden=false;showOnboarding();
     hudGearChip.hidden=false;
     robotJump.reset();
     driveInput.clear();lastTime=performance.now();
@@ -1006,6 +1036,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const pauseResume=document.getElementById('pause-resume');
   const pauseState=new PauseState(paused=>{
     pauseOverlay.hidden=!paused;
+    pauseOverlay.inert=!paused;
     pauseToggle.setAttribute('aria-pressed',String(paused));
     pauseToggle.setAttribute('aria-label',paused?'Resume driving':'Pause driving');
     pauseToggle.textContent=paused?'▶ Resume':'Ⅱ Pause';
@@ -1035,7 +1066,9 @@ document.addEventListener('DOMContentLoaded', () => {
     startOverlay.style.display='flex';startOverlay.style.opacity='1';
   });
   window.addEventListener('keydown',event=>{
-    if(event.code!=='Escape'||runnerActive)return;
+    const active = document.activeElement;
+    const typing = active && (['INPUT','TEXTAREA','SELECT'].includes(active.tagName) || active.isContentEditable);
+    if(event.code!=='Escape'||runnerActive||typing||multiplayerPanelOpen)return;
     event.preventDefault();event.stopImmediatePropagation();pauseState.toggle();
   },true);
   document.querySelectorAll('[data-runner-action]').forEach(button=>button.addEventListener('pointerdown',event=>{
@@ -1070,7 +1103,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const mobileMenuClose = document.getElementById('mobile-drive-menu-close');
   const mobileActions = document.getElementById('mobile-drive-actions');
   const mobileStatus = document.getElementById('mobile-drive-status');
-  const locationCard = document.querySelector('.hud-overlay > .hud-card:nth-child(2)');
+  const locationCard = document.querySelector('.hud-overlay > .hud-card:nth-child(3)');
   const mobileControls = [sidebarToggle, dynamicsToggle, settingsToggle, songButton,
     document.getElementById('multiplayer-toggle'), document.getElementById('transform-controls')];
   const mobilePlacements = [...mobileControls, locationCard, nitroButton].filter(Boolean).map(element => {
@@ -1257,7 +1290,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const roadSigns = trafficManager.signs;
     const radars = roadSigns?.getRadars?.() ?? [];
     const carPoint = physics.roadNetwork?.center ? projectCoordinate(physics.lat, physics.lng, physics.roadNetwork.center) : null;
-    const speedLimit = carPoint && roadSigns?.getNearestLimit ? roadSigns.getNearestLimit({ x: carPoint[0], y: carPoint[1], heading: physics.heading, roadHeight: physics.roadHeight, currentEdge: physics.currentEdge, roadNetwork: physics.roadNetwork }) : 50;
+    const speedLimit = carPoint && roadNetworkHasEdges(physics.roadNetwork) && roadSigns?.getNearestLimit
+      ? roadSigns.getNearestLimit({ x: carPoint[0], y: carPoint[1], heading: physics.heading, roadHeight: physics.roadHeight, currentEdge: physics.currentEdge, roadNetwork: physics.roadNetwork })
+      : 50;
     const nearRadar = carPoint && radars.some(r => Math.hypot(carPoint[0] - r.x, carPoint[1] - r.y) <= 30);
     if (nearRadar && Math.abs(physics.speed) > speedLimit * 1.15 && speedCamFlash <= 0) {
       speedCamFlash = 1.5;
@@ -1324,6 +1359,25 @@ document.addEventListener('DOMContentLoaded', () => {
         if(audio.remoteHorn())trafficHornCooldown=.8;
         break;
       }
+    }
+    assistTickCooldown = Math.max(0, assistTickCooldown - dt);
+    if (drivingAssist) {
+      const labels = [];
+      if (physics.absActive) labels.push('ABS ACTIVE');
+      if (physics.tractionControlActive) labels.push('TRACTION CONTROL');
+      drivingAssist.replaceChildren(...labels.map(label => {
+        const chip = document.createElement('span');
+        chip.textContent = label;
+        return chip;
+      }));
+      drivingAssist.hidden = labels.length === 0;
+    }
+    if (physics.assistFeedbackEvent && assistTickCooldown <= 0) {
+      physics.assistFeedbackEvent = null;
+      audio.burst({ frequency: 740, endFrequency: 520, volume: 0.035, duration: 0.045, type: 'square' });
+      assistTickCooldown = 0.35;
+    } else if (physics.assistFeedbackEvent) {
+      physics.assistFeedbackEvent = null;
     }
     const trafficStatus=document.getElementById('traffic-status');
     const drivingStatus=physics.energy.remaining<=0?`${physics.energy.electric?'Battery':'Fuel'} empty · Refill in Setup`:trafficManager.status;

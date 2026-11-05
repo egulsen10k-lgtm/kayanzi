@@ -15,12 +15,50 @@ import { projectCoordinate } from './road-network.js';
 import { createCarModel } from './car-model.js';
 import { createRobotModel } from './robot-runner-view.js';
 
-export function geographicOffset(center, lat, lng) {
+export function geographicOffset(center, lat, lng, out = { east: 0, north: 0 }) {
   const deltaLng = ((lng - center.lng + 540) % 360) - 180;
+  out.east = deltaLng * Math.PI / 180 * 6371008.8 * Math.cos(center.lat * Math.PI / 180);
+  out.north = (lat - center.lat) * Math.PI / 180 * 6371008.8;
+  return out;
+}
+
+export function roadNetworkHasEdges(network) {
+  return Array.isArray(network?.edges);
+}
+
+export function renderDimensions(container) {
+  const width = Number(container?.clientWidth);
+  const height = Number(container?.clientHeight);
   return {
-    east: deltaLng * Math.PI / 180 * 6371008.8 * Math.cos(center.lat * Math.PI / 180),
-    north: (lat - center.lat) * Math.PI / 180 * 6371008.8
+    width: Number.isFinite(width) && width > 0 ? width : 1,
+    height: Number.isFinite(height) && height > 0 ? height : 1
   };
+}
+
+export function selectQualityTier({ width = 1024, dpr = 1, mobile = false } = {}) {
+  if (mobile || width <= 480 || dpr >= 3) return 'eco';
+  if (width > 900 && dpr <= 2) return 'high';
+  return 'balanced';
+}
+
+export function getQualityCaps(tier = 'balanced') {
+  const caps = {
+    eco: { sparks: 12, smoke: 20, mud: 24, skids: 60, rain: 500, remoteVoices: 2 },
+    balanced: { sparks: 30, smoke: 40, mud: 48, skids: 120, rain: 1000, remoteVoices: 4 },
+    high: { sparks: 60, smoke: 80, mud: 80, skids: 200, rain: 2000, remoteVoices: 7 }
+  };
+  return { ...(caps[tier] || caps.balanced) };
+}
+
+export function peerExtrapolationMeters(speedKmh, ageSeconds) {
+  const speed = Math.max(-200, Math.min(200, Number.isFinite(speedKmh) ? speedKmh : 0));
+  const age = Math.max(0, Math.min(.25, Number.isFinite(ageSeconds) ? ageSeconds : 0));
+  return Math.max(-5, Math.min(5, speed / 3.6 * age));
+}
+
+export function peerFadeForAge(ageMs) {
+  if (!Number.isFinite(ageMs) || ageMs <= 5000) return 1;
+  return Math.max(0, Math.min(1, (7000 - ageMs) / 2000));
 }
 
 export function animateWheels(wheels, speedKmh, steering, dt) {
@@ -67,7 +105,7 @@ function tintIndicator(material,active,baseIntensity) {
 
 export class SkidMarkSystem {
   constructor(scene,capacity=200) {
-    this.capacity=Math.max(1,Math.floor(capacity));this.cursor=0;this.count=0;this.elapsed=0;
+    this.capacity=Math.max(1,Math.floor(capacity));this.limit=this.capacity;this.cursor=0;this.count=0;this.elapsed=0;
     this.records=Array.from({length:this.capacity},()=>({time:-Infinity}));
     const positions=new Float32Array(this.capacity*12),colors=new Float32Array(this.capacity*16),indices=new Uint32Array(this.capacity*6);
     for(let i=0;i<this.capacity;i++) {
@@ -100,13 +138,14 @@ export class SkidMarkSystem {
     this.geometry.attributes.color.needsUpdate=true;
   }
   setPosition(x,z){this.lastX=x;this.lastZ=z;}
+  setLimit(limit){this.limit=Math.max(1,Math.min(this.capacity,Math.floor(limit)));this.count=Math.min(this.count,this.limit);this.cursor%=this.limit;}
   dispose(){this.mesh.removeFromParent();this.geometry.dispose();this.material.dispose();}
   clear(){this.records=Array.from({length:this.capacity},()=>({time:-Infinity}));this.count=0;this.elapsed=0;this.geometry.attributes.color.array.fill(0);this.geometry.attributes.color.needsUpdate=true;}
 }
 
 export class MudSystem {
   constructor(scene,capacity=80,random=Math.random) {
-    this.capacity=capacity;this.random=random;this.cursor=0;this.count=0;this.elapsed=0;
+    this.capacity=capacity;this.limit=capacity;this.random=random;this.cursor=0;this.count=0;this.elapsed=0;
     this.particles=Array.from({length:capacity},()=>({active:false,age:0,x:0,y:0,z:0,vx:0,vy:0,vz:0,returning:false,roadFadeRemaining:.35}));
     const positions=new Float32Array(capacity*12),colors=new Float32Array(capacity*16),indices=new Uint32Array(capacity*6);
     for(let i=0;i<capacity;i++){const v=i*4,k=i*6;indices.set([v,v+1,v+2,v+1,v+3,v+2],k);for(let j=0;j<4;j++)colors.set([1,1,1,0],(v+j)*4);}
@@ -189,13 +228,14 @@ export class CarVisualizer3D {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xc4d4df);
     this.scene.fog = new THREE.Fog(0xc4d4df, 100, 650);
-    this.camera = new THREE.PerspectiveCamera(48, container.clientWidth / container.clientHeight, 0.1, 2000);
+    const dimensions = renderDimensions(container);
+    this.camera = new THREE.PerspectiveCamera(48, dimensions.width / dimensions.height, 0.1, 2000);
     const mobile=window.matchMedia('(max-width:800px), (pointer:coarse)').matches;
     this.mobile = mobile;
     this.qualityTier = mobile ? 'balanced' : 'high';
     this.renderer = new THREE.WebGLRenderer({ antialias: !mobile, powerPreference: 'high-performance' });
-    this.setQualityTier(this.qualityTier, { mobile });
-    this.renderer.setSize(container.clientWidth, container.clientHeight);
+    this.setQualityTier(selectQualityTier({width:dimensions.width,dpr:globalThis.devicePixelRatio||1,mobile}), { mobile });
+    this.renderer.setSize(dimensions.width, dimensions.height);
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1;
@@ -210,8 +250,8 @@ export class CarVisualizer3D {
 
     this.peerCars = new Map();
     this.peerLabels = new Map();
-    this.skidMarks=new SkidMarkSystem(this.scene);
-    this.mudSystem=new MudSystem(this.scene);
+    this.skidMarks=new SkidMarkSystem(this.scene,this.particleCaps.skids);
+    this.mudSystem=new MudSystem(this.scene,this.particleCaps.mud);
     this.roadGroup = new THREE.Group();
     this.trafficGroup = new THREE.Group();
     this.scene.add(this.trafficGroup);
@@ -253,6 +293,7 @@ export class CarVisualizer3D {
     this.satellite.group.visible = true;
     this.resizeObserver = new ResizeObserver(() => this.onWindowResize());
     this.resizeObserver.observe(container);
+    this.onWindowResize();
   }
 
   setupLighting() {
@@ -317,7 +358,7 @@ export class CarVisualizer3D {
     this._weatherType = type;
     if(type==='rain'&&this.reducedMotion){this.weatherGrip=.75;if(this.scene.fog){this.scene.fog.near=80;this.scene.fog.far=300;this.scene.fog.color.set(0x8097a8);}return;}
     if (type === 'rain' && !this.reducedMotion) {
-      const count = 2000;
+      const count = this.particleCaps?.rain ?? 2000;
       const positions = new Float32Array(count * 3);
       for (let i = 0; i < count; i++) {
         positions[i * 3]     = (Math.random() - 0.5) * 80;
@@ -398,6 +439,17 @@ export class CarVisualizer3D {
     const next = ['eco', 'balanced', 'high'].includes(tier) ? tier : 'balanced';
     const caps = mobile ? { eco: 1, balanced: 1.25, high: 1.5 } : { eco: 1, balanced: 1.5, high: 2 };
     this.qualityTier = next;
+    this.particleCaps=getQualityCaps(next);
+    this.remoteVoiceCap=this.particleCaps.remoteVoices;
+    this.skidMarks?.setLimit(this.particleCaps.skids);
+    if(this.skidMarks&&this.skidMarks.capacity!==this.particleCaps.skids){this.skidMarks.dispose();this.skidMarks=new SkidMarkSystem(this.scene,this.particleCaps.skids);}
+    if(this.mudSystem&&this.mudSystem.capacity!==this.particleCaps.mud){this.mudSystem.dispose?.();this.mudSystem=new MudSystem(this.scene,this.particleCaps.mud);}
+    if(this.mudSystem)this.mudSystem.limit=this.particleCaps.mud;
+    this.sparkCap=this.particleCaps.sparks;
+    this.smokeCap=this.particleCaps.smoke;
+    if(this.smokeParticles?.length>this.smokeCap){for(const item of this.smokeParticles.splice(0,this.smokeParticles.length-this.smokeCap)){item.mesh.geometry.dispose();item.mesh.material.dispose();this.scene.remove(item.mesh);}}
+    if(this._weatherType==='rain'&&!this.reducedMotion)this.setWeather('rain');
+    if(this.sparkParticles?.length>this.sparkCap){for(const item of this.sparkParticles.splice(0,this.sparkParticles.length-this.sparkCap)){item.mesh.geometry.dispose();item.mesh.material.dispose();this.scene.remove(item.mesh);}}
     const devicePixelRatio = globalThis.devicePixelRatio || globalThis.window?.devicePixelRatio || 1;
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, caps[next]));
     this.renderer.shadowMap.enabled = !mobile && next !== 'eco';
@@ -419,6 +471,11 @@ export class CarVisualizer3D {
     const target=drifting?Math.max(-.08,Math.min(.08,(physics.driftDirection??0)*.06)):0;
     this.cameraRoll=Math.max(-.08,Math.min(.08,this.cameraRoll+(target-this.cameraRoll)*Math.min(1,Math.max(0,dt)*5)));
     return enabled?this.cameraRoll:0;
+  }
+
+  applyCameraRoll(physics,dt) {
+    // Roll around the camera's viewing axis without overwriting lookAt's Euler angles.
+    this.camera.rotateZ(this.updateCameraRoll(physics,dt));
   }
 
   setRoadOverlayEnabled() {
@@ -490,20 +547,21 @@ export class CarVisualizer3D {
         projectCoordinate(this.lastPosition.lat, this.lastPosition.lng, network.center), this.lastHeading ?? 0, this.lastRoadHeight ?? ROAD_SURFACE_HEIGHT)) {
         throw new Error('Next district does not cover the car safely; retaining the current roads.');
       }
-      const buildings = await buildBuildingsAsync(network);
-      if (controller.signal.aborted) { disposeWorldGroup(buildings); return null; }
-      if (streaming && !footprintOnRoad(network,
-        projectCoordinate(this.lastPosition.lat,this.lastPosition.lng,network.center),this.lastHeading ?? 0, this.lastRoadHeight ?? ROAD_SURFACE_HEIGHT)) {
-        disposeWorldGroup(buildings);
-        throw new Error('Keeping current district while the car is outside replacement coverage.');
-      }
-      this.setRoads(network, buildings);
+      // Make mapped roads driveable before yielding through optional city geometry.
+      this.setRoads(network, new THREE.Group());
       this.roadTarget = network.center;
       this.roadFailures = 0;
       this.roadRetryAt = 0;
       this.container.dispatchEvent(new CustomEvent('roadstatus', {
         detail: { state: network.roads.length ? 'ready' : 'empty', count: network.roads.length, network }
       }));
+      const buildings = await buildBuildingsAsync(network);
+      if (controller.signal.aborted || this.roadNetwork !== network) {
+        disposeWorldGroup(buildings);
+        return null;
+      }
+      this.roadGroup.add(buildings);
+      this.setBuildingNightMode(this.nightMode);
       return network;
     } catch (error) {
       if (controller.signal.aborted) return null;
@@ -540,6 +598,7 @@ export class CarVisualizer3D {
   triggerExhaustFlames() { this.flameUntil = performance.now() + 140; }
 
   spawnSparks(position, count = 18) {
+    count=Math.min(Math.max(0,count),Math.max(0,(this.sparkCap??60)-(this.sparkParticles?.length??0)));
     if(this.reducedMotion)return;
     if (!this.sparkParticles) this.sparkParticles = [];
     const MAX_SPARKS = 60;
@@ -574,7 +633,7 @@ export class CarVisualizer3D {
       this.cameraShakeTime = 0;
     }
     if(this.reducedMotion)return;
-    const count = 6 + Math.floor(speed / 25);
+    const count = Math.min(6 + Math.floor(speed / 25),Math.max(0,(this.smokeCap??80)-(this.smokeParticles?.length??0)));
     const carPos = this.carGroup.position;
     for (let i = 0; i < count; i++) {
       const geo = new THREE.BufferGeometry();
@@ -602,6 +661,7 @@ export class CarVisualizer3D {
   updatePeerCar(state) {
     if (!state || !Number.isFinite(state.lat) || !Number.isFinite(state.lng) || !Number.isFinite(state.heading)) return;
     let peer = this.peerCars.get(state.peerId);
+    if(peer&&Number.isSafeInteger(state.sequence)&&Number.isSafeInteger(peer.sequence)&&state.sequence<=peer.sequence)return;
     const robot = state.robot === true;
     if (peer && (peer.robot !== robot || peer.model !== state.model || peer.color !== state.color)) {
       this.removePeerCar(state.peerId);
@@ -612,11 +672,13 @@ export class CarVisualizer3D {
       const color = /^#[0-9a-f]{6}$/i.test(state.color) ? state.color : '#718ba1';
       const model = robot ? { group: createRobotModel(color), wheels: [] } : createCarModel(state.model, color);
       if (robot) model.group.scale.set(.9, .52, 3.4);
-      peer = { group: model.group, wheels: model.wheels ?? [], indicatorLamps: robot?{}:indicatorMaterials(model.group), model: state.model, color: state.color, robot, displayed: { ...state } };
+      peer = { peerId:state.peerId, group: model.group, wheels: model.wheels ?? [], indicatorLamps: robot?{}:indicatorMaterials(model.group), model: state.model, color: state.color, robot, displayed: { ...state }, predicted:{lat:state.lat,lng:state.lng}, displacement:{east:0,north:0}, relative:{east:0,north:0}, fadeMaterials:[] };
+      model.group.traverse(object=>{for(const material of Array.isArray(object.material)?object.material:[object.material])if(material){material.transparent=true;peer.fadeMaterials.push({material,opacity:material.opacity??1});}});
       this.scene.add(peer.group);
       this.peerCars.set(state.peerId, peer);
     }
     peer.state = state;
+    peer.sequence=Number.isSafeInteger(state.sequence)?state.sequence:peer.sequence;
     peer.lastSeen = performance.now();
     const name=String(state.name??state.displayName??state.peerId).slice(0,12);
     if(peer.labelName!==name&&typeof document!=='undefined'&&document.createElement) {
@@ -626,6 +688,7 @@ export class CarVisualizer3D {
       ctx.font='600 14px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#fff';ctx.fillText(name,128,28,230);
       const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
       const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthWrite:false}));sprite.position.set(0,2.4,0);sprite.scale.set(2.3,.5,1);peer.group.add(sprite);peer.label=sprite;peer.labelName=name;
+      peer.fadeMaterials.push({material:sprite.material,opacity:sprite.material.opacity});
       this.peerLabels.set(state.peerId,{name,texture,sprite});
     }
   }
@@ -751,24 +814,32 @@ export class CarVisualizer3D {
         this.loadRoadsAt(next.lat, next.lng, true).catch(() => {});
       }
     }
-    for (const [id, peer] of this.peerCars) {
-      if (performance.now() - peer.lastSeen > 15000) { this.removePeerCar(id); continue; }
+    const peerNow=performance.now();
+    for (const peer of this.peerCars.values()) {
+      const age=peerNow-peer.lastSeen;
+      if (age >= 7000) { this.removePeerCar(peer.peerId); continue; }
+      const fade=peerFadeForAge(age);
+      for(const record of peer.fadeMaterials??[])record.material.opacity=record.opacity*fade;
       const blend = 1 - Math.exp(-dt * 14);
       const display = peer.displayed;
-      const displacement = geographicOffset(display, peer.state.lat, peer.state.lng);
+      const extrapolation=peerExtrapolationMeters(peer.state.speed??0,age/1000);
+      const angle=peer.state.heading??0,cosLat=Math.max(.01,Math.cos(peer.state.lat*Math.PI/180));
+      peer.predicted.lat=peer.state.lat+Math.cos(angle)*extrapolation/111195;
+      peer.predicted.lng=peer.state.lng+Math.sin(angle)*extrapolation/(111195*cosLat);
+      const displacement = geographicOffset(display, peer.predicted.lat, peer.predicted.lng,peer.displacement);
       const snap = Math.hypot(displacement.east, displacement.north) > 100;
-      display.lat += (peer.state.lat - display.lat) * (snap ? 1 : blend);
-      display.lng += (peer.state.lng - display.lng) * (snap ? 1 : blend);
-      const angle = Math.atan2(Math.sin(peer.state.heading - display.heading), Math.cos(peer.state.heading - display.heading));
-      display.heading += angle * (snap ? 1 : blend);
-      const p = geographicOffset(this.lastPosition, display.lat, display.lng);
+      display.lat += (peer.predicted.lat - display.lat) * (snap ? 1 : blend);
+      display.lng += (peer.predicted.lng - display.lng) * (snap ? 1 : blend);
+      const headingAngle = Math.atan2(Math.sin(peer.state.heading - display.heading), Math.cos(peer.state.heading - display.heading));
+      display.heading += headingAngle * (snap ? 1 : blend);
+      const p = geographicOffset(this.lastPosition, display.lat, display.lng,peer.relative);
       peer.group.position.set(p.east, Number.isFinite(peer.state.roadHeight) ? peer.state.roadHeight : ROAD_SURFACE_HEIGHT, -p.north);
       peer.group.rotation.y = Math.PI - display.heading;
       animateWheels(peer.wheels, peer.state.speed ?? 0, peer.state.steering ?? 0, dt);
       peer.group.visible = Math.hypot(p.east, p.north) < 1000;
       if(peer.label)peer.label.visible=peer.group.visible;
     }
-    const mobile = this.container.clientWidth < 600;
+    const mobile = this.container.clientWidth < 800 || Boolean(globalThis.matchMedia?.('(pointer: coarse)')?.matches);
     let target, lookAt;
     const heading = this.cameraMode === 'aerial' ? 0 : physics.heading;
 
@@ -832,16 +903,16 @@ export class CarVisualizer3D {
       this.cameraShake *= Math.max(0, 1 - dt * 7);
     }
     this.camera.lookAt(lookAt);
-    this.camera.rotation.z=this.updateCameraRoll(physics,dt);
+    this.applyCameraRoll(physics,dt);
     this.speedometerOverlay?.update(physics.speed,dt,['cockpit','hood','bonnet'].includes(this.cameraMode));
     this.updateTrafficIndicators(performance.now());
     this.renderer.render(this.scene, this.camera);
   }
 
   onWindowResize() {
-    if (!this.container.clientWidth || !this.container.clientHeight) return;
-    this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+    const dimensions = renderDimensions(this.container);
+    this.camera.aspect = dimensions.width / dimensions.height;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    this.renderer.setSize(dimensions.width, dimensions.height);
   }
 }

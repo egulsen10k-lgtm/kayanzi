@@ -1,7 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CarVisualizer3D, MudSystem, SkidMarkSystem, SpeedometerOverlay } from '../src/visualizer.js';
+import { CarVisualizer3D, MudSystem, SkidMarkSystem, SpeedometerOverlay, getQualityCaps, peerExtrapolationMeters, peerFadeForAge, renderDimensions, roadNetworkHasEdges, selectQualityTier } from '../src/visualizer.js';
+
+test('render dimensions stay finite when a hidden container reports zero size',()=>{
+  assert.deepEqual(renderDimensions({clientWidth:0,clientHeight:0}),{width:1,height:1});
+  assert.deepEqual(renderDimensions({clientWidth:320,clientHeight:568}),{width:320,height:568});
+  assert.deepEqual(renderDimensions(null),{width:1,height:1});
+  assert.equal(roadNetworkHasEdges({roads:[]}),false);
+});
+
+test('mobile quality tiers stay within the desktop particle and voice caps',()=>{
+  assert.equal(selectQualityTier({width:390,dpr:3,mobile:true}),'eco');
+  assert.equal(selectQualityTier({width:844,dpr:2,mobile:true}),'eco');
+  assert.equal(selectQualityTier({width:1440,dpr:1,mobile:false}),'high');
+  assert.deepEqual(getQualityCaps('high'),{sparks:60,smoke:80,mud:80,skids:200,rain:2000,remoteVoices:7});
+  assert.ok(getQualityCaps('eco').sparks<=60&&getQualityCaps('eco').smoke<=80&&getQualityCaps('eco').mud<=80&&getQualityCaps('eco').skids<=200&&getQualityCaps('eco').rain<=2000&&getQualityCaps('eco').remoteVoices<=7);
+});
+
+test('peer extrapolation is bounded and stale peers fade smoothly before removal',()=>{
+  assert.ok(peerExtrapolationMeters(200,5)<=5);
+  assert.equal(peerExtrapolationMeters(100,0),0);
+  assert.equal(peerFadeForAge(5000),1);
+  assert.ok(peerFadeForAge(6000)>0&&peerFadeForAge(6000)<1);
+  assert.equal(peerFadeForAge(7000),0);
+});
 
 // Minimal stub that replicates only the smoke/damage methods from CarVisualizer3D
 function makeVis() {
@@ -218,4 +241,16 @@ test('sparkParticles pool is capped at 60',()=>{
   const vis={scene,sparkParticles:[]};
   CarVisualizer3D.prototype.spawnSparks.call(vis,{x:0,y:0,z:0},70);
   assert.ok(vis.sparkParticles.length<=60,'pool respects 60-spark cap');
+});
+
+test('ordinary steering preserves the level horizon calculated by lookAt',()=>{
+  const view=Object.create(CarVisualizer3D.prototype);
+  view.camera=new THREE.PerspectiveCamera();view.cameraMode='chase';view.cameraRoll=0;
+  for(const heading of [0,.7,1.5,2.5,-2]) {
+    view.camera.position.set(-Math.sin(heading)*10,5,Math.cos(heading)*10);
+    view.camera.lookAt(0,.5,0);
+    const orientation=view.camera.quaternion.clone();
+    view.applyCameraRoll({handbrake:false,speed:50,isDrifting:false},1/60);
+    assert.ok(view.camera.quaternion.angleTo(orientation)<1e-7);
+  }
 });

@@ -4,10 +4,14 @@ export const MAX_PLAYERS = 8;
 export const CONNECTION_CODE_TTL = 120000;
 const MAX_CODE_LENGTH = 100000;
 const MAX_PACKET_LENGTH = 65536;
+const PING_INTERVAL_MS = 2000;
+const MAX_LATENCY_MS = 60000;
 const MODELS = new Set(['M3 Competition', 'M4 CSL', 'M5 CS', 'i4 M50 (EV)', 'XM Label Red']);
 const noop = () => {};
 const makeId = (prefix) => `${prefix}-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
 const validId = (id) => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(id);
+const validSequence = value => Number.isSafeInteger(value) && value > 0;
+const monotonicNow = () => globalThis.performance?.now?.() ?? Date.now();
 export const sanitizeName = (name) => String(name || 'Driver').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 24) || 'Driver';
 
 export function sanitizeState(raw, id) {
@@ -62,14 +66,15 @@ export function lanSocketUrl(url) {
 
 export class MultiplayerSession {
   constructor({ getState = () => null, onPeerState = noop, onPeerLeave = noop, onStatus = noop, onPeers = noop,
-    onWorldSnapshot = noop, onWorldAuthority = noop, getNpcs = null, onNpcs = noop, onChat = noop,
+    onWorldSnapshot = noop, onWorldAuthority = noop, getNpcs = null, onNpcs = noop, onChat = noop, onLatency = noop,
     name = 'Driver', WebSocketClass = globalThis.WebSocket, RTCPeerConnectionClass = globalThis.RTCPeerConnection } = {}) {
-    Object.assign(this, { getState, onPeerState, onPeerLeave, onStatus, onPeers, onWorldSnapshot, onWorldAuthority, getNpcs, onNpcs, onChat, WebSocketClass, RTCPeerConnectionClass });
+    Object.assign(this, { getState, onPeerState, onPeerLeave, onStatus, onPeers, onWorldSnapshot, onWorldAuthority, getNpcs, onNpcs, onChat, onLatency, WebSocketClass, RTCPeerConnectionClass });
     this.name = sanitizeName(name);
     this.peers = new Map(); this.channels = new Map();
     this.connected = false; this.transport = null; this.room = null; this.id = null;
     this.generation = 0; this.pending = null; this.role = null; this.socket = null;
     this.worldAuthorityId = null; this.latestWorldSnapshot = null; this.lastWorldSeq = -1;
+    this.stateSequence=0;this.pingSequence=0;this.pingRecords=new Map();this.peerLatencies=new Map();this.latencyMs=null;
   }
 
   get isWorldAuthority() { return Boolean(this.connected && this.id && this.worldAuthorityId === this.id); }
@@ -84,15 +89,18 @@ export class MultiplayerSession {
 
   _status(state, message) { this.onStatus({ state, message, transport: this.transport, room: this.room, id: this.id }); }
   _peers() { this.onPeers([...this.peers.values()]); }
-  _upsert(id, name, state) {
+  _upsert(id, name, state, sequence = null) {
     if (!validId(id) || id === this.id || (!this.peers.has(id) && this.peers.size >= MAX_PLAYERS - 1)) return;
+    if(sequence!==null&&!validSequence(sequence))return;
+    const previous=this.peers.get(id);
+    if(sequence!==null&&previous?.sequence!==null&&previous?.sequence!==undefined&&sequence<=previous.sequence)return;
     const sanitized = sanitizeState(state, id);
-    const peer = { id, name: sanitizeName(name), state: sanitized || this.peers.get(id)?.state || null };
+    const peer = { id, name: sanitizeName(name), state: sanitized || previous?.state || null, sequence:sequence??previous?.sequence??null };
     this.peers.set(id, peer);
-    if (sanitized) this.onPeerState({ ...sanitized, name: peer.name });
+    if (sanitized) this.onPeerState({ ...sanitized, name: peer.name, ...(peer.sequence===null?{}:{sequence:peer.sequence}) });
     this._peers();
   }
-  _remove(id) { if (this.peers.delete(id)) { this.onPeerLeave(id); this._peers(); } }
+  _remove(id) { this._stopPeerPings(id); if (this.peers.delete(id)) { this.onPeerLeave(id); this._peers(); } }
   _packet(raw) {
     if (typeof raw !== 'string' || raw.length > MAX_PACKET_LENGTH) return null;
     try { const p = JSON.parse(raw); return p && typeof p === 'object' ? p : null; } catch { return null; }
@@ -101,9 +109,52 @@ export class MultiplayerSession {
     if (!channel || !['open', 1].includes(channel.readyState) || channel.bufferedAmount > 65536) return false;
     try { channel.send(JSON.stringify(message)); return true; } catch { return false; }
   }
-  _remoteMessage(message) {
+  _publishLatency() {
+    const values=[...this.peerLatencies.values()].filter(Number.isFinite);
+    this.latencyMs=values.length?Math.round(values.reduce((sum,value)=>sum+value,0)/values.length):null;
+    this.onLatency({latencyMs:this.latencyMs,transport:this.transport});
+  }
+  _startPeerPings(key,channel) {
+    if(this.transport==='lan'||!channel)return;
+    this._stopPeerPings(key);
+    const record={channel,pending:null,timer:null};
+    record.timer=setInterval(()=>this.pingPeer(key),PING_INTERVAL_MS);
+    record.timer.unref?.();this.pingRecords.set(key,record);
+    this.pingPeer(key);
+  }
+  _stopPeerPings(key) {
+    const record=this.pingRecords.get(key);if(record)clearInterval(record.timer);
+    this.pingRecords.delete(key);this.peerLatencies.delete(key);this._publishLatency();
+  }
+  pingPeer(key) {
+    const record=this.pingRecords.get(key);
+    if(!this.connected||!record||!['open',1].includes(record.channel.readyState))return false;
+    const nonce=++this.pingSequence;
+    record.pending={nonce,sentAt:monotonicNow()};
+    if(!this._send(record.channel,{type:'ping',nonce})){record.pending=null;return false;}
+    return true;
+  }
+  _handlePong(message,key,channel) {
+    if(!message||!validSequence(message.nonce))return;
+    const record=this.pingRecords.get(key),pending=record?.pending;
+    if(!record||record.channel!==channel||pending?.nonce!==message.nonce)return;
+    record.pending=null;
+    const elapsed=monotonicNow()-pending.sentAt;
+    if(!Number.isFinite(elapsed)||elapsed<0||elapsed>MAX_LATENCY_MS)return;
+    this.peerLatencies.set(key,elapsed);this._publishLatency();
+  }
+  _remoteMessage(message,replyChannel=null) {
     if (!message) return;
+    const channel=replyChannel??this.guestChannel??null;
     if (message.type === 'error') { this._status('error', String(message.message || 'Connection refused.').slice(0, 200)); return; }
+    if(message.type==='ping'){
+      if(this.connected&&channel&&validSequence(message.nonce))this._send(channel,{type:'pong',nonce:message.nonce});
+      return;
+    }
+    if(message.type==='pong'){
+      if(this.connected&&channel)this._handlePong(message,'host',channel);
+      return;
+    }
     if (message.type === 'welcome') {
       if (this.connected) return;
       if (!validId(message.id) || !validId(message.room) || !Array.isArray(message.peers) || message.peers.length > MAX_PLAYERS - 1) return;
@@ -112,6 +163,7 @@ export class MultiplayerSession {
       for (const peer of message.peers) this._upsert(peer.id, peer.name, peer.state);
       this._status('connected', `Connected · ${this.peers.size + 1} drivers`);
       this._peers();
+      if(channel)this._startPeerPings('host',channel);
     } else if (this.connected && message.type === 'authority' && this.transport === 'lan' && message.room === this.room && validId(message.authorityId)) {
       this._setWorldAuthority(message.authorityId);
     } else if (this.connected && message.type === 'world') {
@@ -122,7 +174,8 @@ export class MultiplayerSession {
       this.onWorldSnapshot(snapshot);
       if (this.onNpcs !== this.onWorldSnapshot) this.onNpcs(snapshot);
     } else if (this.connected && (message.type === 'state' || message.type === 'peer-join')) {
-      this._upsert(message.id, message.name, message.state);
+      if(message.sequence!=null&&!validSequence(message.sequence))return;
+      this._upsert(message.id, message.name, message.state, message.sequence??null);
     } else if (this.connected && message.type === 'peer-leave') this._remove(message.id);
     else if (this.connected && message.type === 'chat') {
       const id = validId(message.id) ? message.id : null;
@@ -202,6 +255,7 @@ export class MultiplayerSession {
     if (generation !== this.generation) return;
     const peer = this.channels.get(id);
     if (!peer) return;
+    this._stopPeerPings(id);
     this.channels.delete(id); clearTimeout(peer.timer);
     if (this.pending === peer) this.pending = null;
     this._remove(id);
@@ -217,6 +271,14 @@ export class MultiplayerSession {
       if (++peer.rateCount > 40) { this._dropHostPeer(peer.id, generation); return; }
       const message = this._packet(data);
       if (!message) return;
+      if(message.type==='ping'){
+        if(peer.joined&&validSequence(message.nonce))this._send(channel,{type:'pong',nonce:message.nonce});
+        return;
+      }
+      if(message.type==='pong'){
+        if(peer.joined)this._handlePong(message,peer.id,channel);
+        return;
+      }
       // A guest is allowed to publish only its own name and driving snapshot.
       if (message.type === 'join' && !peer.joined) {
         if (this.peers.size >= MAX_PLAYERS - 1) { this._send(channel, { type: 'error', message: 'This room is full.' }); this._dropHostPeer(peer.id, generation); return; }
@@ -227,16 +289,22 @@ export class MultiplayerSession {
         if (this.latestWorldSnapshot) this._send(channel, { type: 'world', room: this.room, authorityId: this.worldAuthorityId, snapshot: this.latestWorldSnapshot });
         this._upsert(peer.id, peer.name, message.state);
         this._broadcast({ type: 'peer-join', id: peer.id, name: peer.name, state: sanitizeState(message.state, peer.id) }, peer.id);
+        this._startPeerPings(peer.id,channel);
         this._status('connected', `Hosting · ${this.peers.size + 1} drivers`);
       } else if (message.type === 'state' && peer.joined) {
+        if(message.sequence!=null&&!validSequence(message.sequence))return;
+        if(message.sequence!=null&&peer.sequence!=null&&message.sequence<=peer.sequence)return;
         const state = sanitizeState(message.state, peer.id);
         if (!state) return;
+        if(message.sequence!=null)peer.sequence=message.sequence;
         this._upsert(peer.id, peer.name, state);
-        this._broadcast({ type: 'state', id: peer.id, name: peer.name, state }, peer.id);
+        this._broadcast({ type: 'state', id: peer.id, name: peer.name, state, ...(message.sequence==null?{}:{sequence:message.sequence}) }, peer.id);
       } else if (message.type === 'leave') this._dropHostPeer(peer.id, generation);
     };
     channel.onclose = () => this._dropHostPeer(peer.id, generation);
     peer.pc.onconnectionstatechange = () => {
+      if(peer.pc.connectionState==='disconnected'&&peer.joined)this._status('reconnecting','Connection interrupted · trying to reconnect…');
+      else if(peer.pc.connectionState==='connected'&&peer.joined)this._status('connected',`Hosting · ${this.peers.size+1} drivers`);
       if (['failed', 'closed'].includes(peer.pc.connectionState)) this._dropHostPeer(peer.id, generation);
     };
   }
@@ -286,12 +354,14 @@ export class MultiplayerSession {
       channel.onopen = () => { if (generation === this.generation) this._send(channel, { type: 'join', name: this.name, state: sanitizeState(this.getState(), this.id) }); };
       channel.onmessage = ({ data }) => {
         if (generation !== this.generation) return;
-        this._remoteMessage(this._packet(data));
+        this._remoteMessage(this._packet(data),channel);
         if (this.connected) clearTimeout(timer);
       };
       channel.onclose = () => { if (generation === this.generation) { this.leave(); this._status('offline', 'The host left the room.'); } };
     };
     pc.onconnectionstatechange = () => {
+      if(generation===this.generation&&pc.connectionState==='disconnected'&&this.connected)this._status('reconnecting','Connection interrupted · trying to reconnect…');
+      else if(generation===this.generation&&pc.connectionState==='connected'&&this.connected)this._status('connected',`Connected · ${this.peers.size+1} drivers`);
       if (generation === this.generation && ['failed', 'closed'].includes(pc.connectionState)) { this.leave(); this._status('error', 'Connection lost. Check that both devices are on the same Wi-Fi, then pair again.'); }
     };
     try {
@@ -325,9 +395,10 @@ export class MultiplayerSession {
     if (!this.connected) return;
     const state = sanitizeState(raw, this.id);
     if (!state) return;
-    if (this.transport === 'lan') this._send(this.socket, { type: 'state', state });
-    else if (this.role === 'host') this._broadcast({ type: 'state', id: this.id, name: this.name, state });
-    else this._send(this.guestChannel, { type: 'state', state });
+    const sequence=++this.stateSequence;
+    if (this.transport === 'lan') this._send(this.socket, { type: 'state', state, sequence });
+    else if (this.role === 'host') this._broadcast({ type: 'state', id: this.id, name: this.name, state, sequence });
+    else this._send(this.guestChannel, { type: 'state', state, sequence });
     if (this.isWorldAuthority && typeof this.getNpcs === 'function') {
       const snapshot = this.getNpcs();
       if (snapshot) this.sendWorldSnapshot(snapshot);
@@ -349,6 +420,8 @@ export class MultiplayerSession {
     this.generation++;
     this.cancelConnect?.(); this.cancelConnect = null;
     this._cancelPending(); clearTimeout(this.guestTimer);
+    for(const key of this.pingRecords.keys())clearInterval(this.pingRecords.get(key)?.timer);
+    this.pingRecords.clear();this.peerLatencies.clear();this.latencyMs=null;this.onLatency({latencyMs:null,transport:this.transport});
     const socket = this.socket; this.socket = null;
     if (socket) { this._send(socket, { type: 'leave' }); socket.onclose = null; socket.close(); }
     for (const peer of this.channels.values()) { clearTimeout(peer.timer); peer.channel.onclose = null; peer.pc.onconnectionstatechange = null; try { peer.channel.close(); peer.pc.close(); } catch {} }
@@ -357,6 +430,7 @@ export class MultiplayerSession {
     if (this.guestPc) { this.guestPc.onconnectionstatechange = null; this.guestPc.close(); this.guestPc = null; }
     for (const id of this.peers.keys()) this.onPeerLeave(id);
     this.peers.clear(); this.connected = false; this.id = null; this.room = null; this.role = null;
+    this.stateSequence=0;
     this._setWorldAuthority(null); this.latestWorldSnapshot = null; this.lastWorldSeq = -1;
     this._peers(); this._status('offline', 'Solo drive');
   }

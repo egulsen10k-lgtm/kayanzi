@@ -32,6 +32,7 @@ export class CarAudio {
     this.crowdProximity=120;
     this.hornVoice = null;
     this.remoteVoices = new Map();
+    this.remoteVoiceCap = 7;
     this.nodes = new Set();
     this.sources = new Set();
     this.channels = { engine: true, turbo: true, exhaust: true, tires: true, wind: true, horn: true };
@@ -253,6 +254,12 @@ export class CarAudio {
     this.remoteVoices.delete(id);
   }
 
+  setRemoteVoiceCap(value) {
+    this.remoteVoiceCap = Math.max(0, Math.min(7, Math.floor(Number.isFinite(Number(value)) ? Number(value) : 7)));
+    while (this.remoteVoices.size > this.remoteVoiceCap) this.removeRemoteVoice(this.remoteVoices.keys().next().value);
+    return this.remoteVoiceCap;
+  }
+
   updateRemotePeers(peers, localPosition) {
     const local = localPosition && Number.isFinite(localPosition.lat) && Number.isFinite(localPosition.lng)
       ? { lat: localPosition.lat, lng: localPosition.lng } : null;
@@ -261,7 +268,7 @@ export class CarAudio {
         Number.isFinite(peer.lat) && Math.abs(peer.lat) <= 90 && Number.isFinite(peer.lng) && Math.abs(peer.lng) <= 180)
       .map(peer => ({ ...peer, distance: local ? peerDistance(local, peer) : Infinity }))
       .sort((a, b) => a.distance - b.distance)
-      .slice(0, 7);
+      .slice(0, Math.max(0, Math.min(7, this.remoteVoiceCap ?? 7)));
     const active = new Set(nearby.map(peer => peer.peerId));
     for (const id of this.remoteVoices.keys()) if (!active.has(id)) this.removeRemoteVoice(id);
     if (!this.initialized || !local) return;

@@ -5,6 +5,18 @@ import {buildCrosswalkMesh,crosswalkLayout} from '../src/crosswalks.js';
 import {buildTrafficGraph} from '../src/traffic-routes.js';
 const road=(points,extra={})=>({points,width:8,highway:'residential',...extra});
 const crossing=()=>({roads:[road([[-100,0],[100,0]]),road([[0,-100],[0,100]])]});
+test('malformed roads and graph edges are skipped without throwing or non-finite geometry',()=>{
+ const malformed=[
+  {points:null,width:8,highway:'residential'},
+  {points:[[0,0],[NaN,1]],width:8,highway:'residential'},
+  {points:[[0,0],[1,1]],width:0,highway:'residential'},
+  {points:[[0,0],[1,1]],width:8,elevations:[0,Infinity],highway:'residential'}
+ ];
+ assert.doesNotThrow(()=>assert.equal(buildCrosswalkMesh({roads:malformed}),null));
+ assert.equal(crosswalkLayout(null),null);
+ assert.equal(crosswalkLayout({road:road([[0,0],[1,1]]),to:{}}),null);
+});
+
 test('zebra crossings cover each urban junction approach in one mesh',()=>{
  const group=buildRoadMeshes(crossing()),mesh=group.getObjectByName('crosswalks');assert.ok(mesh);
  assert.equal(mesh.userData.crossings.length,4);assert.equal(mesh.geometry.attributes.position.count,4*8*6);

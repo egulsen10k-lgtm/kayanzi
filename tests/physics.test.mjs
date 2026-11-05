@@ -8,6 +8,34 @@ const advance = (car, seconds) => {
   for (let frame = 0; frame < seconds * 60; frame++) car.update(1 / 60);
 };
 
+test('ABS and traction control telemetry activates only at bounded slip thresholds and resets', () => {
+  const abs = unconstrainedCar();
+  abs.speed = 80;
+  abs.driveGear = 'D';
+  abs.keys = { KeyS: true };
+  abs.driftFactor = .3;
+  abs.update(1 / 60);
+  assert.equal(abs.absActive, true);
+  abs.keys = {};
+  abs.driftFactor = 0;
+  abs.update(1 / 60);
+  assert.equal(abs.absActive, false);
+
+  const tc = unconstrainedCar();
+  tc.speed = 40;
+  tc.driveGear = 'D';
+  tc.keys = { KeyW: true, KeyA: true };
+  tc.driftFactor = .2;
+  tc.update(1 / 60);
+  assert.equal(tc.tractionControlActive, true);
+  tc.keys = {};
+  tc.driftFactor = 0;
+  tc.update(1 / 60);
+  assert.equal(tc.tractionControlActive, false);
+  tc.teleport(48.2, 11.6);
+  assert.equal(tc.assistFeedbackEvent, null);
+});
+
 test('drive modes accept Normal and provide distinct acceleration mapping', () => {
   const normal = unconstrainedCar();
   const sport = unconstrainedCar();

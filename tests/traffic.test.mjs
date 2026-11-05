@@ -11,6 +11,19 @@ const player=()=>({lat:-.002,lng:-.002,heading:0,speed:0,roadHeight:.08});
 function setup(world,camera=null){const manager=new TrafficManager(new THREE.Group(),{camera});manager.setDensity(.125);manager.reset(world,player());return manager;}
 function place(car,edge,s){car.edge=edge;car.turn=null;car.s=s;Object.assign(car,lanePose(edge,s));car.offsetX=car.offsetY=car.yawOffset=0;car.group.position.set(car.x,car.roadHeight,-car.y);}
 
+test('emergency traffic is rare, bounded, and yields around the player',()=>{
+ const world=network([street([[0,-200],[0,200]])]);
+ const m=new TrafficManager(new THREE.Group(),{random:()=>0});m.setDensity(.125);m.reset(world,player());
+ const car=m.cars[0];
+ assert.ok(car);
+ assert.equal(car.emergency,true);
+ assert.ok(['ambulance','firetruck','police'].includes(car.type));
+ assert.ok(car.cruise<=110);
+ car.x=0;car.y=0;car.heading=0;car.laneOffset=0;
+ const desired=m.targetSpeed(car,{x:0,y:10,roadHeight:car.roadHeight,width:1.86,length:4.5});
+ assert.ok(desired<car.cruise/3.6,'emergency vehicle should brake for a close player');
+});
+
 test('traffic stays on connected lanes without jumps at segment boundaries',()=>{
  const m=setup(network([street([[0,-200],[0,0],[80,100],[200,100]])]));
  const car=m.cars[0];assert.ok(car);let turnSeen=false;

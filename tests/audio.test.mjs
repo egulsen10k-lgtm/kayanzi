@@ -82,6 +82,16 @@ test('remote engine voices are capped at seven peers', () => {
   audio.dispose();
 });
 
+test('remote voice quality cap is clamped and trims active voices',()=>{
+  const audio=create();
+  const local={lat:48,lng:11};
+  audio.updateRemotePeers(Array.from({length:7},(_,i)=>({peerId:`cap-${i}`,lat:48,lng:11+i*.00001,speed:20})),local);
+  assert.equal(audio.setRemoteVoiceCap(2),2);
+  assert.equal(audio.remoteVoices.size,2);
+  assert.equal(audio.setRemoteVoiceCap(99),7);
+  audio.dispose();
+});
+
 test('idle thump fires on the 0.7 second interval',()=>{
   const audio=create();
   const baseline=audio.sources.size;

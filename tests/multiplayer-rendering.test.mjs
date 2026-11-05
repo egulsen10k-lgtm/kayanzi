@@ -38,6 +38,17 @@ test('invalid geographic snapshots do not create or replace a remote vehicle', (
   assert.equal(view.scene.children.length, 0);
 });
 
+test('remote renderer rejects stale sequence snapshots without refreshing peer age',()=>{
+  const view=Object.create(CarVisualizer3D.prototype);
+  view.scene=new Scene();view.peerCars=new Map();
+  const state={peerId:'sequenced',lat:48,lng:11,heading:0,model:'M3 Competition',color:'#112233',sequence:3};
+  view.updatePeerCar(state);
+  const peer=view.peerCars.get(state.peerId),lastSeen=peer.lastSeen;
+  view.updatePeerCar({...state,lng:12,sequence:2});
+  assert.equal(peer.state.lng,11);
+  assert.equal(peer.lastSeen,lastSeen);
+});
+
 test('a remote vehicle switches between car and footprint-sized robot visuals', () => {
   const view = Object.create(CarVisualizer3D.prototype);
   view.scene = new Scene();

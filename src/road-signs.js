@@ -1,19 +1,34 @@
 import * as THREE from 'three';
 import { disposeTrafficObject } from './traffic-vehicle.js';
 import { trafficSpeedLimit } from './traffic-routes.js';
+const SIGN_TEXT_LIMIT=45;
+const finiteVector=(value)=>Array.isArray(value)&&value.length>=2&&Number.isFinite(value[0])&&Number.isFinite(value[1])&&Math.hypot(value[0],value[1])>.000001?value:null;
+const boundedText=(value)=>String(value??'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,SIGN_TEXT_LIMIT);
 export function turnArrow(incoming,outgoing) {
-  const cross=incoming[0]*outgoing[1]-incoming[1]*outgoing[0],dot=incoming[0]*outgoing[0]+incoming[1]*outgoing[1];
+  const a=finiteVector(incoming),b=finiteVector(outgoing);
+  if(!a||!b)return '↑';
+  const cross=a[0]*b[1]-a[1]*b[0],dot=a[0]*b[0]+a[1]*b[1];
   return dot>.8?'↑':cross>0?'←':'→';
 }
 export function roadDestination(edge) {
-  if(edge.road.destination)return String(edge.road.destination).replaceAll(';',' / ').slice(0,45);
-  if(edge.road.name)return edge.road.name;
-  if(edge.road.ref)return edge.road.ref;
-  const [x,y]=edge.tangent;return `Local road · ${Math.abs(x)>Math.abs(y)?x>0?'East':'West':y>0?'North':'South'}`;
+  const road=edge?.road&&typeof edge.road==='object'?edge.road:{};
+  for(const value of [road.destination,road.name,road.ref]) {
+    const text=boundedText(value);
+    if(text)return text.replaceAll(';',' / ').slice(0,SIGN_TEXT_LIMIT);
+  }
+  const tangent=finiteVector(edge?.tangent);
+  if(!tangent)return 'Local road';
+  const [x,y]=tangent;
+  return `Local road · ${Math.abs(x)>Math.abs(y)?x>0?'East':'West':y>0?'North':'South'}`;
 }
 export function junctionDirections(graph,edge) {
-  return (graph.nodes.get(edge.to.id)?.out??[]).filter(next=>next.to.id!==edge.from.id&&Math.abs(next.ha-edge.hb)<.6)
-    .map(next=>({arrow:turnArrow(edge.tangent,next.tangent),name:roadDestination(next),edgeId:next.id})).slice(0,3);
+  const nodeId=edge?.to?.id,fromId=edge?.from?.id,base=finiteVector(edge?.tangent),nodes=graph?.nodes;
+  if(nodeId==null||!base||!nodes?.get)return [];
+  let outgoing=[];
+  try { outgoing=nodes.get(nodeId)?.out; } catch { return []; }
+  if(!Array.isArray(outgoing))return [];
+  return outgoing.filter(next=>next?.to?.id!==fromId&&finiteVector(next?.tangent)&&Number.isFinite(next?.ha)&&Number.isFinite(edge.hb)&&Math.abs(next.ha-edge.hb)<.6)
+    .map(next=>({arrow:turnArrow(base,next.tangent),name:roadDestination(next),edgeId:next.id})).slice(0,3);
 }
 export class RoadSigns {
   constructor(parent){this.parent=parent;this.entries=[];this.radars=[];this.group=null;this.roads=[];}

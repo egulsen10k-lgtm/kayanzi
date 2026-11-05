@@ -6,6 +6,7 @@ export function createRouteGuide(data) {
   for(let i=1;i<points.length;i++)cumulative.push(cumulative[i-1]+Math.hypot(points[i][0]-points[i-1][0],points[i][1]-points[i-1][1]));
   const length=cumulative.at(-1),scale=data.distance/length;
   let index=0,progress=0,averageSpeedMs=null,speedSampleElapsed=0,pendingSpeedMs=0,elapsedSeconds=0,stopsVisited=0,visitedStops=new Set(),namedPings=new Set(),completed=false;
+  let lastInstructionKey=null,lastInstructionProgress=0,severeOffRouteSeconds=0,rerouteClearSeconds=0,rerouteNeeded=false;
   const namedStops=data.stops.filter(s=>s.name&&s.lat!=null&&s.lng!=null);
   const guide={
     data,
@@ -31,6 +32,20 @@ export function createRouteGuide(data) {
         if(!best||distance<best.distance)best={index:i,distance,along:(cumulative[i]+Math.sqrt(squared)*t)*scale};
       }
       const offRoute=!best||best.distance>30;
+      const offRouteDistance=best?Math.max(0,best.distance):Infinity;
+      if(offRouteDistance>80){
+        severeOffRouteSeconds+=delta;
+        rerouteClearSeconds=0;
+        if(severeOffRouteSeconds>5)rerouteNeeded=true;
+      }else if(offRouteDistance<=40){
+        severeOffRouteSeconds=0;
+        if(rerouteNeeded){
+          rerouteClearSeconds+=delta;
+          if(rerouteClearSeconds>=1){rerouteNeeded=false;rerouteClearSeconds=0;}
+        }
+      }else{
+        rerouteClearSeconds=0;
+      }
       if(!offRoute){index=best.index;progress=Math.max(progress,best.along);}
       for(let i=0;i<data.stops.length;i++) {
         const stop=data.stops[i];
@@ -51,14 +66,17 @@ export function createRouteGuide(data) {
       completed ||= complete;
       const modifier=turn?.maneuver?.modifier??'';
       const action=modifier.includes('left')?'Turn left':modifier.includes('right')?'Turn right':modifier==='uturn'?'Make a U-turn':'Continue';
-      const offRouteDistance=offRoute?Math.max(0,best?.distance??0):0;
+      const instructionKey=complete?'complete':offRoute?'off-route':turn?`${turn.name}:${turn.distance}`:'continue';
+      if(instructionKey!==lastInstructionKey){lastInstructionKey=instructionKey;lastInstructionProgress=progress;}
+      const distanceSinceLastInstruction=Math.max(0,progress-lastInstructionProgress);
+      const progressPercent=data.distance>0?Math.round(Math.max(0,Math.min(100,progress/data.distance*100))*100)/100:0;
       const etaSeconds=remaining/(averageSpeedMs||11);
-      return {progress,remaining,offRoute,offRouteDistance,etaSeconds,complete,nextStop:nextStop.name,elapsedSeconds,stopsVisited,
+      return {progress,progressPercent,distanceSinceLastInstruction,rerouteNeeded,remaining,offRoute,offRouteDistance,etaSeconds,complete,nextStop:nextStop.name,elapsedSeconds,stopsVisited,
         instruction:complete?'Arrived at Pendik Sahil':offRoute?'Return to the cyan route':turn?`${action} in ${Math.max(0,Math.round((turn.distance-progress)/10)*10)} m · ${turn.name}`:'Continue to Pendik Sahil'};
     },
     get elapsedSeconds(){return elapsedSeconds;},
     get stopsVisited(){return stopsVisited;},
-    restart(){index=0;progress=0;averageSpeedMs=null;speedSampleElapsed=0;pendingSpeedMs=0;elapsedSeconds=0;stopsVisited=0;visitedStops=new Set();namedPings=new Set();completed=false;this.stopEvent=null;}
+    restart(){index=0;progress=0;averageSpeedMs=null;speedSampleElapsed=0;pendingSpeedMs=0;elapsedSeconds=0;stopsVisited=0;visitedStops=new Set();namedPings=new Set();completed=false;lastInstructionKey=null;lastInstructionProgress=0;severeOffRouteSeconds=0;rerouteClearSeconds=0;rerouteNeeded=false;this.stopEvent=null;}
   };
   return guide;
 }

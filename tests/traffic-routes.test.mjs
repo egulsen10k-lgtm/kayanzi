@@ -3,6 +3,14 @@ import assert from 'node:assert/strict';
 import {buildTrafficGraph,lanePose,makeTrafficTurn,nextTrafficEdge,trafficSpeedLimit} from '../src/traffic-routes.js';
 import {signalPhase} from '../src/traffic-controls.js';
 const road=(points,extra={})=>({points,width:8,...extra});
+test('malformed mapped roads are skipped without throwing or non-finite graph output',()=>{
+ const malformed=[null,{points:null,width:8},{points:[[0,0],[NaN,1]],width:8},{points:[[0,0],[1,1]],width:8,elevations:[0,Infinity]},{points:[[0,0],[0,0]],width:8},{points:[[0,0],[10,0]],width:41}];
+ assert.doesNotThrow(()=>{const graph=buildTrafficGraph({roads:malformed});assert.equal(graph.edges.length,0);});
+});
+test('speed limits stay bounded for missing, invalid, metric, and imperial metadata',()=>{
+ for(const value of [undefined,'not-a-limit','Infinity',-500,500,'40 mph']) { const limit=trafficSpeedLimit({highway:'residential',maxspeed:value}); assert.ok(Number.isFinite(limit)&&limit>=15&&limit<=160); }
+ assert.equal(trafficSpeedLimit({highway:'residential',maxspeed:'40 mph'}),64.37376);
+});
 test('crossing streets become a connected junction; bridges remain separate',()=>{
  const streets=[road([[-100,0],[100,0]]),road([[0,-100],[0,100]])];
  const g=buildTrafficGraph({roads:streets});assert.ok([...g.nodes.values()].some(n=>n.neighbors.size===4));

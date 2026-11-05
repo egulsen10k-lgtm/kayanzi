@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 export const TRAFFIC_TYPES=['sedan','sedan','police','van','sedan','firetruck','ambulance','bus'];
+export const EMERGENCY_TRAFFIC_TYPES=['ambulance','firetruck','police'];
 export function createTrafficVehicle(type='sedan',id=0) {
   const group=new THREE.Group();group.name=`traffic-${type}-${id}`;
   const long=['firetruck','bus'].includes(type),length=long?6.2:type==='van'||type==='ambulance'?4.9:4.2,width=long?2.05:1.8;

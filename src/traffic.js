@@ -3,7 +3,7 @@ import { projectCoordinate } from './road-network.js';
 import { footprintOnRoad } from './road-safety.js';
 import { resolveTrafficContact, integrateTrafficImpact } from './traffic-collision.js';
 import { buildTrafficGraph, lanePose, nextTrafficEdge, makeTrafficTurn } from './traffic-routes.js';
-import { createTrafficVehicle, disposeTrafficObject, TRAFFIC_TYPES } from './traffic-vehicle.js';
+import { createTrafficVehicle, disposeTrafficObject, TRAFFIC_TYPES, EMERGENCY_TRAFFIC_TYPES } from './traffic-vehicle.js';
 import { TrafficControls } from './traffic-controls.js';
 import { RoadSigns } from './road-signs.js';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -75,17 +75,19 @@ export class TrafficManager {
     }
     candidates.sort((a,b)=>a.d-b.d||a.edge.id.localeCompare(b.edge.id));
     let candidate=candidates[0];if(!candidate)return false;
-    const id=this.nextId++,requested=TRAFFIC_TYPES[id%TRAFFIC_TYPES.length];
+    const id=this.nextId++;
+    const emergency=this.random()<.035;
+    const requested=emergency?EMERGENCY_TRAFFIC_TYPES[id%EMERGENCY_TRAFFIC_TYPES.length]:TRAFFIC_TYPES[id%TRAFFIC_TYPES.length];
     const type=['firetruck','bus'].includes(requested)&&candidate.edge.road.width<7?'sedan':requested;
     const model=createTrafficVehicle(type,id),materials=new Set();
     candidate=candidates.find(c=>c.edge.road.width>=(model.width>2?7:6)&&this.safe(model,c.pose));
     if(!candidate){disposeTrafficObject(model.group);return false;}
     model.group.traverse(o=>{if(o.material)materials.add(o.material);});
     const car={...model,id,edge:candidate.edge,s:candidate.s,turn:null,...candidate.pose,speed:0,
-      cruise:type==='bus'||type==='firetruck'?80:type==='van'?90:120,
+      cruise:emergency?110:type==='bus'||type==='firetruck'?80:type==='van'?90:120,
       offsetX:0,offsetY:0,yawOffset:0,impactTime:Infinity,vx:0,vy:0,angularVelocity:0,
       laneOffset:0,targetLaneOffset:0,laneChangeTimer:4+this.random()*8,indicatorSide:null,
-      opacity:0,materials:[...materials],alertUntil:0,noticeAt:0,honkEvent:false};
+      emergency,emergencyPhase:this.random()*Math.PI*2,opacity:0,materials:[...materials],alertUntil:0,noticeAt:0,honkEvent:false};
     this.root.add(car.group);this.cars.push(car);this.renderCar(car,0);return true;
   }
   safe(car,pose) {
@@ -102,11 +104,13 @@ export class TrafficManager {
   }
   targetSpeed(car,player) {
     let target=Math.min(car.cruise,car.edge.limit*.92)/3.6;
+    if(car.emergency)target=Math.min(car.cruise/3.6,target+4);
     if(car.turn&&car.edge.tangent[0]*car.turn.next.tangent[0]+car.edge.tangent[1]*car.turn.next.tangent[1]<.95)target=Math.min(target,5);
     const forward=[Math.sin(car.heading),Math.cos(car.heading)];
     for(const other of [player,...this.cars]) {
       if(other===car||Math.abs(other.roadHeight-car.roadHeight)>.7)continue;
       const dx=other.x-car.x,dy=other.y-car.y,along=dx*forward[0]+dy*forward[1],side=Math.abs(dx*forward[1]-dy*forward[0]);
+      if(car.emergency&&other===player&&along>0&&along<24)target=Math.min(target,Math.sqrt(Math.max(0,2*4*(along-8))));
       if(along<=0||side>(car.width+(other.width??1.86))/2+.25)continue;
       const gap=along-(car.length+(other.length??4.5))/2-2.5;
       target=Math.min(target,Math.sqrt(Math.max(0,2*3.5*gap)));
@@ -186,10 +190,11 @@ export class TrafficManager {
     for(const material of car.materials)if(material.opacity!==opacity){material.transparent=opacity<1;material.opacity=opacity;material.depthWrite=opacity>.9;}
     for(const wheel of car.wheels)wheel.rotation.x+=car.speed/3.6*dt/.32;
     for(const lamp of car.brakeLamps)lamp.emissiveIntensity=car.braking?2:.25;
+    car.beacons.forEach((lamp,i)=>{lamp.emissiveIntensity=car.emergency&&Math.floor((this.time+car.emergencyPhase)*6+i)%2===0?3:.15;});
     car.group.userData.indicatorSide=car.indicatorSide;
     car.group.userData.indicatorLamps={left:car.brakeLamps[0],right:car.brakeLamps[1]};
     car.group.userData.indicatorBaseIntensity=car.braking?2:.25;
-    car.beacons.forEach((lamp,i)=>{lamp.emissiveIntensity=(car.type!=='police'||car.alertUntil>this.time)&&Math.floor(this.time*5+i)%2===0?3:.15;});
+    car.beacons.forEach((lamp,i)=>{lamp.emissiveIntensity=car.emergency&&Math.floor((this.time+car.emergencyPhase)*6+i)%2===0?3:.15;});
   }
   update(dt,player) {
     if(!this.network)return;
@@ -220,6 +225,7 @@ export class TrafficManager {
       car.braking=desired<speed-.3;
       const towardPlayer=[Math.sin(car.heading),Math.cos(car.heading)],playerDx=p.x-car.x,playerDy=p.y-car.y;
       const playerAlong=playerDx*towardPlayer[0]+playerDy*towardPlayer[1],playerSide=Math.abs(playerDx*towardPlayer[1]-playerDy*towardPlayer[0]);
+      if(car.emergency&&playerAlong>0&&playerAlong<22&&playerSide<3)car.targetLaneOffset=car.laneOffset+(playerSide<.9?3.2:0);
       const playerGap=playerAlong-(car.length+(p.length??4.5))/2-2.5;
       const proximityTarget=Math.sqrt(Math.max(0,7*playerGap));
       if(car.braking&&distance(car,p)<20&&Math.abs(car.roadHeight-p.roadHeight)<.7&&playerAlong>0&&playerSide<(car.width+(p.width??1.86))/2+.25&&speed-proximityTarget>15/3.6)car.honkEvent=true;
