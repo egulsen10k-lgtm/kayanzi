@@ -1,3 +1,4 @@
+import {nearbyCasino} from './casino-locations.js';
 import { CasinoRoom } from './katlayanzi-room.js';
 import { mountKatlayanzi } from './katlayanzi-ui.js';
 import { Pedestrians, seatCapacity } from './pedestrians.js';
@@ -1172,7 +1173,12 @@ document.addEventListener('DOMContentLoaded', () => {
   applyMobileLayout();
 
   casinoRoom = new CasinoRoom({ session: multiplayer });
-  mountKatlayanzi({ room: casinoRoom });
+  const casinoAccess=()=>{
+    if(runnerActive||visualizer.previewActive||!physics.roadNetwork?.center)return {allowed:false,distance:Infinity};
+    return nearbyCasino(visualizer.casinoLocations,projectCoordinate(physics.lat,physics.lng,physics.roadNetwork.center),physics.roadHeight);
+  };
+  const casinoUI=mountKatlayanzi({ room: casinoRoom,canEnter:()=>casinoAccess().allowed });
+  let casinoAccessTimer=0;
   window.addEventListener('katlayanzichange', ({detail}) => {
     casinoOpen = Boolean(detail?.open);
     driveInput.clear(); releaseNitro(); stopHorn();
@@ -1241,6 +1247,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function gameLoop(currentTime) {
     const dt = Math.min(0.1, (currentTime - lastTime) / 1000);
     lastTime = currentTime;
+    casinoAccessTimer-=dt;
+    if(casinoAccessTimer<=0){casinoAccessTimer=.2;casinoUI.setNearby(casinoAccess());}
     if(casinoOpen){requestAnimationFrame(gameLoop);return;}
     if(pauseState.shouldSkipFrame(runnerActive)){requestAnimationFrame(gameLoop);return;}
     gamepadState=gamepadInput.poll();

@@ -1,3 +1,4 @@
+import {selectCasinoBuildings,buildCasinoExteriors} from './casino-locations.js';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildRouteRibbon } from './route-ribbon.js';
@@ -491,6 +492,8 @@ export class CarVisualizer3D {
     // TrafficManager owns persistent vehicles and junction props across district loads.
     this.roadNetwork = network;
     this.roadCenter = network.center;
+    this.casinoLocations = selectCasinoBuildings(network,(this.casinoLocations??[]).map(venue=>venue.id));
+    this.roadGroup.add(buildCasinoExteriors(this.casinoLocations));
 
     const surfaces = buildRoadMeshes(network);
     if (surfaces.children.length) this.roadGroup.add(...surfaces.children.slice());

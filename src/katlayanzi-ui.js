@@ -60,12 +60,14 @@ function announce(open) {
   globalThis.window?.dispatchEvent?.(new CustomEvent('katlayanzichange', { detail: { open } }));
 }
 
-export function mountKatlayanzi({ room } = {}) {
+export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
   if (!room || typeof document === 'undefined') return { destroy() {} };
   const target = document.body;
   const root = element('section', 'katlayanzi-root');
   const launch = button('Katlayanzi Casino', 'katlayanzi-launch');
   launch.id = 'katlayanzi-open';
+  launch.hidden = true;
+  let nearby = false;
   launch.setAttribute('aria-haspopup', 'dialog');
   launch.setAttribute('aria-expanded', 'false');
   root.append(launch);
@@ -288,6 +290,7 @@ export function mountKatlayanzi({ room } = {}) {
   }
 
   function setOpen(next) {
+    if(next&&(!nearby||!canEnter()))return;
     if(open===next)return;
     open = next;
     overlay.hidden = !open;
@@ -336,6 +339,12 @@ export function mountKatlayanzi({ room } = {}) {
   render();
 
   return {
+    setNearby(access) {
+      nearby=Boolean(access?.allowed);launch.hidden=!nearby;
+      launch.textContent=nearby?`Katlayanzi · Gir (${Math.round(access.distance)} m)`:'Katlayanzi';
+      launch.setAttribute('aria-label','Yakındaki Katlayanzi kumarhanesine gir');
+      if(!nearby&&open)setOpen(false);
+    },
     destroy() {
       if (destroyed) return;
       destroyed = true; clearInterval(voteTimer);scene?.dispose();handJump.removeEventListener('click',onHandJump);unsubscribe(); launch.removeEventListener('click', onLaunch); close.removeEventListener('click', onClose); invite.removeEventListener('click', onInvite);
