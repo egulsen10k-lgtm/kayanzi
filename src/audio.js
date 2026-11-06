@@ -261,14 +261,19 @@ export class CarAudio {
   }
 
   updateRemotePeers(peers, localPosition) {
-    const local = localPosition && Number.isFinite(localPosition.lat) && Number.isFinite(localPosition.lng)
-      ? { lat: localPosition.lat, lng: localPosition.lng } : null;
-    const nearby = (Array.isArray(peers) ? peers : [])
+    const local = localPosition && Number.isFinite(localPosition.lat) && Math.abs(localPosition.lat) <= 90 &&
+      Number.isFinite(localPosition.lng) && Math.abs(localPosition.lng) <= 180
+      ? { lat: Number(localPosition.lat), lng: Number(localPosition.lng) } : null;
+    const nearby = local ? (Array.isArray(peers) ? peers : [])
       .filter(peer => peer && typeof peer.peerId === 'string' && peer.peerId.length > 0 &&
-        Number.isFinite(peer.lat) && Math.abs(peer.lat) <= 90 && Number.isFinite(peer.lng) && Math.abs(peer.lng) <= 180)
-      .map(peer => ({ ...peer, distance: local ? peerDistance(local, peer) : Infinity }))
+        Number.isFinite(peer.lat) && Math.abs(peer.lat) <= 90 &&
+        Number.isFinite(peer.lng) && Math.abs(peer.lng) <= 180)
+      .map(peer => {
+        const speed = Number.isFinite(peer.speed) ? clamp(Math.abs(peer.speed), 0, 400) : 0;
+        return { ...peer, speed, distance: peerDistance(local, peer) };
+      })
       .sort((a, b) => a.distance - b.distance)
-      .slice(0, Math.max(0, Math.min(7, this.remoteVoiceCap ?? 7)));
+      .slice(0, Math.max(0, Math.min(7, this.remoteVoiceCap ?? 7))) : [];
     const active = new Set(nearby.map(peer => peer.peerId));
     for (const id of this.remoteVoices.keys()) if (!active.has(id)) this.removeRemoteVoice(id);
     if (!this.initialized || !local) return;
@@ -286,10 +291,10 @@ export class CarAudio {
         this.remoteVoices.set(peer.peerId, voice);
       }
       const speed = clamp(Math.abs(peer.speed), 0, 400);
-      const frequency = /i4|electric/i.test(String(peer.model || '')) ? 80 + speed * 2.5 : 24 + speed * 0.55;
-      const distanceGain = peer.distance >= 120 ? 0 : (1 - peer.distance / 120) ** 1.6;
+      const frequency = clamp(/i4|electric/i.test(String(peer.model || '')) ? 80 + speed * 2.5 : 24 + speed * 0.55, 20, 20000);
+      const distanceGain = peer.distance >= 120 ? 0 : (1 - clamp(peer.distance, 0, 120) / 120) ** 1.6;
       const speedGain = 0.35 + Math.min(1, speed / 180) * 0.65;
-      const volume = this.channels.engine && !this.isMuted ? 0.055 * distanceGain * speedGain : 0;
+      const volume = clamp(this.channels.engine && !this.isMuted ? 0.055 * distanceGain * speedGain : 0, 0, 1);
       voice.oscillator.frequency.setTargetAtTime(frequency, now, 0.08);
       voice.gain.gain.setTargetAtTime(volume, now, 0.12);
     }

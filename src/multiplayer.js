@@ -1,3 +1,4 @@
+import { sanitizeCasinoPayload } from './katlayanzi-protocol.js';
 // Transport-independent driving snapshots. No remote input is executed as game code.
 import { sanitizeWorldSnapshot } from './npc-state.js';
 export const MAX_PLAYERS = 8;
@@ -66,9 +67,9 @@ export function lanSocketUrl(url) {
 
 export class MultiplayerSession {
   constructor({ getState = () => null, onPeerState = noop, onPeerLeave = noop, onStatus = noop, onPeers = noop,
-    onWorldSnapshot = noop, onWorldAuthority = noop, getNpcs = null, onNpcs = noop, onChat = noop, onLatency = noop,
+    onWorldSnapshot = noop, onWorldAuthority = noop, getNpcs = null, onNpcs = noop, onChat = noop, onLatency = noop, onCasino = noop,
     name = 'Driver', WebSocketClass = globalThis.WebSocket, RTCPeerConnectionClass = globalThis.RTCPeerConnection } = {}) {
-    Object.assign(this, { getState, onPeerState, onPeerLeave, onStatus, onPeers, onWorldSnapshot, onWorldAuthority, getNpcs, onNpcs, onChat, onLatency, WebSocketClass, RTCPeerConnectionClass });
+    Object.assign(this, { getState, onPeerState, onPeerLeave, onStatus, onPeers, onWorldSnapshot, onWorldAuthority, getNpcs, onNpcs, onChat, onLatency, onCasino, WebSocketClass, RTCPeerConnectionClass });
     this.name = sanitizeName(name);
     this.peers = new Map(); this.channels = new Map();
     this.connected = false; this.transport = null; this.room = null; this.id = null;
@@ -177,6 +178,14 @@ export class MultiplayerSession {
       if(message.sequence!=null&&!validSequence(message.sequence))return;
       this._upsert(message.id, message.name, message.state, message.sequence??null);
     } else if (this.connected && message.type === 'peer-leave') this._remove(message.id);
+    else if (this.connected && message.type === 'casino') {
+      const payload=sanitizeCasinoPayload(message.payload);
+      if(!payload||!validId(message.id))return;
+      if(payload.kind==='view'&&message.id===this.worldAuthorityId&&!this.isWorldAuthority)
+        this.onCasino({id:message.id,name:sanitizeName(message.name),payload});
+      else if(payload.kind==='action'&&this.isWorldAuthority&&this.peers.has(message.id))
+        this.onCasino({id:message.id,name:this.peers.get(message.id).name,payload});
+    }
     else if (this.connected && message.type === 'chat') {
       const id = validId(message.id) ? message.id : null;
       const name = String(message.name || '').slice(0, 24) || 'Driver';
@@ -299,6 +308,9 @@ export class MultiplayerSession {
         if(message.sequence!=null)peer.sequence=message.sequence;
         this._upsert(peer.id, peer.name, state);
         this._broadcast({ type: 'state', id: peer.id, name: peer.name, state, ...(message.sequence==null?{}:{sequence:message.sequence}) }, peer.id);
+      } else if (message.type === 'casino' && peer.joined) {
+        const payload=sanitizeCasinoPayload(message.payload);
+        if(payload?.kind==='action')this.onCasino({id:peer.id,name:peer.name,payload});
       } else if (message.type === 'leave') this._dropHostPeer(peer.id, generation);
     };
     channel.onclose = () => this._dropHostPeer(peer.id, generation);
@@ -384,6 +396,21 @@ export class MultiplayerSession {
         (this.pending !== pending && !pending.joined)) throw new Error('Invitation cancelled.');
     if (pending.joined) this._status('connected', `Hosting · ${this.peers.size + 1} drivers`);
     else this._status('connecting', 'Connecting to your friend…');
+  }
+
+  sendCasino(raw, targetId = null) {
+    if(!this.connected)return false;
+    const payload=sanitizeCasinoPayload(raw);if(!payload)return false;
+    if(payload.kind==='view') {
+      if(!this.isWorldAuthority||!validId(targetId)||!this.peers.has(targetId))return false;
+    }else if(this.isWorldAuthority)return false;
+    const packet={type:'casino',payload,targetId};
+    if(this.transport==='lan')return this._send(this.socket,packet);
+    if(payload.kind==='view'){
+      const peer=this.channels.get(targetId);
+      return Boolean(peer?.joined&&this._send(peer.channel,{...packet,id:this.id,name:this.name}));
+    }
+    return this._send(this.guestChannel,packet);
   }
 
   sendChat(text) {

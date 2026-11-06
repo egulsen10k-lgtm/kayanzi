@@ -300,3 +300,15 @@ test('frozen NPC callback aliases publish once per player tick and preserve solo
   guest.sendState(state()); await tick(); assert.equal(captures, 1);
   host.leave(); guest.leave(); assert.equal(guest.npcAuthority, true); assert.equal(host.host, false);
 });
+
+test('casino actions use authenticated guest identity and host views stay private',async t=>{
+  const actions=[],one=[],two=[];
+  const host=makeSession({onCasino:p=>actions.push(p)}),a=makeSession({onCasino:p=>one.push(p)}),b=makeSession({onCasino:p=>two.push(p)});
+  t.after(()=>{host.leave();a.leave();b.leave();});await pair(host,a);await pair(host,b);
+  const action={kind:'action',requestId:'a1',action:{type:'join'}};
+  assert.equal(a.sendCasino(action),true);await tick();assert.equal(actions[0].id,a.id);assert.equal(two.length,0);
+  const view={kind:'view',state:{players:[],dealer:[],version:1}};
+  assert.equal(host.sendCasino(view,a.id),true);await tick();assert.equal(one.length,1);assert.equal(two.length,0);assert.equal(one[0].id,host.id);
+  assert.equal(a.sendCasino(view,b.id),false);assert.equal(a.sendCasino({...action,padding:'x'.repeat(16001)}),false);
+  const spoof={type:'casino',id:host.id,payload:action};a.guestChannel.send(JSON.stringify(spoof));await tick();assert.equal(actions.at(-1).id,a.id);
+});

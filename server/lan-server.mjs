@@ -1,3 +1,4 @@
+import { sanitizeCasinoPayload } from '../src/katlayanzi-protocol.js';
 import http from 'node:http';
 import { createReadStream } from 'node:fs';
 import { realpath, stat } from 'node:fs/promises';
@@ -185,6 +186,17 @@ export function createLanServer({ port = 3000, host = '0.0.0.0', distDir = resol
         if (snapshot.seq <= room.worldSeq) return;
         room.worldSeq = snapshot.seq; room.worldSnapshot = snapshot;
         broadcast(member.room, { type: 'world', room: member.room, authorityId: member.id, snapshot }, socket);
+      } else if (message.type === 'casino') {
+        const member=socket.member;if(!member)return sendError(socket,'not-joined','Join a room first.');
+        const room=rooms.get(member.room),payload=sanitizeCasinoPayload(message.payload);
+        if(!room||!payload)return;
+        if(payload.kind==='action'&&member.id!==room.authorityId){
+          const authority=room.get(room.authorityId);
+          if(authority)safeSend(authority.socket,{type:'casino',id:member.id,name:member.name,payload});
+        }else if(payload.kind==='view'&&member.id===room.authorityId){
+          const target=room.get(message.targetId);
+          if(target&&target.id!==member.id)safeSend(target.socket,{type:'casino',id:member.id,name:member.name,payload});
+        }
       } else if (message.type === 'leave') {
         leave(socket);
         socket.close(1000, 'Left room');

@@ -36,7 +36,6 @@ test('adult appearance variants keep the same instancing topology and expose tin
  assert.equal(variants[4].userData.style,'turkish-sunroof');
  assert.equal(variants[0].getObjectByName('scarf-crown').scale.x,0);
 });
-
 test('sunroof rider uses a real roof opening and appears only with a passenger at safe speed',async()=>{
  const {PedestrianView}=await import('../src/pedestrian-view.js');
  const {group}=createCarModel('M3 Competition');
@@ -62,9 +61,13 @@ test('sunroof rider uses a real roof opening and appears only with a passenger a
 test('pedestrian states expose bounded visual poses',async()=>{
  const {pedestrianPose}=await import('../src/pedestrian-view.js');
  const scatter=pedestrianPose('scatter',Math.PI/2),idle=pedestrianPose('idle',Math.PI/2),boarded=pedestrianPose('boarded');
+ const chasing=pedestrianPose('chasing',Math.PI/2),walking=pedestrianPose('walking',Math.PI/2),trunkApproach=pedestrianPose('trunk-approach',Math.PI/2);
  assert.equal(scatter.visible,true);assert.ok(scatter.lean<0);assert.ok(Math.abs(scatter.armGait)>Math.abs(idle.armGait));
  assert.equal(boarded.visible,false);assert.ok(boarded.scaleY>0&&boarded.scaleY<1);
  assert.equal(idle.scaleY,1);assert.ok(Math.abs(idle.gait)<=.3);
+ assert.notEqual(chasing.gait,0);assert.ok(Math.abs(chasing.gait)>Math.abs(idle.gait));assert.notEqual(chasing.armGait,0);
+ assert.notEqual(walking.gait,0);assert.ok(Math.abs(walking.gait)<Math.abs(chasing.gait));
+ assert.notEqual(trunkApproach.gait,0);
 });
 
 test('instanced NPCs switch between goth and headscarf geometry without new draw calls',async()=>{

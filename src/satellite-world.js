@@ -3,6 +3,7 @@ import * as THREE from 'three';
 export const MAX_IMAGERY_LATITUDE = 85.05112878;
 export const EARTH_CIRCUMFERENCE = 40075016.68557849;
 export const IMAGERY_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile';
+export const MAX_TILE_ATTEMPTS = 2;
 
 export function mercatorPosition(lat, lng) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > MAX_IMAGERY_LATITUDE) return null;
@@ -75,10 +76,11 @@ export class SatelliteWorld {
       return;
     }
     this.signature = signature;
+    const previousWanted = this.wanted;
     this.wanted = new Set(tiles.map((tile) => tile.key));
-    for (const [key, entry] of this.entries) {
-      entry.mesh.visible = this.wanted.has(key) && entry.loaded;
-      if (!this.wanted.has(key)) entry.controller?.abort('location-change');
+    for (const entry of this.entries.values()) {
+      entry.mesh.visible = this.wanted.has(entry.key) && entry.loaded;
+      if (!this.wanted.has(entry.key)) entry.controller?.abort('location-change');
     }
     this.queue = [];
     for (const tile of tiles) {
@@ -90,12 +92,13 @@ export class SatelliteWorld {
         const mesh = new THREE.Mesh(geometry, material);
         mesh.visible = false;
         this.group.add(mesh);
-        entry = { ...tile, mesh, loaded: false, controller: null, used: Date.now(), failed: false };
+        entry = { ...tile, mesh, loaded: false, controller: null, used: Date.now(), failed: false, attempts: 0 };
         this.entries.set(tile.key, entry);
       }
       entry.used = Date.now();
-      if (force) entry.failed = false;
-      if (!entry.loaded && !entry.controller && !entry.failed) this.queue.push(entry);
+      const newlyWanted = !previousWanted.has(tile.key);
+      if (newlyWanted || (force && !entry.controller)) { entry.failed = false; entry.attempts = 0; }
+      if (!entry.loaded && !entry.controller && !entry.failed && !this.queue.includes(entry)) this.queue.push(entry);
     }
     this.positionTiles();
     this.prune();
@@ -134,14 +137,15 @@ export class SatelliteWorld {
   pump() {
     while (!this.disposed && this.active < 6 && this.queue.length) {
       const entry = this.queue.shift();
-      if (!this.wanted.has(entry.key) || entry.loaded || entry.controller) continue;
+      if (!this.wanted.has(entry.key) || entry.loaded || entry.controller || entry.attempts >= MAX_TILE_ATTEMPTS) continue;
       this.active++;
       entry.controller = new AbortController();
+      entry.attempts++;
       this.load(entry).finally(() => {
         this.active--;
         entry.controller = null;
         if (this.disposed) return;
-        if (this.wanted.has(entry.key) && !entry.loaded && !entry.failed) this.queue.push(entry);
+        if (this.wanted.has(entry.key) && !entry.loaded && !entry.failed && entry.attempts < MAX_TILE_ATTEMPTS && !this.queue.includes(entry)) this.queue.push(entry);
         this.emitStatus();
         this.prune();
         this.pump();
@@ -156,7 +160,7 @@ export class SatelliteWorld {
       const response = await fetch(`${IMAGERY_URL}/${entry.key}`, { signal: controller.signal });
       if (!response.ok) throw new Error(`Imagery HTTP ${response.status}`);
       const bitmap = await createImageBitmap(await response.blob(), { imageOrientation: 'flipY', premultiplyAlpha: 'none' });
-      if (controller.signal.aborted || this.disposed || !this.entries.has(entry.key)) {
+      if (controller.signal.aborted || this.disposed || !this.wanted.has(entry.key) || !this.entries.has(entry.key)) {
         bitmap.close();
         return;
       }
@@ -171,7 +175,7 @@ export class SatelliteWorld {
       entry.failed = false;
       entry.mesh.visible = this.wanted.has(entry.key);
     } catch {
-      entry.failed = this.wanted.has(entry.key) && controller.signal.reason !== 'location-change';
+      entry.failed = this.wanted.has(entry.key) && controller.signal.reason !== 'location-change' && entry.attempts >= MAX_TILE_ATTEMPTS;
     } finally {
       clearTimeout(timeout);
     }

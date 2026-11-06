@@ -65,3 +65,14 @@ test('regeneration is bounded by braking power and fades near a full battery',()
  const low=sample(50),high=sample(99);
  assert.ok(low.rate<0&&low.rate>=-195);assert.ok(Math.abs(high.rate)<Math.abs(low.rate));
 });
+test('malformed inputs keep state finite and values in range',()=>{
+ const f=new FuelEconomy(null);
+ for(const bad of [NaN,Infinity,-Infinity,-1,'bad',{},null])f.update(bad,{speed:bad,throttle:bad,payloadKg:bad,rpm:bad},bad,{grade:bad,acceleration:bad});
+ for(const bad of [NaN,Infinity,-Infinity,-1,{},null]){f.remaining=bad;f.setModel(bad);assert.ok(Number.isFinite(f.remaining));assert.ok(f.remaining>=0&&f.remaining<=f.capacity);}
+ for(const bad of [NaN,Infinity,-Infinity,-1,{},null])assert.equal(f.refuel(bad),false);
+ assert.ok(Number.isFinite(f.percent));assert.ok(Number.isFinite(f.rangeKm));assert.ok(Number.isFinite(f.rate));assert.doesNotMatch(f.readout(Infinity),/NaN|Infinity/);
+});
+test('valid model switching and refueling remain compatible',()=>{
+ const f=new FuelEconomy('M4');f.remaining=f.capacity*.25;f.setModel('i4 M50 (EV)');
+ assert.equal(f.electric,true);assert.equal(f.percent,25);assert.equal(f.distanceKm,0);assert.equal(f.refuel(0),true);assert.equal(f.percent,100);
+});

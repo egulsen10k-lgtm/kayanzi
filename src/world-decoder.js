@@ -3,6 +3,7 @@ import { decodeWorld } from './road-network.js';
 let worker, active, nextId = 0;
 let workerUnavailable = false;
 let pumpScheduled = false;
+const WORKER_TIMEOUT_MS = 15000;
 // Keep the worker's expensive structured-clone/decode queue bounded to one.
 // Waiting requests stay here, where cancellation can remove them immediately.
 const pending = new Map();
@@ -19,6 +20,7 @@ function resetWorker() {
 
 function settle(request, error, network) {
   if (!pending.delete(request.id)) return;
+  clearTimeout(request.timeout);
   request.signal?.removeEventListener('abort', request.abort);
   if (active === request) active = undefined;
   if (error) request.reject(error);
@@ -63,7 +65,14 @@ function schedulePump() {
         worker = instance;
         instance.onmessage = ({ data }) => {
           if (worker !== instance || !active || active.id !== data?.id) return;
-          settle(active, data.error ? new Error(data.error) : null, data.network);
+          const validError = typeof data.error === 'string' && data.error.length > 0;
+          const validNetwork = data.network && Array.isArray(data.network.roads) &&
+            Number.isFinite(data.network.center?.lat) && Number.isFinite(data.network.center?.lng);
+          if (!validError && !validNetwork) {
+            workerFailed();
+            return;
+          }
+          settle(active, validError ? new Error(data.error) : null, data.network);
         };
         instance.onerror = event => {
           if (worker !== instance) return;
@@ -73,6 +82,10 @@ function schedulePump() {
         instance.onmessageerror = () => { if (worker === instance) workerFailed(); };
       }
       const { id, elements, lat, lng, radius } = request;
+      const instance = worker;
+      request.timeout = setTimeout(() => {
+        if (active === request && worker === instance) workerFailed();
+      }, WORKER_TIMEOUT_MS);
       worker.postMessage({ id, elements, lat, lng, radius });
     } catch {
       workerFailed();

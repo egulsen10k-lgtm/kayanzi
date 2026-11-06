@@ -268,3 +268,25 @@ test('load opens intake and exhaust timbre and shifts briefly interrupt engine t
   assert.equal(audio.engineGain.gain.value, 0);
   audio.dispose();
 });
+
+test('updateRemotePeers handles malformed peers, Symbol/throwing-valueOf speed, and out-of-range local coordinates safely', () => {
+  const audio = create();
+  const throwingValue = {
+    valueOf() { throw new Error('should not coerce'); }
+  };
+  const malformedPeers = [
+    { peerId: 'p1', lat: 48, lng: 11 },
+    { peerId: 'p2', lat: 48, lng: 11, speed: NaN },
+    { peerId: 'p3', lat: 48, lng: 11, speed: Symbol('speed') },
+    { peerId: 'p4', lat: 48, lng: 11, speed: throwingValue },
+    { peerId: 'p5', lat: 120, lng: 11, speed: 50 },
+    { peerId: 'p6', lat: 48, lng: 200, speed: 50 },
+    { peerId: '', lat: 48, lng: 11, speed: 50 },
+    null
+  ];
+  audio.updateRemotePeers(malformedPeers, { lat: 48, lng: 11 });
+  assert.equal(audio.remoteVoices.size, 4);
+  audio.updateRemotePeers(malformedPeers, { lat: 95, lng: 11 });
+  assert.equal(audio.remoteVoices.size, 0);
+  audio.dispose();
+});

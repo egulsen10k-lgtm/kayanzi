@@ -34,20 +34,27 @@ export class RoadSigns {
   constructor(parent){this.parent=parent;this.entries=[];this.radars=[];this.group=null;this.roads=[];}
   getRadars(){return this.radars;}
   getNearestLimit(physics) {
-    if(physics.currentEdge?.limit!=null)return physics.currentEdge.limit;
-    const network=physics.roadNetwork;if(!network)return 50;
+    if(!physics||typeof physics!=='object')return 50;
+    const currentLimit=physics.currentEdge?.limit;
+    if(Number.isFinite(currentLimit)&&currentLimit>0&&currentLimit<=300)return currentLimit;
+    const network=physics.roadNetwork;
+    if(!network||!Array.isArray(network.edges))return 50;
     const px = Number.isFinite(physics.x) ? physics.x : Number.isFinite(physics.position?.x) ? physics.position.x : null;
     const py = Number.isFinite(physics.y) ? physics.y : Number.isFinite(physics.position?.y) ? physics.position.y : null;
     if(px===null||py===null)return 50;
-    const forward=[Math.sin(physics.heading),Math.cos(physics.heading)];
+    const heading = Number.isFinite(physics.heading) ? physics.heading : 0;
+    const forward=[Math.sin(heading),Math.cos(heading)];
     let best=null,score=Infinity;
     for(const edge of network.edges) {
+      if(!edge||!Array.isArray(edge.tangent)||edge.tangent.length<2||!Array.isArray(edge.start)||edge.start.length<2||typeof edge.length!=='number'||edge.length<=0||!Number.isFinite(edge.length))continue;
+      if(!Number.isFinite(edge.tangent[0])||!Number.isFinite(edge.tangent[1])||!Number.isFinite(edge.start[0])||!Number.isFinite(edge.start[1]))continue;
       if(edge.tangent[0]*forward[0]+edge.tangent[1]*forward[1]<.15)continue;
       const dx=px-edge.start[0],dy=py-edge.start[1],s=Math.max(0,Math.min(edge.length,dx*edge.tangent[0]+dy*edge.tangent[1]));
       const d=Math.hypot(dx-edge.tangent[0]*s,dy-edge.tangent[1]*s);
       if(d<12&&d<score){score=d;best=edge;}
     }
-    return best?.limit??50;
+    const limit=best?.limit;
+    return Number.isFinite(limit)&&limit>0&&limit<=300?limit:50;
   }
   rebuild(graph,focus={x:0,y:0},roads=[]) {
     this.clear();this.group=new THREE.Group();this.group.name='road-signs';this.parent.add(this.group);

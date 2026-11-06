@@ -1,3 +1,5 @@
+import { CasinoRoom } from './katlayanzi-room.js';
+import { mountKatlayanzi } from './katlayanzi-ui.js';
 import { Pedestrians, seatCapacity } from './pedestrians.js';
 import { PedestrianView } from './pedestrian-view.js';
 import { TrafficManager } from './traffic.js';
@@ -186,6 +188,8 @@ document.addEventListener('DOMContentLoaded', () => {
     mapController.teleport(spawn.lat,spawn.lng);
   });
 
+  let casinoRoom;
+  let casinoOpen = false;
   let multiplayerUI;
   let multiplayerPanelOpen = false;
   let mobileMenuOpen = false;
@@ -203,6 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
       mapController.removePeerPosition(id);
     },
     onStatus: (status) => multiplayerUI?.updateStatus(status),
+    onCasino: packet => casinoRoom?.receive(packet),
     onLatency: latency => multiplayerUI?.updateLatency(latency),
     onPeers: (peers) => multiplayerUI?.updatePeers(peers),
     getNpcs: () => serializeNpcs({ pedestrians, traffic: trafficManager }),
@@ -1004,7 +1009,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setRobotMode(!robotMode);
   });
   const runnerAction=action=>{
-    if(!runnerActive || multiplayerPanelOpen || mobileMenuOpen)return;
+    if(!runnerActive || multiplayerPanelOpen || mobileMenuOpen || casinoOpen)return;
     if(runnerGame.over){runnerGame.reset();runnerHint.hidden=true;return;}
     if(action==='left')runnerGame.move(-1);
     if(action==='right')runnerGame.move(1);
@@ -1068,20 +1073,20 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('keydown',event=>{
     const active = document.activeElement;
     const typing = active && (['INPUT','TEXTAREA','SELECT'].includes(active.tagName) || active.isContentEditable);
-    if(event.code!=='Escape'||runnerActive||typing||multiplayerPanelOpen)return;
+    if(event.code!=='Escape'||runnerActive||typing||multiplayerPanelOpen||casinoOpen)return;
     event.preventDefault();event.stopImmediatePropagation();pauseState.toggle();
   },true);
   document.querySelectorAll('[data-runner-action]').forEach(button=>button.addEventListener('pointerdown',event=>{
     event.preventDefault();runnerAction(button.dataset.runnerAction);
   }));
   window.addEventListener('keydown',event=>{
-    if(!runnerActive || multiplayerPanelOpen || mobileMenuOpen)return;
+    if(!runnerActive || multiplayerPanelOpen || mobileMenuOpen || casinoOpen)return;
     if(event.code==='Escape'){event.preventDefault();event.stopImmediatePropagation();exitRunner();return;}
     const action=event.code==='ArrowLeft'||event.code==='KeyA'?'left':event.code==='ArrowRight'||event.code==='KeyD'?'right':event.code==='Space'||event.code==='ArrowUp'||event.code==='KeyW'?'jump':null;
     if(action){event.preventDefault();event.stopImmediatePropagation();if(!event.repeat)runnerAction(action);}
   },true);
   window.addEventListener('keyup',event=>{
-    if(runnerActive&&!multiplayerPanelOpen&&!mobileMenuOpen&&['ArrowLeft','ArrowRight','ArrowUp','KeyA','KeyD','KeyW','Space'].includes(event.code)){event.preventDefault();event.stopImmediatePropagation();}
+    if(runnerActive&&!multiplayerPanelOpen&&!mobileMenuOpen&&!casinoOpen&&['ArrowLeft','ArrowRight','ArrowUp','KeyA','KeyD','KeyW','Space'].includes(event.code)){event.preventDefault();event.stopImmediatePropagation();}
   },true);
   let swipeStart=null;
   visualizer.renderer.domElement.addEventListener('pointerdown',event=>{if(runnerActive)swipeStart={x:event.clientX,y:event.clientY};});
@@ -1166,6 +1171,25 @@ document.addEventListener('DOMContentLoaded', () => {
   mobileLayout.addEventListener('change', applyMobileLayout);
   applyMobileLayout();
 
+  casinoRoom = new CasinoRoom({ session: multiplayer });
+  mountKatlayanzi({ room: casinoRoom });
+  window.addEventListener('katlayanzichange', ({detail}) => {
+    casinoOpen = Boolean(detail?.open);
+    driveInput.clear(); releaseNitro(); stopHorn();
+    physics.speed = 0;
+    const now=audio.ctx?.currentTime??0;
+    audio.engineGain?.gain.setTargetAtTime(0,now,.04);
+    for(const voice of audio.remoteVoices.values())voice.gain.gain.setTargetAtTime(0,now,.04);
+    multiplayer.sendState({...physics.serializeState(),robot:robotMode});
+  });
+  window.addEventListener('keydown', event => {
+    if(casinoOpen && ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyH','Space'].includes(event.code) &&
+      !['INPUT','SELECT','TEXTAREA'].includes(event.target?.tagName) &&
+      !(event.code==='Space' && event.target?.tagName==='BUTTON')) {
+      event.preventDefault(); event.stopImmediatePropagation();
+    }
+  },true);
+
   let lastTime = performance.now();
   let syncTimer = 0;
   let routeTimer = 0;
@@ -1217,6 +1241,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function gameLoop(currentTime) {
     const dt = Math.min(0.1, (currentTime - lastTime) / 1000);
     lastTime = currentTime;
+    if(casinoOpen){requestAnimationFrame(gameLoop);return;}
     if(pauseState.shouldSkipFrame(runnerActive)){requestAnimationFrame(gameLoop);return;}
     gamepadState=gamepadInput.poll();
     crowdScanTimer-=dt;

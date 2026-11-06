@@ -140,6 +140,41 @@ test('pole crossing keeps geographic coordinates finite and valid', () => {
   assert.ok(Number.isFinite(car.lng) && Math.abs(car.lng) <= 180);
 });
 
+test('flat roads remain grounded with finite vertical dynamics', () => {
+  const car = unconstrainedCar();
+  car.speed = 80;
+  for (let i = 0; i < 60; i++) car.update(1 / 60);
+  assert.equal(car.airborne, false);
+  assert.equal(car.verticalVelocity, 0);
+  assert.ok(Number.isFinite(car.pitch) && Number.isFinite(car.roll));
+});
+
+test('crest drops allow bounded airtime and settle on landing', () => {
+  const car = unconstrainedCar();
+  car.speed = 100;
+  car.supportHeight = 1;
+  car.roadHeight = 1;
+  car.updateVerticalDynamics(1 / 60, 0, 3);
+  assert.equal(car.airborne, true);
+  assert.ok(car.verticalVelocity > 0);
+  for (let i = 0; i < 120 && car.airborne; i++) car.updateVerticalDynamics(1 / 60, 0, 3);
+  assert.equal(car.airborne, false);
+  assert.equal(car.verticalVelocity, 0);
+  assert.equal(car.roadHeight, 0);
+  assert.ok(Number.isFinite(car.pitch) && Number.isFinite(car.roll));
+});
+
+test('telemetry remains bounded on extreme slope and rollover is signaled', () => {
+  const car = unconstrainedCar();
+  car.speed = 120;
+  car.steering = 10;
+  car.updateVerticalDynamics(1 / 60, 10, 1);
+  assert.equal(car.rollover, true);
+  assert.ok(car.rolloverEvent);
+  assert.ok(Math.abs(car.pitch) <= .8 && Math.abs(car.roll) <= .8);
+  assert.ok(Number.isFinite(car.verticalVelocity) && Number.isFinite(car.roadHeight));
+});
+
 test('invalid frame durations do not corrupt state', () => {
   for (const dt of [NaN, Infinity, -1]) {
     const car = unconstrainedCar();

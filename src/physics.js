@@ -30,6 +30,13 @@ export class CarPhysics {
     this.lng = 11.5583;
     this.elevation = 520;
     this.roadHeight = .08;
+    this.supportHeight = .08;
+    this.verticalVelocity = 0;
+    this.airborne = false;
+    this.pitch = 0;
+    this.roll = 0;
+    this.rollover = false;
+    this.rolloverEvent = null;
 
     this.speed = 0; // km/h
     this.maxSpeed = 290;
@@ -201,7 +208,8 @@ export class CarPhysics {
     }
     if (this.roadConstrained && this.roadNetwork) {
       const point = projectCoordinate(this.lat, this.lng, this.roadNetwork.center);
-      const invalid = !point || !footprintOnRoad(this.roadNetwork, point, this.heading, this.roadHeight);
+      const supportHeight = this.airborne && Number.isFinite(this.supportHeight) ? this.supportHeight : this.roadHeight;
+      const invalid = !point || !footprintOnRoad(this.roadNetwork, point, this.heading, supportHeight);
       this.blockedSeconds = this.roadBlocked || invalid ? (this.blockedSeconds || 0) + dt : 0;
       if (invalid || this.blockedSeconds > 1.5) this.recoverToRoad();
     }
@@ -254,11 +262,72 @@ export class CarPhysics {
     this.lat = spawn.lat; this.lng = spawn.lng;
     this.heading = spawn.heading + (reverse ? Math.PI : 0);
     this.roadHeight = spawn.roadHeight;
+    this.supportHeight = spawn.roadHeight;
+    this.verticalVelocity = 0;
+    this.airborne = false;
+    this.pitch = 0;
+    this.roll = 0;
+    this.rollover = false;
+    this.rolloverEvent = null;
     this.speed = 0; this.steering = 0;
     this.driftFactor = 0; this.driftAngle = 0; this.driftDirection = 0;
     this.absActive = false; this.tractionControlActive = false; this.assistFeedbackEvent = null;
     this.roadBlocked = false; this.blockedSeconds = 0;
     return true;
+  }
+
+  updateVerticalDynamics(dt, targetHeight, distanceMeters) {
+    const target = Number.isFinite(targetHeight) ? targetHeight : this.roadHeight;
+    const support = Number.isFinite(this.supportHeight) ? this.supportHeight : this.roadHeight;
+    const delta = target - support;
+    const drop = support - target;
+    const speedMs = Math.abs(Number.isFinite(this.speed) ? this.speed : 0) / 3.6;
+    const safeDistance = Math.max(.5, Number.isFinite(distanceMeters) ? distanceMeters : 0);
+    const rawPitch = Math.atan2(delta, safeDistance);
+    const targetPitch = Math.max(-.65, Math.min(.65, rawPitch));
+    const priorRoll = Number.isFinite(this.roll) ? this.roll : 0;
+    const targetRoll = Math.max(-.65, Math.min(.65,
+      Number.isFinite(this.steering) ? this.steering * Math.min(.55, speedMs / 35) : 0));
+    this.pitch += (targetPitch - this.pitch) * (1 - Math.exp(-8 * dt));
+    this.roll += (targetRoll - priorRoll) * (1 - Math.exp(-7 * dt));
+    if (!Number.isFinite(this.pitch)) this.pitch = 0;
+    if (!Number.isFinite(this.roll)) this.roll = 0;
+
+    const extreme = Math.abs(rawPitch) > .85 || Math.abs(priorRoll) > .95;
+    if (extreme) {
+      if (!this.rollover) this.rolloverEvent = { pitch: this.pitch, roll: this.roll };
+      this.rollover = true;
+      this.speed = Math.max(-30, Math.min(290, this.speed * .65));
+      this.verticalVelocity = 0;
+      this.airborne = false;
+      this.pitch = Math.max(-.8, Math.min(.8, this.pitch));
+      this.roll = Math.max(-.8, Math.min(.8, this.roll));
+      this.roadHeight = target;
+      this.supportHeight = target;
+      return;
+    }
+    this.rollover = false;
+    if (!Number.isFinite(this.verticalVelocity)) this.verticalVelocity = 0;
+    if (!this.airborne && drop > .12 && speedMs > 4) {
+      this.airborne = true;
+      this.supportHeight = support;
+      this.verticalVelocity = Math.max(1.2, Math.min(4.5, drop / Math.max(dt, .01) * .35));
+    }
+    if (this.airborne) {
+      this.verticalVelocity = Math.max(-12, Math.min(12, this.verticalVelocity - 9.81 * dt));
+      this.roadHeight += this.verticalVelocity * dt;
+      this.supportHeight = target;
+      if (this.roadHeight <= target) {
+        this.roadHeight = target;
+        this.supportHeight = target;
+        this.airborne = false;
+        this.verticalVelocity = 0;
+      }
+    } else {
+      this.supportHeight = target;
+      this.roadHeight = target;
+      this.verticalVelocity = 0;
+    }
   }
 
   integrate(dt) {
@@ -431,7 +500,7 @@ export class CarPhysics {
       return false;
     }
     this.roadBlocked = false;
-    this.roadHeight = motion.roadHeight;
+    this.updateVerticalDynamics(dt, motion.roadHeight, distanceMeters);
     this.lat = destination.lat;
     this.lng = destination.lng;
     return true;
@@ -442,6 +511,13 @@ export class CarPhysics {
       return false;
     }
     this.roadHeight = .08;
+    this.supportHeight = .08;
+    this.verticalVelocity = 0;
+    this.airborne = false;
+    this.pitch = 0;
+    this.roll = 0;
+    this.rollover = false;
+    this.rolloverEvent = null;
     this.lat = lat;
     this.lng = lng;
     this.roadNetwork = null;

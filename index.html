@@ -208,7 +208,7 @@
       box-shadow: 0 0 12px rgba(255, 85, 119, 0.4);
     }
 
-    /* Responsive Control Panel Sidebar */
+    /* Responsive Control Panel Sidebar & Tabs */
     #control-sidebar {
       width: var(--sidebar-width);
       flex: 0 0 var(--sidebar-width);
@@ -217,11 +217,61 @@
       border-left: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
-      padding: 20px;
+      height: 100dvh;
+      max-height: 100dvh;
+      padding: 16px 20px;
       z-index: 20;
-      overflow-y: auto;
+      overflow: hidden;
       box-shadow: -10px 0 40px rgba(0,0,0,0.8);
       transition: transform 0.3s ease;
+    }
+
+    .sidebar-tabs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      background: rgba(0,0,0,0.35);
+      padding: 4px;
+      border-radius: 10px;
+      margin: 12px 0;
+      border: 1px solid var(--border-color);
+      flex-shrink: 0;
+    }
+
+    .sidebar-tab {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 8px 2px;
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: center;
+      transition: background 0.2s, color 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .sidebar-tab.active {
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+      color: #fff;
+      box-shadow: 0 2px 10px rgba(0,240,255,0.3);
+    }
+
+    .tab-panel {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+      flex-grow: 1;
+      padding-right: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent-cyan) rgba(0,0,0,0.2);
+    }
+
+    .tab-panel.active {
+      display: flex;
     }
 
     @media (max-width: 800px) {
@@ -1567,224 +1617,252 @@
       </div>
     </div>
 
-    <!-- Control & Customization Sidebar -->
+    <!-- Control & Customization Sidebar with Tabs -->
     <aside id="control-sidebar" aria-label="Driving controls">
       <div class="panel-header">
         <div class="bmw-logo-badge" aria-hidden="true"></div>
         <div>
           <h1>Drive studio</h1>
-          <p>Vehicle · camera · destination</p>
+          <p>Vehicle · env · audio · hud</p>
         </div>
         <button class="action-btn" id="studio-close" type="button" aria-label="Close drive studio">Close</button>
       </div>
 
-      <!-- Model Selector -->
-      <div class="control-group">
-        <div class="section-title">Select BMW M Model</div>
-        <div class="btn-grid">
-          <button class="action-btn active" type="button" data-model="M3 Competition" aria-pressed="true">M3 Competition</button>
-          <button class="action-btn" type="button" data-model="M4 CSL" aria-pressed="false">M4 CSL</button>
-          <button class="action-btn" type="button" data-model="M5 CS" aria-pressed="false">M5 CS</button>
-          <button class="action-btn" type="button" data-model="i4 M50 (EV)" aria-pressed="false">i4 M50 (EV)</button>
-        </div>
+      <!-- Tab Navigation -->
+      <div class="sidebar-tabs" role="tablist" aria-label="Drive studio sections">
+        <button class="sidebar-tab active" role="tab" aria-selected="true" aria-controls="panel-vehicle" id="tab-vehicle">Vehicle</button>
+        <button class="sidebar-tab" role="tab" aria-selected="false" aria-controls="panel-env" id="tab-env">Env</button>
+        <button class="sidebar-tab" role="tab" aria-selected="false" aria-controls="panel-audio" id="tab-audio">Audio</button>
+        <button class="sidebar-tab" role="tab" aria-selected="false" aria-controls="panel-hud" id="tab-hud">HUD</button>
       </div>
 
-      <!-- Exterior Paint Customizer -->
-      <div class="control-group">
-        <div class="section-title">Individual Paint</div>
-        <div class="color-picker-row">
-          <div class="color-swatch" style="background: #1c3fa8;" data-color="#1c3fa8" title="Motorsport Blue"></div>
-          <div class="color-swatch" style="background: #ff3366;" data-color="#ff3366" title="Fire Orange"></div>
-          <div class="color-swatch" style="background: #111111;" data-color="#111111" title="Frozen Black"></div>
-          <div class="color-swatch" style="background: #22c55e;" data-color="#22c55e" title="Isle of Man Green"></div>
-          <div class="color-swatch" style="background: #e2e8f0;" data-color="#e2e8f0" title="Alpine White"></div>
-          <div class="color-swatch" style="background: #eab308;" data-color="#eab308" title="Speed Yellow"></div>
-        </div>
-      </div>
-
-      <!-- Handling & Drive Modes -->
-      <div class="control-group">
-        <div class="section-title">Drive Dynamics</div>
-        <div class="btn-grid">
-          <button class="action-btn active" type="button" data-mode="Sport+">Sport +</button>
-          <button class="action-btn" type="button" data-mode="Drift">Low grip</button>
-        </div>
-      </div>
-
-      <!-- Teleport Anywhere on Earth -->
-      <div class="control-group">
-        <div class="section-title">Performance &amp; comfort</div>
-        <div class="settings-row"><label for="quality-tier">Graphics</label><select id="quality-tier" class="settings-select"><option value="eco">Eco</option><option value="balanced" selected>Balanced</option><option value="high">High</option></select></div>
-        <div class="settings-row"><label for="camera-shake-toggle">Camera shake</label><input id="camera-shake-toggle" type="checkbox" checked></div>
-      </div>
-
-      <div class="control-group">
-        <div class="section-title">Camera view</div>
-        <div id="camera-controls" role="group" aria-label="Camera view">
-          <button class="action-btn active" type="button" data-camera-mode="chase" aria-pressed="true">Chase</button>
-          <button class="action-btn" type="button" data-camera-mode="hood" aria-pressed="false">Hood</button>
-          <button class="action-btn" type="button" data-camera-mode="cockpit" aria-pressed="false">Cockpit</button>
-          <button class="action-btn" type="button" data-camera-mode="reverse" aria-pressed="false">Reverse</button>
-          <button class="action-btn" type="button" data-camera-mode="wide" aria-pressed="false">Wide</button>
-          <button class="action-btn" type="button" data-camera-mode="aerial" aria-pressed="false">Aerial</button>
-          <button class="action-btn" type="button" data-camera-mode="cinematic" aria-pressed="false">Cinematic</button>
-          <button class="action-btn" type="button" data-camera-mode="bonnet" aria-pressed="false">Bonnet</button>
-        </div>
-      </div>
-
-      <div class="control-group">
-        <div class="section-title">Weather &amp; Time</div>
-        <div class="btn-grid">
-          <button id="weather-cycle-btn" class="action-btn" type="button">☀ Clear</button>
-          <button id="time-cycle-btn" class="action-btn" type="button">☀ Day</button>
-        </div>
-      </div>
-
-      <div class="control-group">
-        <div class="section-title">Photographic 3D world</div>
-        <p style="font-size:12px;line-height:1.6;color:var(--text-dim)">Optional real 3D scenery preview. Driving pauses while viewing; A/D rotates the view.</p>
-        <button id="photoreal-toggle" type="button" class="action-btn" style="width:100%;margin-top:8px" aria-pressed="false">Open 3D preview</button>
-        <p id="photoreal-message" role="status" style="font-size:11px;line-height:1.5;margin-top:8px"></p>
-      </div>
-      <div class="control-group">
-        <div class="section-title">Akanzi · İstanbul coastal drive</div>
-        <p style="font-size:12px;line-height:1.6;color:var(--text-dim);margin-bottom:10px">Bağdat Caddesi → Caddebostan → Bostancı → Maltepe → Kartal → Pendik Sahil. Free mapped districts load locally; no API key needed.</p>
-        <button id="akanzi-start" class="action-btn" type="button" style="width:100%;border-color:#19e4ed">Drive Akanzi</button>
-        <button id="akanzi-end" class="action-btn" type="button" hidden style="width:100%;margin-top:8px">End route · explore here</button>
-        <p id="akanzi-message" role="status" style="font-size:11px;color:#ffc688;margin-top:6px"></p>
-      </div>
-
-      <div class="control-group">
-        <div class="section-title">Coordinates</div>
-        <form id="teleport-form" novalidate>
-          <label>Latitude<input id="teleport-lat" name="lat" type="number" min="-90" max="90" step="any" inputmode="decimal" required></label>
-          <label>Longitude<input id="teleport-lng" name="lng" type="number" min="-180" max="180" step="any" inputmode="decimal" required></label>
-          <button class="action-btn" type="submit">Go</button>
-        </form>
-        <div id="teleport-error" role="status" aria-live="polite"></div>
-      </div>
-
-      <div class="control-group">
-        <div class="section-title">Global Teleport</div>
-        <div class="teleport-list">
-          <div class="teleport-item" data-lat="48.1764" data-lng="11.5583" data-name="Munich BMW Welt">
-            <span>Munich BMW Welt</span>
-            <span style="color: var(--accent-cyan); font-size: 11px;">Germany</span>
-          </div>
-          <div class="teleport-item" data-lat="35.6595" data-lng="139.7005" data-name="Tokyo Shibuya Crossing">
-            <span>Tokyo Shibuya Crossing</span>
-            <span style="color: var(--accent-cyan); font-size: 11px;">Japan</span>
-          </div>
-          <div class="teleport-item" data-lat="34.0522" data-lng="-118.2437" data-name="Los Angeles Downtown">
-            <span>Los Angeles Downtown</span>
-            <span style="color: var(--accent-cyan); font-size: 11px;">USA</span>
-          </div>
-          <div class="teleport-item" data-lat="51.5074" data-lng="-0.1278" data-name="London Piccadilly Circus">
-            <span>London Piccadilly Circus</span>
-            <span style="color: var(--accent-cyan); font-size: 11px;">UK</span>
-          </div>
-          <div class="teleport-item" data-lat="25.2048" data-lng="55.2708" data-name="Dubai Sheikh Zayed Road">
-            <span>Dubai Sheikh Zayed Road</span>
-            <span style="color: var(--accent-cyan); font-size: 11px;">UAE</span>
+      <!-- Panel 1: Vehicle -->
+      <div id="panel-vehicle" class="tab-panel active" role="tabpanel" aria-labelledby="tab-vehicle" tabindex="0">
+        <!-- Model Selector -->
+        <div class="control-group">
+          <div class="section-title">Select BMW M Model</div>
+          <div class="btn-grid">
+            <button class="action-btn active" type="button" data-model="M3 Competition" aria-pressed="true">M3 Competition</button>
+            <button class="action-btn" type="button" data-model="M4 CSL" aria-pressed="false">M4 CSL</button>
+            <button class="action-btn" type="button" data-model="M5 CS" aria-pressed="false">M5 CS</button>
+            <button class="action-btn" type="button" data-model="i4 M50 (EV)" aria-pressed="false">i4 M50 (EV)</button>
           </div>
         </div>
-      </div>
 
-      <!-- Sound & Immersion -->
-      <div class="control-group">
-        <div class="section-title">Immersion & Audio</div>
-        <div class="audio-toggle-bar">
-          <div>
-            <div style="font-weight: 600; font-size: 12px;">Exhaust & Turbo Sound</div>
-            <div style="font-size: 10px; color: var(--text-dim);">Web Audio Synthesizer</div>
-          </div>
-          <button class="action-btn" id="audio-toggle-btn" style="padding: 6px 14px;">Mute</button>
-        </div>
-        <div style="margin-top: 10px; display: flex; gap: 8px;">
-          <button class="action-btn" id="horn-btn" style="flex: 1;">Horn 🔊</button><div id="passenger-status" role="status">Korna çal: yakındaki yayaları çağır</div>
-          <button class="action-btn" id="exhaust-pop-btn" style="flex: 1;">Exhaust Pop 💥</button>
-        </div>
-      </div>
-
-      <div class="control-group">
-        <div class="section-title">Road driving</div>
-        <p id="road-boundary-status" role="status" style="font-size:12px;margin-bottom:10px">Road boundaries active</p>
-        <button id="reset-road-btn" class="action-btn" type="button">Reset to nearest road</button>
-        <p style="font-size:11px;color:var(--text-dim);margin-top:8px">Your car stays within mapped streets. Choose a place to load its roads and 3D buildings. Building heights are estimated where unavailable.</p>
-      </div>
-
-      <!-- Audio Channels — drag to reorder, toggle on/off, adjust sample rate -->
-      <div class="control-group">
-        <div class="section-title">Audio Channels</div>
-        <ul id="audio-channel-list" class="channel-list">
-          <li class="channel-item" data-channel="engine" draggable="true">
-            <span class="drag-handle">⠿</span>
-            <span class="channel-label">Engine</span>
-            <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="engine"><span class="toggle-slider"></span></label>
-          </li>
-          <li class="channel-item" data-channel="turbo" draggable="true">
-            <span class="drag-handle">⠿</span>
-            <span class="channel-label">Turbo Spool</span>
-            <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="turbo"><span class="toggle-slider"></span></label>
-          </li>
-          <li class="channel-item" data-channel="exhaust" draggable="true">
-            <span class="drag-handle">⠿</span>
-            <span class="channel-label">Exhaust Pops</span>
-            <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="exhaust"><span class="toggle-slider"></span></label>
-          </li>
-          <li class="channel-item" data-channel="tires" draggable="true">
-            <span class="drag-handle">⠿</span>
-            <span class="channel-label">Tire Screech</span>
-            <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="tires"><span class="toggle-slider"></span></label>
-          </li>
-          <li class="channel-item" data-channel="wind" draggable="true">
-            <span class="drag-handle">⠿</span>
-            <span class="channel-label">Wind</span>
-            <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="wind"><span class="toggle-slider"></span></label>
-          </li>
-          <li class="channel-item" data-channel="horn" draggable="true">
-            <span class="drag-handle">⠿</span>
-            <span class="channel-label">Horn</span>
-            <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="horn"><span class="toggle-slider"></span></label>
-          </li>
-        </ul>
-      </div>
-
-      <!-- Audio Sample Rate & Master Volume -->
-      <div class="control-group">
-        <div class="section-title">Audio Settings</div>
-        <div class="settings-row">
-          <label for="sample-rate-select" style="font-size: 12px; font-weight: 600;">Sample Rate</label>
-          <select id="sample-rate-select" class="settings-select">
-            <option value="22050">22 050 Hz (Low)</option>
-            <option value="44100" selected>44 100 Hz (Standard)</option>
-            <option value="48000">48 000 Hz (High)</option>
-          </select>
-        </div>
-        <div class="settings-row" style="margin-top: 10px;">
-          <label for="master-volume-slider" style="font-size: 12px; font-weight: 600;">Master Volume</label>
-          <input type="range" id="master-volume-slider" min="0" max="100" value="40" class="settings-range">
-          <span id="master-volume-value" style="font-size: 11px; color: var(--text-dim); min-width: 32px; text-align: right;">40%</span>
-        </div>
-      </div>
-
-      <!-- HUD Preferences -->
-      <div class="control-group">
-        <div class="section-title">HUD Preferences</div>
-        <div class="settings-row">
-          <label style="font-size: 12px; font-weight: 600;">Speed Unit</label>
-          <div class="btn-grid" style="grid-template-columns: repeat(2, 1fr); gap: 6px;">
-            <button class="action-btn active" data-speed-unit="kmh" style="padding: 6px 10px; font-size: 11px;">km/h</button>
-            <button class="action-btn" data-speed-unit="mph" style="padding: 6px 10px; font-size: 11px;">mph</button>
+        <!-- Exterior Paint Customizer -->
+        <div class="control-group">
+          <div class="section-title">Individual Paint</div>
+          <div class="color-picker-row">
+            <div class="color-swatch" style="background: #1c3fa8;" data-color="#1c3fa8" title="Motorsport Blue"></div>
+            <div class="color-swatch" style="background: #ff3366;" data-color="#ff3366" title="Fire Orange"></div>
+            <div class="color-swatch" style="background: #111111;" data-color="#111111" title="Frozen Black"></div>
+            <div class="color-swatch" style="background: #22c55e;" data-color="#22c55e" title="Isle of Man Green"></div>
+            <div class="color-swatch" style="background: #e2e8f0;" data-color="#e2e8f0" title="Alpine White"></div>
+            <div class="color-swatch" style="background: #eab308;" data-color="#eab308" title="Speed Yellow"></div>
           </div>
         </div>
-        <div class="settings-row" style="margin-top: 10px;">
-          <label style="font-size: 12px; font-weight: 600;">Show Mini-Map</label>
-          <label class="toggle-switch"><input type="checkbox" id="minimap-toggle" checked><span class="toggle-slider"></span></label>
+
+        <!-- Handling & Drive Modes -->
+        <div class="control-group">
+          <div class="section-title">Drive Dynamics</div>
+          <div class="btn-grid">
+            <button class="action-btn active" type="button" data-mode="Sport+">Sport +</button>
+            <button class="action-btn" type="button" data-mode="Drift">Low grip</button>
+          </div>
         </div>
-        <div class="settings-row" style="margin-top: 10px;">
-          <label style="font-size: 12px; font-weight: 600;">Track Trail</label>
-          <label class="toggle-switch"><input type="checkbox" id="trail-toggle" checked><span class="toggle-slider"></span></label>
+
+        <!-- Performance & comfort -->
+        <div class="control-group">
+          <div class="section-title">Performance &amp; comfort</div>
+          <div class="settings-row"><label for="quality-tier">Graphics</label><select id="quality-tier" class="settings-select"><option value="eco">Eco</option><option value="balanced" selected>Balanced</option><option value="high">High</option></select></div>
+          <div class="settings-row"><label for="camera-shake-toggle">Camera shake</label><input id="camera-shake-toggle" type="checkbox" checked></div>
+        </div>
+
+        <!-- Camera view -->
+        <div class="control-group">
+          <div class="section-title">Camera view</div>
+          <div id="camera-controls" role="group" aria-label="Camera view">
+            <button class="action-btn active" type="button" data-camera-mode="chase" aria-pressed="true">Chase</button>
+            <button class="action-btn" type="button" data-camera-mode="hood" aria-pressed="false">Hood</button>
+            <button class="action-btn" type="button" data-camera-mode="cockpit" aria-pressed="false">Cockpit</button>
+            <button class="action-btn" type="button" data-camera-mode="reverse" aria-pressed="false">Reverse</button>
+            <button class="action-btn" type="button" data-camera-mode="wide" aria-pressed="false">Wide</button>
+            <button class="action-btn" type="button" data-camera-mode="aerial" aria-pressed="false">Aerial</button>
+            <button class="action-btn" type="button" data-camera-mode="cinematic" aria-pressed="false">Cinematic</button>
+            <button class="action-btn" type="button" data-camera-mode="bonnet" aria-pressed="false">Bonnet</button>
+          </div>
+        </div>
+
+        <!-- Road driving -->
+        <div class="control-group">
+          <div class="section-title">Road driving</div>
+          <p id="road-boundary-status" role="status" style="font-size:12px;margin-bottom:10px">Road boundaries active</p>
+          <button id="reset-road-btn" class="action-btn" type="button">Reset to nearest road</button>
+          <p style="font-size:11px;color:var(--text-dim);margin-top:8px">Your car stays within mapped streets. Choose a place to load its roads and 3D buildings. Building heights are estimated where unavailable.</p>
+        </div>
+      </div>
+
+      <!-- Panel 2: Environment -->
+      <div id="panel-env" class="tab-panel" role="tabpanel" aria-labelledby="tab-env" tabindex="0">
+        <!-- Weather & Time -->
+        <div class="control-group">
+          <div class="section-title">Weather &amp; Time</div>
+          <div class="btn-grid">
+            <button id="weather-cycle-btn" class="action-btn" type="button">☀ Clear</button>
+            <button id="time-cycle-btn" class="action-btn" type="button">☀ Day</button>
+          </div>
+        </div>
+
+        <!-- Photographic 3D world -->
+        <div class="control-group">
+          <div class="section-title">Photographic 3D world</div>
+          <p style="font-size:12px;line-height:1.6;color:var(--text-dim)">Optional real 3D scenery preview. Driving pauses while viewing; A/D rotates the view.</p>
+          <button id="photoreal-toggle" type="button" class="action-btn" style="width:100%;margin-top:8px" aria-pressed="false">Open 3D preview</button>
+          <p id="photoreal-message" role="status" style="font-size:11px;line-height:1.5;margin-top:8px"></p>
+        </div>
+
+        <!-- Akanzi Coastal Drive -->
+        <div class="control-group">
+          <div class="section-title">Akanzi · İstanbul coastal drive</div>
+          <p style="font-size:12px;line-height:1.6;color:var(--text-dim);margin-bottom:10px">Bağdat Caddesi → Caddebostan → Bostancı → Maltepe → Kartal → Pendik Sahil. Free mapped districts load locally; no API key needed.</p>
+          <button id="akanzi-start" class="action-btn" type="button" style="width:100%;border-color:#19e4ed">Drive Akanzi</button>
+          <button id="akanzi-end" class="action-btn" type="button" hidden style="width:100%;margin-top:8px">End route · explore here</button>
+          <p id="akanzi-message" role="status" style="font-size:11px;color:#ffc688;margin-top:6px"></p>
+        </div>
+
+        <!-- Coordinates -->
+        <div class="control-group">
+          <div class="section-title">Coordinates</div>
+          <form id="teleport-form" novalidate>
+            <label>Latitude<input id="teleport-lat" name="lat" type="number" min="-90" max="90" step="any" inputmode="decimal" required></label>
+            <label>Longitude<input id="teleport-lng" name="lng" type="number" min="-180" max="180" step="any" inputmode="decimal" required></label>
+            <button class="action-btn" type="submit">Go</button>
+          </form>
+          <div id="teleport-error" role="status" aria-live="polite"></div>
+        </div>
+
+        <!-- Global Teleport -->
+        <div class="control-group">
+          <div class="section-title">Global Teleport</div>
+          <div class="teleport-list">
+            <div class="teleport-item" data-lat="48.1764" data-lng="11.5583" data-name="Munich BMW Welt">
+              <span>Munich BMW Welt</span>
+              <span style="color: var(--accent-cyan); font-size: 11px;">Germany</span>
+            </div>
+            <div class="teleport-item" data-lat="35.6595" data-lng="139.7005" data-name="Tokyo Shibuya Crossing">
+              <span>Tokyo Shibuya Crossing</span>
+              <span style="color: var(--accent-cyan); font-size: 11px;">Japan</span>
+            </div>
+            <div class="teleport-item" data-lat="34.0522" data-lng="-118.2437" data-name="Los Angeles Downtown">
+              <span>Los Angeles Downtown</span>
+              <span style="color: var(--accent-cyan); font-size: 11px;">USA</span>
+            </div>
+            <div class="teleport-item" data-lat="51.5074" data-lng="-0.1278" data-name="London Piccadilly Circus">
+              <span>London Piccadilly Circus</span>
+              <span style="color: var(--accent-cyan); font-size: 11px;">UK</span>
+            </div>
+            <div class="teleport-item" data-lat="25.2048" data-lng="55.2708" data-name="Dubai Sheikh Zayed Road">
+              <span>Dubai Sheikh Zayed Road</span>
+              <span style="color: var(--accent-cyan); font-size: 11px;">UAE</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 3: Audio -->
+      <div id="panel-audio" class="tab-panel" role="tabpanel" aria-labelledby="tab-audio" tabindex="0">
+        <!-- Immersion & Audio -->
+        <div class="control-group">
+          <div class="section-title">Immersion & Audio</div>
+          <div class="audio-toggle-bar">
+            <div>
+              <div style="font-weight: 600; font-size: 12px;">Exhaust & Turbo Sound</div>
+              <div style="font-size: 10px; color: var(--text-dim);">Web Audio Synthesizer</div>
+            </div>
+            <button class="action-btn" id="audio-toggle-btn" style="padding: 6px 14px;">Mute</button>
+          </div>
+          <div style="margin-top: 10px; display: flex; gap: 8px;">
+            <button class="action-btn" id="horn-btn" style="flex: 1;">Horn 🔊</button><div id="passenger-status" role="status">Korna çal: yakındaki yayaları çağır</div>
+            <button class="action-btn" id="exhaust-pop-btn" style="flex: 1;">Exhaust Pop 💥</button>
+          </div>
+        </div>
+
+        <!-- Audio Channels -->
+        <div class="control-group">
+          <div class="section-title">Audio Channels</div>
+          <ul id="audio-channel-list" class="channel-list">
+            <li class="channel-item" data-channel="engine" draggable="true">
+              <span class="drag-handle">⠿</span>
+              <span class="channel-label">Engine</span>
+              <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="engine"><span class="toggle-slider"></span></label>
+            </li>
+            <li class="channel-item" data-channel="turbo" draggable="true">
+              <span class="drag-handle">⠿</span>
+              <span class="channel-label">Turbo Spool</span>
+              <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="turbo"><span class="toggle-slider"></span></label>
+            </li>
+            <li class="channel-item" data-channel="exhaust" draggable="true">
+              <span class="drag-handle">⠿</span>
+              <span class="channel-label">Exhaust Pops</span>
+              <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="exhaust"><span class="toggle-slider"></span></label>
+            </li>
+            <li class="channel-item" data-channel="tires" draggable="true">
+              <span class="drag-handle">⠿</span>
+              <span class="channel-label">Tire Screech</span>
+              <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="tires"><span class="toggle-slider"></span></label>
+            </li>
+            <li class="channel-item" data-channel="wind" draggable="true">
+              <span class="drag-handle">⠿</span>
+              <span class="channel-label">Wind</span>
+              <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="wind"><span class="toggle-slider"></span></label>
+            </li>
+            <li class="channel-item" data-channel="horn" draggable="true">
+              <span class="drag-handle">⠿</span>
+              <span class="channel-label">Horn</span>
+              <label class="toggle-switch"><input type="checkbox" checked data-channel-toggle="horn"><span class="toggle-slider"></span></label>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Audio Settings -->
+        <div class="control-group">
+          <div class="section-title">Audio Settings</div>
+          <div class="settings-row">
+            <label for="sample-rate-select" style="font-size: 12px; font-weight: 600;">Sample Rate</label>
+            <select id="sample-rate-select" class="settings-select">
+              <option value="22050">22 050 Hz (Low)</option>
+              <option value="44100" selected>44 100 Hz (Standard)</option>
+              <option value="48000">48 000 Hz (High)</option>
+            </select>
+          </div>
+          <div class="settings-row" style="margin-top: 10px;">
+            <label for="master-volume-slider" style="font-size: 12px; font-weight: 600;">Master Volume</label>
+            <input type="range" id="master-volume-slider" min="0" max="100" value="40" class="settings-range">
+            <span id="master-volume-value" style="font-size: 11px; color: var(--text-dim); min-width: 32px; text-align: right;">40%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 4: HUD -->
+      <div id="panel-hud" class="tab-panel" role="tabpanel" aria-labelledby="tab-hud" tabindex="0">
+        <!-- HUD Preferences -->
+        <div class="control-group">
+          <div class="section-title">HUD Preferences</div>
+          <div class="settings-row">
+            <label style="font-size: 12px; font-weight: 600;">Speed Unit</label>
+            <div class="btn-grid" style="grid-template-columns: repeat(2, 1fr); gap: 6px;">
+              <button class="action-btn active" data-speed-unit="kmh" style="padding: 6px 10px; font-size: 11px;">km/h</button>
+              <button class="action-btn" data-speed-unit="mph" style="padding: 6px 10px; font-size: 11px;">mph</button>
+            </div>
+          </div>
+          <div class="settings-row" style="margin-top: 10px;">
+            <label style="font-size: 12px; font-weight: 600;">Show Mini-Map</label>
+            <label class="toggle-switch"><input type="checkbox" id="minimap-toggle" checked><span class="toggle-slider"></span></label>
+          </div>
+          <div class="settings-row" style="margin-top: 10px;">
+            <label style="font-size: 12px; font-weight: 600;">Track Trail</label>
+            <label class="toggle-switch"><input type="checkbox" id="trail-toggle" checked><span class="toggle-slider"></span></label>
+          </div>
         </div>
       </div>
     </aside>
@@ -1818,6 +1896,41 @@
       hudCard.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); hudCard.click(); }
       });
+    }
+    // Sidebar Tabs Switching & Keyboard Navigation
+    const tabs = document.querySelectorAll('.sidebar-tab');
+    const panels = document.querySelectorAll('.tab-panel');
+    function activateTab(tab) {
+      const targetId = tab.getAttribute('aria-controls');
+      tabs.forEach(t => {
+        t.classList.remove('active');
+        t.setAttribute('aria-selected', 'false');
+        t.setAttribute('tabindex', '-1');
+      });
+      panels.forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
+      tab.removeAttribute('tabindex');
+      tab.focus();
+      const targetPanel = document.getElementById(targetId);
+      if (targetPanel) targetPanel.classList.add('active');
+    }
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => activateTab(tab));
+      tab.addEventListener('keydown', (e) => {
+        let nextIndex = index;
+        if (e.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+        else if (e.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+        else if (e.key === 'Home') nextIndex = 0;
+        else if (e.key === 'End') nextIndex = tabs.length - 1;
+        else return;
+        e.preventDefault();
+        e.stopPropagation();
+        activateTab(tabs[nextIndex]);
+      });
+    });
+    if (tabs.length > 0) {
+      tabs[0].removeAttribute('tabindex');
     }
   </script>
 </body>

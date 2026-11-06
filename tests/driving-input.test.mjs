@@ -83,3 +83,30 @@ test('missing Gamepad API is safe and reports no controller',()=>{
   const input=new GamepadInput({navigatorRef:undefined});
   assert.deepEqual(input.poll(),{steering:0,throttle:0,brake:0,handbrake:false,connected:false});
 });
+
+test('safe pointer capture/release errors and focusin editable clearing are robust', () => {
+  const win = new Target(), doc = new Target(), physics = { keys: {} };
+  class FaultyTarget extends Target {
+    setPointerCapture(id) { throw new Error('not supported'); }
+    hasPointerCapture(id) { throw new Error('not supported'); }
+    releasePointerCapture(id) { throw new Error('not supported'); }
+  }
+  const btn = new FaultyTarget();
+  btn.attrs['data-drive-key'] = 'ArrowUp';
+  bindDrivingInput({ physics, buttons: [btn], win, doc });
+
+  fire(btn, 'pointerdown', { pointerId: 10, button: 0 });
+  assert.equal(physics.keys.ArrowUp, true);
+  fire(btn, 'pointerup', { pointerId: 10 });
+  assert.equal(physics.keys.ArrowUp, false);
+
+  const inputEl = new Target();
+  inputEl.tagName = 'INPUT';
+  fire(win, 'keydown', { code: 'ArrowUp' });
+  assert.equal(physics.keys.ArrowUp, true);
+  doc.activeElement = inputEl;
+  const ev = new Event('focusin', { cancelable: true });
+  Object.defineProperty(ev, 'target', { value: inputEl, writable: false });
+  doc.dispatchEvent(ev);
+  assert.equal(physics.keys.ArrowUp, false);
+});

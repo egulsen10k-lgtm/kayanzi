@@ -1,0 +1,43 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {WebSocket} from 'ws';
+import {createLanServer} from '../server/lan-server.mjs';
+import {MultiplayerSession} from '../src/multiplayer.js';
+import {CasinoRoom} from '../src/katlayanzi-room.js';
+const wait=async fn=>{for(let i=0;i<100;i++){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('Casino room did not synchronize');};
+test('two real LAN clients share bets, turns, results and private poker cards',async t=>{
+  const server=createLanServer({port:0,host:'127.0.0.1'});await server.listen();
+  const url=`http://127.0.0.1:${server.server.address().port}`;
+  let hostRoom,guestRoom;
+  const host=new MultiplayerSession({WebSocketClass:WebSocket,onCasino:p=>hostRoom?.receive(p)});
+  const guest=new MultiplayerSession({WebSocketClass:WebSocket,onCasino:p=>guestRoom?.receive(p)});
+  t.after(async()=>{hostRoom?.destroy();guestRoom?.destroy();host.leave();guest.leave();await server.close();});
+  await host.connectLan({url,room:'CASINO'});hostRoom=new CasinoRoom({session:host});
+  await guest.connectLan({url,room:'CASINO'});guestRoom=new CasinoRoom({session:guest});
+  await wait(()=>hostRoom.engine.players.length===2&&guestRoom.lastView?.players.length===2);
+  hostRoom.dispatch({type:'choose',game:'poker'});await wait(()=>guestRoom.lastView.gameVote);
+  guestRoom.dispatch({type:'vote',proposalId:guestRoom.lastView.gameVote.id,approve:true});
+  await wait(()=>guestRoom.lastView.game==='poker');
+  hostRoom.dispatch({type:'bet',amount:25});guestRoom.dispatch({type:'bet',amount:50});await wait(()=>hostRoom.engine.players[1].bet===50);
+  hostRoom.dispatch({type:'deal'});await wait(()=>guestRoom.lastView.phase==='playing');
+  assert.ok(hostRoom.getView().players[1].hand.every(c=>c===null));assert.ok(guestRoom.getView().players[0].hand.every(c=>c===null));
+  hostRoom.dispatch({type:'stand'});await wait(()=>guestRoom.lastView.turnId===guest.id);
+  guestRoom.dispatch({type:'draw',indices:[0,1]});await wait(()=>guestRoom.lastView.phase==='result');
+  assert.equal(hostRoom.getView().round,guestRoom.getView().round);assert.deepEqual(hostRoom.getView().players.map(p=>p.chips),guestRoom.getView().players.map(p=>p.chips));
+});
+
+test('LAN guest proposes a game and host must vote instead of forcing its own switch',async t=>{
+  const server=createLanServer({port:0,host:'127.0.0.1'});await server.listen();
+  const url=`http://127.0.0.1:${server.server.address().port}`;let hostRoom,guestRoom;
+  const host=new MultiplayerSession({WebSocketClass:WebSocket,onCasino:p=>hostRoom?.receive(p)});
+  const guest=new MultiplayerSession({WebSocketClass:WebSocket,onCasino:p=>guestRoom?.receive(p)});
+  t.after(async()=>{hostRoom?.destroy();guestRoom?.destroy();host.leave();guest.leave();await server.close();});
+  await host.connectLan({url,room:'VOTE'});hostRoom=new CasinoRoom({session:host});
+  await guest.connectLan({url,room:'VOTE'});guestRoom=new CasinoRoom({session:guest});
+  await wait(()=>guestRoom.lastView?.players.length===2);
+  guestRoom.dispatch({type:'choose',game:'roulette'});await wait(()=>hostRoom.getView().gameVote);
+  assert.equal(hostRoom.getView().game,'blackjack');assert.equal(hostRoom.getView().gameVote.proposerId,guest.id);
+  assert.equal(hostRoom.dispatch({type:'choose',game:'poker'}).ok,false);
+  hostRoom.dispatch({type:'vote',proposalId:hostRoom.getView().gameVote.id,approve:true});
+  await wait(()=>guestRoom.getView().game==='roulette');assert.equal(guestRoom.getView().gameVote,null);
+});

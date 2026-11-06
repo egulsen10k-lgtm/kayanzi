@@ -10,19 +10,26 @@ export function bindDrivingInput({ physics, buttons, onHorn = () => {}, onHornSt
     const item = held.get(id);
     if (!item) return;
     held.delete(id);
-    item.button.setAttribute('aria-pressed', 'false');
-    if (item.button.hasPointerCapture(id)) item.button.releasePointerCapture(id);
+    try { item.button.setAttribute('aria-pressed', 'false'); } catch {}
     sync(item.code);
+    try {
+      if (item.button.hasPointerCapture?.(id)) item.button.releasePointerCapture?.(id);
+    } catch {}
   };
-  const clear = () => {
+  const clearKeyboard = () => {
     onHornEnd();
     keyboard.clear();
+    for (const code of codes) sync(code);
+  };
+  const clear = () => {
+    clearKeyboard();
     for (const id of [...held.keys()]) release(id);
     for (const code of codes) physics.keys[code] = false;
   };
+  const isEditable = (el) => !!el && (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable);
   win.addEventListener('keydown', e => {
     const active = doc.activeElement;
-    if (active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)) return;
+    if (isEditable(active)) return;
     if(e.code==='Space'&&isRobotMode()) {
       e.preventDefault();
       physics.keys.Space=false;
@@ -35,7 +42,15 @@ export function bindDrivingInput({ physics, buttons, onHorn = () => {}, onHornSt
   win.addEventListener('keyup', e => { keyboard.delete(e.code); if (codes.has(e.code)) sync(e.code); if (e.code === 'KeyH') onHornEnd(); });
   win.addEventListener('blur', clear);
   win.addEventListener('resize', clear);
-  doc.addEventListener('visibilitychange', () => { if (doc.hidden) clear(); });
+  doc.addEventListener?.('visibilitychange', () => { if (doc.hidden) clear(); });
+  doc.addEventListener?.('focusin', e => {
+    if (isEditable(e.target || doc.activeElement)) clearKeyboard();
+  });
+  for (const event of ['pointerup', 'pointercancel']) {
+    doc.addEventListener?.(event, e => {
+      if (held.has(e.pointerId)) release(e.pointerId);
+    });
+  }
   for (const button of buttons) {
     const code = button.getAttribute('data-drive-key');
     button.addEventListener('pointerdown', e => {
@@ -47,9 +62,9 @@ export function bindDrivingInput({ physics, buttons, onHorn = () => {}, onHornSt
         return;
       }
       e.preventDefault();
-      button.setPointerCapture(e.pointerId);
+      try { button.setPointerCapture?.(e.pointerId); } catch {}
       held.set(e.pointerId, { button, code });
-      button.setAttribute('aria-pressed', 'true');
+      try { button.setAttribute('aria-pressed', 'true'); } catch {}
       sync(code);
     });
     for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(event, e => release(e.pointerId));

@@ -75,3 +75,16 @@ test('clear() resets radars alongside entries',()=>{
  assert.equal(signs.getRadars().length,0);
  assert.equal(signs.entries.length,0);
 });
+
+test('getNearestLimit handles null, malformed physics, nonfinite limits, and un-arrayed edges safely', () => {
+  const signs = new RoadSigns(new THREE.Group());
+  assert.equal(signs.getNearestLimit(null), 50);
+  assert.equal(signs.getNearestLimit({}), 50);
+  assert.equal(signs.getNearestLimit({ currentEdge: { limit: NaN } }), 50);
+  assert.equal(signs.getNearestLimit({ currentEdge: { limit: Infinity } }), 50);
+  assert.equal(signs.getNearestLimit({ currentEdge: { limit: -10 } }), 50);
+  assert.equal(signs.getNearestLimit({ currentEdge: { limit: 1e300 } }), 50);
+  assert.equal(signs.getNearestLimit({ currentEdge: { limit: 40 } }), 40);
+  assert.equal(signs.getNearestLimit({ roadNetwork: { edges: null }, x: 0, y: 0, heading: 0 }), 50);
+  assert.equal(signs.getNearestLimit({ roadNetwork: { edges: [{ invalid: true }, { start: [0,0], tangent: [0,1], length: 0, limit: 60 }] }, x: 0, y: 0, heading: 0 }), 50);
+});

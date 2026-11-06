@@ -11,6 +11,9 @@ function partsOf(model) {
 }
 export function pedestrianPose(state, phase = 0, recoveryTime = 0, trunkProgress = 0) {
   if (state === 'scatter') return { visible: true, lean: -.22, gait: Math.sin(phase) * 1.15, armGait: Math.sin(phase) * 1.35, scaleY: 1 };
+  if (state === 'chasing') return { visible: true, lean: -.35, gait: Math.sin(phase) * 1.35, armGait: Math.sin(phase) * 1.45, scaleY: 1 };
+  if (state === 'walking') return { visible: true, lean: -.1, gait: Math.sin(phase) * .7, armGait: Math.sin(phase) * .8, scaleY: 1 };
+  if (state === 'trunk-approach') return { visible: true, lean: -.25, gait: Math.sin(phase) * 1.25, armGait: Math.sin(phase) * 1.35, scaleY: 1 };
   if (state === 'boarded') return { visible: false, lean: 0, gait: 0, armGait: 0, scaleY: .45 };
   if (state === 'idle') return { visible: true, lean: 0, gait: Math.sin(phase) * .3, armGait: Math.sin(phase) * .3, scaleY: 1 };
   if (state === 'trunk-entering') return { visible: true, lean: -.5, gait: -trunkProgress * .9, armGait: -1.3, scaleY: 1 - trunkProgress * .5 };
