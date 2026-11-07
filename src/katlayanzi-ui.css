@@ -38,3 +38,14 @@
 .katlayanzi-stand{margin-bottom:18px}
 @media(max-width:600px){.katlayanzi-dialog.is-walking{padding:calc(12px + env(safe-area-inset-top)) 10px calc(12px + env(safe-area-inset-bottom))}.katlayanzi-dialog.is-walking .katlayanzi-scene{height:calc(100dvh - 252px - env(safe-area-inset-top) - env(safe-area-inset-bottom));min-height:320px}.katlayanzi-dialog.is-walking .katlayanzi-heading h2{font-size:25px}.katlayanzi-dialog.is-walking .katlayanzi-message{font-size:12px;margin:10px 0}.katlayanzi-walk-controls{inset:auto 10px 58px;gap:10px}.katlayanzi-walk-pad{grid-template-columns:repeat(3,44px);grid-template-rows:repeat(2,44px)}.katlayanzi-sit{max-width:165px;padding:10px;font-size:12px}.katlayanzi-walk-hint{font-size:10px}.katlayanzi-stage-caption .katlayanzi-hand-jump[hidden]{display:none}}
 @media(max-height:460px) and (min-width:601px){.katlayanzi-dialog.is-walking .katlayanzi-scene{height:320px;min-height:320px}}
+.katlayanzi-bet-summary{margin:4px 0;color:#efd798;font-size:13px;line-height:1.5}
+.katlayanzi-board-scroll{max-width:100%;min-width:0;overflow-x:auto;padding:4px 2px 10px;overscroll-behavior-x:contain;scrollbar-color:#c7a15e #132f27;scrollbar-width:thin}
+.katlayanzi-board-scroll:focus-visible{outline:3px solid #f0cf78;outline-offset:2px}
+.katlayanzi-number-board{display:grid;grid-template-columns:44px repeat(12,minmax(44px,1fr));grid-template-rows:repeat(3,48px);gap:5px;min-width:632px}
+.katlayanzi-number-board .katlayanzi-roulette-bet{min-height:44px;padding:4px;position:relative;font-size:15px}
+.katlayanzi-outside-bets{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.katlayanzi-outside-bets .katlayanzi-roulette-bet{grid-column:auto;padding:10px 5px;position:relative;min-height:48px;font-size:12px}
+.katlayanzi-bet-marker{display:inline-grid;place-items:center;min-width:21px;height:21px;margin-left:4px;padding:0 3px;border:2px solid #ffe3a3;border-radius:50%;background:#103f40;color:white;font:700 10px system-ui;box-shadow:0 2px 5px #0009}
+.katlayanzi-number-board .katlayanzi-bet-marker{position:absolute;right:1px;bottom:1px;margin:0;height:18px;min-width:18px;font-size:9px}
+.katlayanzi-bet-ledger{display:flex;flex-wrap:wrap;gap:6px}.katlayanzi-bet-ledger .katlayanzi-button{font-size:11px;padding:8px 12px;background:#102c25}
+@media(max-width:600px){.katlayanzi-outside-bets{grid-template-columns:repeat(3,minmax(0,1fr))}.katlayanzi-outside-bets .katlayanzi-roulette-bet{font-size:11px}.katlayanzi-actions .katlayanzi-control-row>.katlayanzi-button{flex:1 1 42%}.katlayanzi-bet-summary{font-size:12px}}

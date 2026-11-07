@@ -103,3 +103,67 @@ test('seated table view excludes walking spectators and refreshes when lobby occ
   scene.setLobby({meId:'host',players:[{id:'host',x:0,z:10,heading:0,tableId:null},{id:'guest',x:0,z:9,heading:0,tableId:null}]});
   assert.equal(scene.lounge.userData.players.size,0);scene.dispose();
 });
+
+test('decorative tables have six cosmetic seated guests outside multiplayer membership',async()=>{
+  const {animateCasinoHall}=await import('../src/katlayanzi-scene.js');
+  const hall=buildCasinoHall(),guests=hall.userData.ambientGuests;
+  assert.equal(guests.length,6);assert.equal(hall.userData.players.size,0);
+  for(const table of hall.userData.tables.filter(table=>!table.playable)){
+    const seated=guests.filter(guest=>guest.group.userData.tableId===table.id);
+    assert.equal(seated.length,3);
+    for(const guest of seated){assert.equal(guest.group.userData.ambient,true);assert.equal(guest.group.userData.peerId,undefined);assert.equal(guest.robot.userData.rig.leftLeg.rotation.x,-1.45);assert.equal(guest.group.parent.name,`hall-table-${table.id}`);}
+  }
+  updateCasinoHall(hall,{meId:'a',players:[{id:'a',x:0,z:10,heading:0,tableId:null}]});
+  updateCasinoHall(hall,{players:[]});assert.equal(hall.userData.players.size,0);assert.equal(hall.userData.ambientGuests.length,6);
+  animateCasinoHall(hall,.1,800);assert.notEqual(guests[0].robot.userData.rig.head.rotation.y,0);
+  animateCasinoHall(hall,.1,800,true);assert.equal(guests[0].robot.userData.rig.head.rotation.y,0);
+});
+
+test('seated view keeps the hall context at the selected physical table without duplicate avatars',()=>{
+  const scene=new KatlayanziScene(),players=[{id:'me',name:'You',x:0,z:10,heading:0,tableId:'poker'},{id:'friend',name:'Friend',x:1,z:10,heading:0,tableId:'poker'},{id:'walker',name:'Walker',x:4,z:8,heading:0,tableId:null}];
+  scene.update({game:'poker',phase:'betting',round:1,meId:'me',players:players.map(p=>({...p,hand:[]})),dealer:[]});
+  scene.setLobby({meId:'me',players});
+  assert.equal(scene.hall.visible,true);assert.equal(scene.lounge.visible,true);
+  assert.deepEqual(scene.lounge.position.toArray(),[0,0,6]);
+  assert.equal(scene.hall.getObjectByName('hall-table-poker').visible,false);
+  assert.equal(scene.hall.getObjectByName('hall-table-roulette').visible,true);
+  assert.equal(scene.lounge.getObjectByName('lounge-floor').visible,false);
+  assert.equal(scene.lounge.getObjectByName('oval-wood-table').visible,true);
+  assert.equal(scene.hall.userData.players.get('me').group.visible,false);
+  assert.equal(scene.hall.userData.players.get('friend').group.visible,false);
+  assert.equal(scene.hall.userData.players.get('walker').group.visible,true);
+  assert.equal(scene.lounge.userData.players.size,2);
+  assert.ok(scene.camera.position.z>6);
+  scene.setWalking(true);
+  assert.equal(scene.lounge.visible,false);assert.equal(scene.hall.visible,true);
+  assert.equal(scene.hall.getObjectByName('hall-table-poker').visible,true);
+  assert.equal(scene.hall.userData.players.get('friend').group.visible,true);
+  assert.deepEqual(scene.lounge.position.toArray(),[0,0,0]);
+  scene.dispose();assert.equal(scene.hall.children.length,0);
+});
+
+test('switching the selected seated table moves detailed geometry and its camera together',()=>{
+  const scene=new KatlayanziScene(),me={id:'a',x:0,z:10,heading:0,tableId:'blackjack'};
+  scene.setLobby({meId:'a',players:[me]});
+  assert.deepEqual(scene.lounge.position.toArray(),[-6,0,-3]);
+  const cameraX=scene.camera.position.x,cameraZ=scene.camera.position.z;
+  scene.setLobby({meId:'a',players:[{...me,tableId:'roulette'}]});
+  assert.deepEqual(scene.lounge.position.toArray(),[6,0,-3]);
+  assert.ok(scene.camera.position.x>cameraX&&scene.camera.position.x-cameraX<=12);assert.equal(scene.camera.position.z,cameraZ);
+  assert.equal(scene.hall.getObjectByName('hall-table-blackjack').visible,true);
+  assert.equal(scene.hall.getObjectByName('hall-table-roulette').visible,false);
+  scene.dispose();
+});
+
+
+test('seated cameras stay inside hall walls and below roof for every game and aspect ratio',()=>{
+  const scene=new KatlayanziScene();
+  for(const aspect of [.65,1.3,2])for(const tableId of ['blackjack','roulette','poker']){
+    scene.camera.aspect=aspect;
+    scene.setLobby({meId:'a',players:[{id:'a',x:0,z:10,heading:0,tableId}]});
+    const p=scene.camera.position;
+    assert.ok(p.x>=-13&&p.x<=13);assert.ok(p.z>=-10&&p.z<=13);assert.ok(p.y>1&&p.y<=6.8);
+    assert.ok(p.toArray().every(Number.isFinite));
+  }
+  scene.dispose();
+});

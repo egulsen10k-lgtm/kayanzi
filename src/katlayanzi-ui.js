@@ -1,8 +1,12 @@
 import './katlayanzi-ui.css';
 import {KatlayanziScene} from './katlayanzi-scene.js';
+import {pokerRank} from './katlayanzi-game.js';
 
 const GAMES = ['blackjack', 'roulette', 'poker'];
 const GAME_LABELS = { blackjack: 'Blackjack', roulette: 'Roulette', poker: 'Poker' };
+const ROULETTE_LABELS={red:'Red',black:'Black',green:'Zero',even:'Even',odd:'Odd',low:'1–18',high:'19–36',dozen1:'1st 12',dozen2:'2nd 12',dozen3:'3rd 12',column1:'Column 1',column2:'Column 2',column3:'Column 3'};
+const rouletteLabel=choice=>typeof choice==='number'?String(choice):ROULETTE_LABELS[choice]||String(choice);
+const rouletteOdds=choice=>typeof choice==='number'||choice==='green'?'35:1':/^(dozen|column)/.test(choice)?'2:1':'1:1';
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 
 function element(tag, className, text = '') {
@@ -46,6 +50,9 @@ function safeView(view) {
       bet: Number.isFinite(player?.bet) ? player.bet : 0,
       hand: Array.isArray(player?.hand) ? player.hand.slice(0, 24) : [],
       status: String(player?.status ?? 'seated'), result: String(player?.result ?? ''),
+      rouletteBets: Array.isArray(player?.rouletteBets)?player.rouletteBets.slice(0,40).map(b=>({choice:b?.choice,amount:Number.isFinite(b?.amount)?b.amount:0})):[],
+      previousWager:Number.isFinite(player?.previousWager)?player.previousWager:0,canRebet:player?.canRebet===true,
+      canDouble:player?.canDouble===true,canSurrender:player?.canSurrender===true,
       choice: player?.choice, payout: Number.isFinite(player?.payout) ? player.payout : 0
     })),
     dealer: Array.isArray(source.dealer) ? source.dealer.slice(0, 24) : [],
@@ -179,7 +186,12 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
   const onWalkKeyUp=event=>{const direction=keyDirections[event.code];if(direction){pressed.delete(direction);moveInput();if(open){event.preventDefault();event.stopImmediatePropagation();}}};
   window.addEventListener('keydown',onWalkKey,true);window.addEventListener('keyup',onWalkKeyUp,true);window.addEventListener('blur',resetMovement);
   for(const b of walkButtons){
-    b.addEventListener('pointerdown',event=>{event.preventDefault();b.setPointerCapture(event.pointerId);pressed.add(b.dataset.direction);moveInput();});
+    b.addEventListener('pointerdown',event=>{
+      event.preventDefault();
+      try { b.setPointerCapture(event.pointerId); } catch {}
+      pressed.add(b.dataset.direction);
+      moveInput();
+    });
     const release=()=>{pressed.delete(b.dataset.direction);moveInput();};
     b.addEventListener('pointerup',release);b.addEventListener('pointercancel',release);b.addEventListener('lostpointercapture',release);
   }
@@ -263,7 +275,7 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
     for (const player of seatedPlayers) {
       const seat = element('article', `katlayanzi-seat${player.id === view.meId ? ' is-me' : ''}${player.id === view.turnId ? ' is-turn' : ''}`);
       const name = element('h4', '', player.name);
-      const meta = element('p', 'katlayanzi-seat-meta', `${player.chips} chips · bet ${player.bet}${view.game==='roulette'&&player.bet?' on '+player.choice:''}`);
+      const meta = element('p', 'katlayanzi-seat-meta', `${player.chips} chips · bet ${player.bet}${view.game==='roulette'&&player.bet?' across '+player.rouletteBets.length+' spots':''}`);
       const hand = element('div', 'katlayanzi-hand');
       player.hand.forEach((card, index) => {
         const selected = selectedDraw.has(index) && player.id === view.meId;
@@ -283,6 +295,7 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
       const result = player.result ? element('p', 'katlayanzi-result', `${player.result}${player.payout ? ` · +${player.payout}` : ''}`) : null;
       seat.append(name, meta, hand);
       if(view.game==='blackjack'&&player.hand.length&&player.hand.every(Boolean)){let total=0,aces=0;for(const c of player.hand){if(c.rank==='A'){total+=11;aces++;}else total+=['J','Q','K'].includes(c.rank)?10:Number(c.rank);}while(total>21&&aces-->0)total-=10;seat.append(element('span','katlayanzi-total',`Total ${total}`));}
+      if(view.game==='poker'&&player.hand.length===5&&player.hand.every(Boolean)){const rank=pokerRank(player.hand)[0];seat.append(element('span','katlayanzi-total',(['High card','One pair','Two pair','Three of a kind','Straight','Flush','Full house','Four of a kind','Straight flush'])[rank]||''));}
       if (result) seat.append(result);
       if (player.id === view.turnId) seat.append(element('span', 'katlayanzi-turn', player.id === view.meId ? 'Your turn' : `${player.name}'s turn`));
       grid.append(seat);
@@ -305,22 +318,50 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
       }
       const deal=button(view.isHost?(view.game==='roulette'?'Spin wheel':'Deal cards'):'Waiting for host','katlayanzi-primary');
       deal.disabled=!view.isHost||!view.players.some(p=>p.bet>0);deal.addEventListener('click',()=>dispatch({type:'deal'}));controls.append(deal);
+      if(me){
+        const doubleBet=button('2× wager','katlayanzi-secondary');doubleBet.disabled=!me.bet||me.chips<me.bet||me.bet*2>(view.game==='roulette'?1000:250);
+        doubleBet.addEventListener('click',()=>dispatch({type:'doublebet'}));controls.append(doubleBet);
+        const rebet=button(me.previousWager?`Repeat last bet · ${me.previousWager}`:'Repeat last bet','katlayanzi-secondary');rebet.disabled=!me.canRebet;
+        rebet.addEventListener('click',()=>dispatch({type:'rebet'}));controls.append(rebet);
+        if(view.game==='roulette'){
+          const clear=button('Clear bets');clear.disabled=!me.bet;clear.addEventListener('click',()=>dispatch({type:'clearbets'}));controls.append(clear);
+        }
+      }
       actions.append(controls);
       if(me&&view.game==='roulette'){
-        const bets=element('div','katlayanzi-roulette-bets');
-        for(const choice of ['red','black','green',...Array.from({length:37},(_,i)=>i)]){
-          const label=typeof choice==='number'?String(choice):choice==='green'?'Zero · 35:1':`${choice} · 1:1`;
-          const color=choice==='green'||choice===0?'green':choice==='red'||(typeof choice==='number'&&RED.has(choice))?'red':'black';
-          const bet=button(label,`katlayanzi-roulette-bet is-${color}`);bet.classList.toggle('is-chosen',me.bet>0&&me.choice===choice);
-          bet.setAttribute('aria-label',`Bet on ${typeof choice==='number'?'number ':''}${choice}`);
-          bet.setAttribute('aria-pressed',String(me.bet>0&&me.choice===choice));
-          bet.addEventListener('click',()=>dispatch({type:'bet',amount:stake,choice}));bets.append(bet);
+        const summary=element('p','katlayanzi-bet-summary',`Total wager: ${me.bet} chips · Balance: ${me.chips} · Tap a spot to add ${stake}`);summary.setAttribute('role','status');actions.append(summary);
+        const amountOn=choice=>me.rouletteBets.find(b=>b.choice===choice)?.amount||0;
+        const makeBet=choice=>{
+          const amount=amountOn(choice),color=choice===0?'green':choice==='red'||(typeof choice==='number'&&RED.has(choice))?'red':'black';
+          const b=button(typeof choice==='number'?String(choice):`${rouletteLabel(choice)} · ${rouletteOdds(choice)}`,`katlayanzi-roulette-bet is-${color}`);
+          b.dataset.focusKey=`roulette-${choice}`;b.classList.toggle('is-chosen',amount>0);b.setAttribute('aria-pressed',String(amount>0));
+          b.setAttribute('aria-label',`Add ${stake} chips on ${rouletteLabel(choice)}, pays ${rouletteOdds(choice)}${amount?', current bet '+amount:''}`);
+          b.disabled=stake>me.chips||me.bet+stake>1000;
+          if(amount)b.append(element('span','katlayanzi-bet-marker',String(amount)));
+          b.addEventListener('click',()=>dispatch({type:'bet',amount:stake,choice}));return b;
+        };
+        const boardScroll=element('div','katlayanzi-board-scroll');boardScroll.setAttribute('role','region');boardScroll.setAttribute('aria-label','Roulette number board, scroll sideways on small screens');boardScroll.tabIndex=0;
+        const board=element('div','katlayanzi-number-board');
+        const zero=makeBet(0);zero.style.gridColumn='1';zero.style.gridRow='1 / 4';board.append(zero);
+        for(let n=1;n<=36;n++){const b=makeBet(n);b.style.gridColumn=String(Math.ceil(n/3)+1);b.style.gridRow=String(3-(n-1)%3);board.append(b);}
+        boardScroll.append(board);actions.append(boardScroll);
+        actions.append(element('span','katlayanzi-control-hint','Number board scrolls sideways on phones · Each tap adds the selected chip stake.'));
+        const outside=element('div','katlayanzi-outside-bets');
+        for(const choice of ['dozen1','dozen2','dozen3','column1','column2','column3','low','even','red','black','odd','high'])outside.append(makeBet(choice));
+        actions.append(outside);
+        if(me.rouletteBets.length){
+          const ledger=element('div','katlayanzi-bet-ledger');ledger.setAttribute('aria-label','Placed bets, select to remove and refund');
+          for(const bet of me.rouletteBets){const remove=button(`${rouletteLabel(bet.choice)} · ${bet.amount} ×`);remove.setAttribute('aria-label',`Remove ${bet.amount} chips from ${rouletteLabel(bet.choice)}`);remove.addEventListener('click',()=>dispatch({type:'removebet',choice:bet.choice}));ledger.append(remove);}
+          actions.append(ledger);
         }
-        actions.append(bets);
       }
     }else if(view.phase==='playing'){
       const add=(label,action)=>{const b=button(label,'katlayanzi-primary');b.disabled=view.turnId!==view.meId;b.addEventListener('click',()=>dispatch(action));controls.append(b);};
-      if(view.game==='blackjack'){add('Hit',{type:'hit'});add('Stand',{type:'stand'});}
+      if(view.game==='blackjack'){
+        add('Hit',{type:'hit'});add('Stand',{type:'stand'});
+        const double=button('Double down','katlayanzi-primary');double.disabled=!me?.canDouble;double.title='Double your wager, receive exactly one card, then stand';double.addEventListener('click',()=>dispatch({type:'double'}));controls.append(double);
+        const surrender=button('Surrender · ½ back');surrender.disabled=!me?.canSurrender;surrender.addEventListener('click',()=>dispatch({type:'surrender'}));controls.append(surrender);
+      }
       if(view.game==='poker'){
         const draw=button(selectedDraw.size?`Draw ${selectedDraw.size} cards`:'Keep all cards','katlayanzi-primary');draw.disabled=view.turnId!==view.meId;
         draw.addEventListener('click',()=>{const indices=[...selectedDraw];selectedDraw.clear();dispatch({type:'draw',indices});});controls.append(draw);add('Fold',{type:'fold'});
@@ -335,19 +376,27 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
   function renderRules() {
     rules.replaceChildren();
     const title = element('h3', '', 'How to play');
-    const copy = view.game === 'blackjack' ? 'Beat the dealer without going over 21. Dealer stands on 17.' : view.game === 'roulette' ? 'Choose red, black, green, or a number. The host spins the shared wheel.' : 'Five-card draw against the dealer. Up to five players bet per hand. Select up to three cards, then draw once. Higher hand wins; ties return your stake.';
+    const copy = view.game === 'blackjack' ? 'Six-deck blackjack. Dealer stands on all 17s and checks for blackjack. Natural blackjack pays 3:2; ordinary wins pay 1:1, ties push. On your first two cards: double down takes one final card; surrender returns half your wager. No splitting or insurance at this table.' : view.game === 'roulette' ? 'European roulette, single zero. Place multiple bets before the host spins: numbers pay 35:1; dozens and columns 2:1; red/black, odd/even and 1–18/19–36 pay 1:1. Zero loses all outside bets. Payouts include returned winning stakes. Tap to add chips, or remove a bet for a refund before the spin. Total stake limit: 1,000 chips.' : 'Five-card draw against the dealer. Up to five players bet per hand. Select up to three cards, then draw once. Higher hand wins; ties return your stake.';
     rules.append(title, element('p', '', copy), element('p', 'katlayanzi-small', 'Robot seats are shared with your multiplayer room. Changing games needs a majority vote between hands.'));
   }
 
   function render() {
     if (destroyed) return;
+    const active=document.activeElement,hadFocus=dialog.contains(active);
+    const focusKey=active?.dataset?.focusKey,focusLabel=active?.getAttribute?.('aria-label'),focusText=active?.textContent;
+    const scrollTop=dialog.scrollTop,boardScroll=actions.querySelector('.katlayanzi-board-scroll')?.scrollLeft??0;
     table.dataset.game=view.game;
     updateStatus();
     message.textContent = view.message;
     renderTabs(); renderVote(); renderDealer(); renderSeats(); renderActions(); renderRules();
     scene?.update(view);
     updateWalking();
-    if(open&&!dialog.contains(document.activeElement))close.focus();
+    if(open&&hadFocus&&!dialog.contains(document.activeElement)){
+      const replacement=focusable().find(node=>focusKey?node.dataset.focusKey===focusKey:focusLabel?node.getAttribute('aria-label')===focusLabel:node.textContent===focusText);
+      (replacement??close).focus({preventScroll:true});
+    }
+    dialog.scrollTop=scrollTop;
+    const nextBoard=actions.querySelector('.katlayanzi-board-scroll');if(nextBoard)nextBoard.scrollLeft=boardScroll;
   }
 
   function setOpen(next) {

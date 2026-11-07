@@ -5,6 +5,21 @@ const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
 const RED = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
 const value = card => RANKS.indexOf(card.rank) + 2;
 const clone = data => JSON.parse(JSON.stringify(data));
+const OUTSIDE_CHOICES=new Set(['red','black','even','odd','low','high','dozen1','dozen2','dozen3','column1','column2','column3']);
+const rouletteChoice=choice=>choice==='green'?0:(Number.isInteger(choice)&&choice>=0&&choice<=36)||OUTSIDE_CHOICES.has(choice)?choice:null;
+// Return includes the original stake: straight-up 35:1, dozens/columns 2:1.
+export function rouletteReturnMultiplier(choice,number){
+  choice=rouletteChoice(choice);
+  if(choice===null||!Number.isInteger(number)||number<0||number>36)return 0;
+  if(typeof choice==='number')return choice===number?36:0;
+  if(number===0)return 0;
+  if(choice==='red'||choice==='black')return (RED.has(number)?'red':'black')===choice?2:0;
+  if(choice==='even'||choice==='odd')return (number%2===0?'even':'odd')===choice?2:0;
+  if(choice==='low'||choice==='high')return (number<=18?'low':'high')===choice?2:0;
+  if(choice.startsWith('dozen'))return Math.ceil(number/12)===Number(choice.at(-1))?3:0;
+  if(choice.startsWith('column'))return (number-1)%3+1===Number(choice.at(-1))?3:0;
+  return 0;
+}
 const safeName = name => String(name || 'Driver').replace(/[<>\x00-\x1f]/g,'').slice(0,24);
 export function blackjackTotal(hand) {
   let total=0,aces=0;
@@ -44,6 +59,7 @@ export class KatlayanziGame {
       while(blackjackTotal(this.dealer)<17)this.dealer.push(this._card());
       const dealer=blackjackTotal(this.dealer),natural=this.dealer.length===2&&dealer===21;
       for(const p of this.players.filter(p=>p.bet>0)){
+        if(p.status==='surrendered')continue;
         if(p.status==='folded'){this._pay(p,0,'Left table');continue;}
         const score=blackjackTotal(p.hand),bj=p.hand.length===2&&score===21;
         if(score>21)this._pay(p,0,'Bust');
@@ -88,7 +104,7 @@ export class KatlayanziGame {
       case 'join':
         if(p)break;if(this.players.length>=8)return fail('All eight seats are taken.');
         if(this.phase==='playing')return fail('Join after this round.');
-        this.players.push({id,name:safeName(name),chips:1000,bet:0,hand:[],status:'seated',result:'',payout:0});break;
+        this.players.push({id,name:safeName(name),chips:1000,bet:0,rouletteBets:[],lastBets:[],lastBet:0,lastBetGame:null,hand:[],status:'seated',result:'',payout:0,doubled:false});break;
       case 'choose': {
         if(!p||this.phase==='playing'||!CASINO_GAMES.includes(action.game))return fail('Seated players can propose a game between rounds.');
         if(this.gameVote)return fail('Finish the current game-change vote first.');
@@ -110,26 +126,75 @@ export class KatlayanziGame {
       case 'next':
         if(this.gameVote)return fail('Finish the game-change vote first.');
         if(!host||this.phase!=='result')return fail('Wait for the round to finish.');this._reset();break;
+      case 'removebet':{
+        if(!p||this.game!=='roulette'||this.phase!=='betting')return fail('Remove roulette bets before the spin.');
+        const choice=rouletteChoice(action.choice);if(choice===null)return fail('Choose a valid roulette spot.');
+        const index=p.rouletteBets.findIndex(b=>b.choice===choice);if(index<0)return fail('No chips are placed on that spot.');
+        const [removed]=p.rouletteBets.splice(index,1);p.bet-=removed.amount;p.chips+=removed.amount;p.choice=p.rouletteBets[0]?.choice??null;p.status=p.bet?'ready':'seated';break;
+      }
+      case 'clearbets':{
+        if(!p||this.phase!=='betting')return fail('Clear bets before the hand starts.');
+        p.chips+=p.bet;p.bet=0;p.rouletteBets=[];p.choice=null;p.status='seated';break;
+      }
+      case 'rebet':{
+        if(!p||this.phase!=='betting'||p.bet)return fail('Clear your current wager before repeating a bet.');
+        if(this.game==='roulette'){
+          const previous=p.lastBets||[],total=previous.reduce((sum,b)=>sum+b.amount,0);
+          if(!previous.length||total>1000||total>p.chips)return fail('Your previous roulette bets exceed your available balance.');
+          p.rouletteBets=clone(previous);p.bet=total;p.chips-=total;p.choice=previous[0].choice;
+        }else{
+          if(p.lastBetGame!==this.game||!p.lastBet||p.lastBet>250||p.lastBet>p.chips)return fail('No affordable previous bet for this game.');
+          if(this.game==='poker'&&this.players.filter(player=>player.bet>0).length>=5)return fail('Poker seats five players per hand.');
+          p.bet=p.lastBet;p.chips-=p.bet;
+        }
+        p.status='ready';break;
+      }
+      case 'doublebet':{
+        if(!p||this.phase!=='betting'||!p.bet)return fail('Place a bet before doubling your wager.');
+        if(p.bet>p.chips||p.bet*2>(this.game==='roulette'?1000:250))return fail('Doubling exceeds your balance or table limit.');
+        p.chips-=p.bet;p.bet*=2;if(this.game==='roulette')p.rouletteBets=p.rouletteBets.map(b=>({...b,amount:b.amount*2}));
+        p.status='ready';break;
+      }
       case 'bet':{
         if(!p||this.phase!=='betting')return fail('Take a seat before betting.');
         if(this.game==='poker'&&!p.bet&&this.players.filter(player=>player.bet>0).length>=5)return fail('Poker seats five players per hand.');
-        const amount=action.amount;if(!Number.isSafeInteger(amount)||amount<5||amount>250||amount>p.chips+p.bet)return fail('Bet 5–250 chips within your balance.');
-        const choice=action.choice??'red';if(this.game==='roulette'&&!['red','black','green'].includes(choice)&&!(Number.isInteger(choice)&&choice>=0&&choice<=36))return fail('Choose a roulette color or number.');
-        p.chips+=p.bet-amount;p.bet=amount;p.choice=choice;p.status='ready';break;}
+        const amount=action.amount;if(!Number.isSafeInteger(amount)||amount<5||amount>250)return fail('Bet 5–250 chips within your balance.');
+        if(this.game==='roulette'){
+          const choice=rouletteChoice(action.choice===undefined?'red':action.choice);if(choice===null)return fail('Choose a valid roulette spot.');
+          if(amount>p.chips||p.bet+amount>1000)return fail('Roulette bets exceed your balance or the 1,000-chip table limit.');
+          const bets=p.rouletteBets||[],existing=bets.find(b=>b.choice===choice);
+          if(!existing&&bets.length>=40)return fail('At most forty roulette spots per round.');
+          if(existing)existing.amount+=amount;else bets.push({choice,amount});
+          p.rouletteBets=bets;p.chips-=amount;p.bet+=amount;p.choice=bets[0].choice;
+        }else{
+          if(amount>p.chips+p.bet)return fail('Bet 5–250 chips within your balance.');
+          p.chips+=p.bet-amount;p.bet=amount;
+        }
+        p.status='ready';break;
+      }
       case 'deal':{
         if(this.gameVote)return fail('Finish the game-change vote before dealing.');
         if(!host||this.phase!=='betting'||!this.players.some(p=>p.bet>0))return fail('Place at least one bet, then the host deals.');
         this._shuffle();this.phase='playing';this.message=this.game==='poker'?'Five-card draw. Choose up to three cards to replace, or stand.':'Hit or stand. Dealer stands on 17.';
-        const active=this.players.filter(p=>p.bet>0);for(const player of active){player.status='playing';player.result='';player.payout=0;player.hand=[];}
+        const active=this.players.filter(p=>p.bet>0);for(const player of active){player.status='playing';player.result='';player.payout=0;player.hand=[];player.doubled=false;if(this.game==='roulette')player.lastBets=clone(player.rouletteBets);else {player.lastBet=player.bet;player.lastBetGame=this.game;}}
         if(this.game==='roulette'){
           const number=Math.min(36,Math.max(0,Math.floor(this.random()*37))),color=number===0?'green':RED.has(number)?'red':'black';this.roulette={number,color};
-          for(const player of active){const win=player.choice===number||player.choice===color;this._pay(player,win?(typeof player.choice==='number'||player.choice==='green'?36:2):0,win?'Win':'Miss');}
+          for(const player of active){player.payout=player.rouletteBets.reduce((sum,b)=>sum+b.amount*rouletteReturnMultiplier(b.choice,number),0);player.chips+=player.payout;player.result=player.payout>player.bet?'Win':player.payout===player.bet?'Push':player.payout?'Partial return':'Miss';player.status='done';}
           this.phase='result';this.message=`${number} · ${color}. Round complete.`;
         }else{
           const count=this.game==='poker'?5:2;this.dealer=Array.from({length:count},()=>this._card());
           for(const player of active){player.hand=Array.from({length:count},()=>this._card());if(this.game==='blackjack'&&blackjackTotal(player.hand)===21)player.status='stood';}
-          this._turn();
+          if(this.game==='blackjack'&&blackjackTotal(this.dealer)===21)this._settle();else this._turn();
         }break;}
+      case 'double':{
+        if(!p||this.game!=='blackjack'||this.phase!=='playing'||this.turnId!==id||p.status!=='playing'||p.hand.length!==2)return fail('Double down on your first two cards, during your turn.');
+        if(p.chips<p.bet)return fail('Not enough chips to double down.');
+        p.chips-=p.bet;p.bet*=2;p.doubled=true;p.hand.push(this._card());p.status='stood';this._turn();break;
+      }
+      case 'surrender':{
+        if(!p||this.game!=='blackjack'||this.phase!=='playing'||this.turnId!==id||p.status!=='playing'||p.hand.length!==2)return fail('Surrender is available only before drawing a card.');
+        p.payout=p.bet/2;p.chips+=p.payout;p.result='Surrender';p.status='surrendered';this._turn();break;
+      }
       case 'hit':
         if(!p||this.game!=='blackjack'||this.phase!=='playing'||this.turnId!==id)return fail('Wait for your blackjack turn.');
         p.hand.push(this._card());if(blackjackTotal(p.hand)>=21){p.status='stood';this._turn();}break;
@@ -145,10 +210,10 @@ export class KatlayanziGame {
     }
     this.version++;return {ok:true};
   }
-  _reset(){this.phase='betting';this.round++;this.dealer=[];this.roulette=null;this.turnId=null;for(const p of this.players)Object.assign(p,{bet:0,hand:[],status:'seated',result:'',payout:0});this.message='Place your bet. Virtual chips only.';}
+  _reset(){this.phase='betting';this.round++;this.dealer=[];this.roulette=null;this.turnId=null;for(const p of this.players)Object.assign(p,{bet:0,rouletteBets:[],choice:null,hand:[],status:'seated',result:'',payout:0,doubled:false});this.message='Place your bet. Virtual chips only.';}
   remove(id){if(this.gameVote?.eligibleIds.includes(id)){this.gameVote=null;this.message='Game-change vote canceled because a voter left.';}const p=this.players.find(p=>p.id===id);if(!p)return;if(this.phase==='playing'&&p.status==='playing'){p.status='folded';if(this.turnId===id)this._turn();}if(this.phase!=='playing')this.players=this.players.filter(p=>p.id!==id);this.version++;}
   view(id){
     const result=this.phase==='result';
-    return clone({game:this.game,phase:this.phase,round:this.round,version:this.version,gameVote:this.gameVote,players:this.players.map(p=>({...p,hand:this.game==='poker'&&!result&&p.id!==id?p.hand.map(()=>null):p.hand})),dealer:this.dealer.map((c,i)=>result||i===0?c:null),roulette:this.roulette,turnId:this.turnId,message:this.message,meId:id,isHost:id===this.hostId});
+    return clone({game:this.game,phase:this.phase,round:this.round,version:this.version,gameVote:this.gameVote,players:this.players.map(p=>{const {lastBets,lastBet,lastBetGame,hand,doubled,...shared}=p;const previousWager=this.game==='roulette'?(lastBets||[]).reduce((total,bet)=>total+bet.amount,0):lastBetGame===this.game?lastBet:0;return {...shared,...(p.id===id?{previousWager,canRebet:this.phase==='betting'&&!p.bet&&previousWager>0&&previousWager<=p.chips&&previousWager<=(this.game==='roulette'?1000:250),...(this.game==='blackjack'?{canDouble:this.phase==='playing'&&this.turnId===p.id&&p.status==='playing'&&hand.length===2&&p.chips>=p.bet,canSurrender:this.phase==='playing'&&this.turnId===p.id&&p.status==='playing'&&hand.length===2}:{})}:{}),...(this.game!=='roulette'?{doubled,hand:this.game==='poker'&&!result&&p.id!==id?hand.map(()=>null):hand}:{})};}),dealer:this.dealer.map((c,i)=>result||i===0?c:null),roulette:this.roulette,turnId:this.turnId,message:this.message,meId:id,isHost:id===this.hostId});
   }
 }

@@ -55,7 +55,7 @@ export class CasinoRoom {
   _leaveSeat(id){
     const seated=this.engine.players.find(player=>player.id===id);
     if(!seated)return;
-    if(this.engine.phase==='betting'&&seated.bet){seated.chips+=seated.bet;seated.bet=0;seated.status='seated';this.engine.version++;}
+    if(this.engine.phase==='betting'&&seated.bet){seated.chips+=seated.bet;seated.bet=0;seated.rouletteBets=[];seated.status='seated';this.engine.version++;}
     if(this.engine.phase==='playing'&&seated.status==='playing'){
       seated.status='folded';this.engine.version++;
       if(this.engine.turnId===id)this.engine._turn();

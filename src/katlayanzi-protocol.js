@@ -1,4 +1,4 @@
-const ACTIONS=new Set(['join','choose','vote','bet','deal','hit','stand','fold','draw','next']);
+const ACTIONS=new Set(['join','choose','vote','bet','deal','hit','stand','fold','draw','next','double','surrender','doublebet','clearbets','rebet','removebet']);
 export function sanitizeCasinoPayload(raw){
   if(!raw||typeof raw!=='object'||Array.isArray(raw))return null;
   try {
