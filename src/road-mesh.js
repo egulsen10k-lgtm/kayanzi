@@ -125,11 +125,23 @@ function exposedRuns(a, b, blocked) {
   return runs;
 }
 
+// Only open the actual below-grade road footprint. Deep tunnel roofs retain
+// terrain above them; shallow portals and uncovered approaches cut the terrain.
+export function depressedRoadOpening(a,b,width,tunnel=false){
+  if(!Array.isArray(a)||!Array.isArray(b)||![...a,...b,width].every(Number.isFinite)||a.length!==3||b.length!==3||width<2||width>40)return null;
+  let from=0,to=1;const delta=b[2]-a[2];
+  const restrict=(height,less)=>{if(Math.abs(delta)<1e-8)return less?a[2]<height:a[2]>height;const t=(height-a[2])/delta;if((delta>0)===less)to=Math.min(to,t);else from=Math.max(from,t);return to>from;};
+  if(!restrict(-.1,true)||(tunnel&&!restrict(-4.3,false)))return null;
+  from=Math.max(0,from);to=Math.min(1,to);if(to<=from)return null;
+  return [a[0]+(b[0]-a[0])*from,a[1]+(b[1]-a[1])*from,a[0]+(b[0]-a[0])*to,a[1]+(b[1]-a[1])*to,width/2+(tunnel ? .22 : .65)];
+}
+
 /** Local X=east, Z=south. All children are disposable Meshes, never nested groups. */
 export function buildRoadMeshes(network) {
   const group = new THREE.Group();
   group.name = 'road-surfaces';
-  const asphalt = [], markings = [], shoulders = [], curbs = [], structures = [], rails = [];
+  group.userData.groundOpenings=[];
+  const asphalt = [], markings = [], shoulders = [], curbs = [], structures = [], retainingWalls = [], rails = [];
   const overlaps = streetOverlap(network);
   const crosswalks=buildCrosswalkMesh(network),crossings=crosswalks?.userData.crossings??[];
   const crossingAt=point=>crossings.some(c=>{
@@ -164,6 +176,8 @@ export function buildRoadMeshes(network) {
       let travelled = 0;
       for (let i = 0; i < points.length - 1; i++) {
         const j = i + 1;
+        const opening=depressedRoadOpening(points[i],points[j],road.width,road.tunnel);
+        if(opening&&group.userData.groundOpenings.length<4096)group.userData.groundOpenings.push(opening);
         quad(asphalt, at(i, inner, 1, ROAD_SURFACE_HEIGHT), at(j, inner, 1, ROAD_SURFACE_HEIGHT), at(j, inner, -1, ROAD_SURFACE_HEIGHT), at(i, inner, -1, ROAD_SURFACE_HEIGHT));
         for (const side of [-1, 1]) {
           quad(asphalt, at(i, inner, side, BASE), at(j, inner, side, BASE), at(j, inner, side, ROAD_SURFACE_HEIGHT), at(i, inner, side, ROAD_SURFACE_HEIGHT));
@@ -193,6 +207,11 @@ export function buildRoadMeshes(network) {
               quad(markings, p(from, 1), p(to, 1), p(to, -1), p(from, -1));
           }
         }
+        if(!road.tunnel&&!road.bridge&&Math.min(points[i][2],points[j][2])<-.1){
+          // Open-cut approach walls meet the fixed terrain, hiding adjacent
+          // below-ground roads without lifting the satellite texture with the car.
+          for(const side of [-1,1])quad(retainingWalls,at(i,shoulder,side,BASE),at(j,shoulder,side,BASE),at(j,shoulder,side,Math.max(.15-points[j][2],1.1)),at(i,shoulder,side,Math.max(.15-points[i][2],1.1)));
+        }
         if (road.bridge || road.tunnel) {
           // Continuous structural walls sit outside the driveable deck; tunnels
           // retain a 4m internal clearance. Portals stay open at each endpoint.
@@ -214,7 +233,7 @@ export function buildRoadMeshes(network) {
   }
   for (const [name, vertices, color] of [
     ['asphalt', asphalt, 0x34383d], ['markings', markings, 0xf0eee4],
-    ['structures', structures, 0x8c9296], ['shoulders', shoulders, 0x78786e], ['curbs', curbs, 0xb7b4ab],
+    ['structures', structures, 0x8c9296], ['retaining-walls', retainingWalls, 0x8c9296], ['shoulders', shoulders, 0x78786e], ['curbs', curbs, 0xb7b4ab],
     ['roadside-rails', rails, 0x737b80]
   ]) {
     if (!vertices.length) continue;
@@ -236,7 +255,7 @@ export function buildRoadMeshes(network) {
       : new THREE.Mesh(geometry, material);
     mesh.name = name;
     mesh.receiveShadow = name !== 'roadside-rails';
-    mesh.castShadow = ['curbs','structures','asphalt','roadside-rails'].includes(name);
+    mesh.castShadow = ['curbs','structures','retaining-walls','asphalt','roadside-rails'].includes(name);
     group.add(mesh);
   }
   if(crosswalks)group.add(crosswalks);

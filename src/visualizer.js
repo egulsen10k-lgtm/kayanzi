@@ -1,4 +1,4 @@
-import {selectCasinoBuildings,buildCasinoExteriors} from './casino-locations.js';
+import {selectCasinoBuildings,buildCasinoExteriors,prepareCasinoWorld} from './casino-locations.js';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildRouteRibbon } from './route-ribbon.js';
@@ -6,7 +6,7 @@ import { loadWorld } from './world-data.js';
 import { buildMappedScenery } from './mapped-scenery.js';
 import { buildBuildings, buildBuildingsAsync, disposeWorldGroup } from './building-world.js';
 import { buildRoadMeshes, ROAD_SURFACE_HEIGHT } from './road-mesh.js';
-import { SatelliteWorld } from './satellite-world.js';
+import { SatelliteWorld, createGroundOcclusion, configureGroundOcclusion, selectGroundOpenings, updateGroundOcclusion } from './satellite-world.js';
 import { PhotorealWorld } from './photoreal-world.js';
 import { nearbyCachedWorld, nextWorldLocation } from './world-streaming.js';
 import { footprintOnRoad, roadSurfaceAt } from './road-safety.js';
@@ -289,7 +289,7 @@ export class CarVisualizer3D {
     this.setupEnvironment();
     this.setModel(this.currentModel);
     this.camera.position.set(8, 7, 12);
-    this.satellite = new SatelliteWorld(this.scene, container, this.renderer);
+    this.satellite = new SatelliteWorld(this.scene, container, this.renderer,this.groundOcclusion);
 
     this.satellite.group.visible = true;
     this.resizeObserver = new ResizeObserver(() => this.onWindowResize());
@@ -401,7 +401,9 @@ export class CarVisualizer3D {
   setupEnvironment() {
     this.environmentGroup = new THREE.Group();
     this.scene.add(this.environmentGroup);
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(20000, 20000), new THREE.MeshBasicMaterial({ color: 0x778977 }));
+    this.groundOcclusion??=createGroundOcclusion();
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(20000, 20000), configureGroundOcclusion(new THREE.MeshBasicMaterial({ color: 0x778977 }),this.groundOcclusion));
+    ground.name='opaque-ground-surface';
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.08;
     this.environmentGroup.add(ground);
@@ -488,14 +490,16 @@ export class CarVisualizer3D {
   clearRoads() { disposeWorldGroup(this.roadGroup); }
 
   setRoads(network, buildings = null) {
+    network=prepareCasinoWorld(network,(this.casinoLocations??[]).map(venue=>venue.id));
     this.clearRoads();
     // TrafficManager owns persistent vehicles and junction props across district loads.
     this.roadNetwork = network;
     this.roadCenter = network.center;
-    this.casinoLocations = selectCasinoBuildings(network,(this.casinoLocations??[]).map(venue=>venue.id));
+    this.casinoLocations = network.casinoLocations??selectCasinoBuildings(network,(this.casinoLocations??[]).map(venue=>venue.id));
     this.roadGroup.add(buildCasinoExteriors(this.casinoLocations));
 
     const surfaces = buildRoadMeshes(network);
+    this.groundOpenings=surfaces.userData.groundOpenings;this.groundOpeningsTimer=0;
     if (surfaces.children.length) this.roadGroup.add(...surfaces.children.slice());
     this.roadGroup.add(buildings ?? buildBuildings(network));
     this.setBuildingNightMode(this.nightMode);
@@ -540,9 +544,10 @@ export class CarVisualizer3D {
     try {
       const cached = nearbyCachedWorld(this.roadCache, lat, lng);
       const cacheKey = cached?.key ?? `${lat},${lng}`;
-      const network = cached && Date.now() - cached.savedAt < 300000 ? cached.network
+      let network = cached && Date.now() - cached.savedAt < 300000 ? cached.network
         : await loadWorld({ lat, lng, signal: controller.signal });
       if (controller.signal.aborted) return null;
+      network=prepareCasinoWorld(network,(this.casinoLocations??[]).map(venue=>venue.id));
       this.roadCache.delete(cacheKey);
       if (!network.routeApproximate) this.roadCache.set(cacheKey, { network, savedAt: Date.now() });
       if (this.roadCache.size > 8) this.roadCache.delete(this.roadCache.keys().next().value);
@@ -748,9 +753,9 @@ export class CarVisualizer3D {
     if(this.reducedMotion){this.skidMarks.clear();this.mudSystem.clear();}
     else{this.skidMarks.update(dt,(physics.isDrifting||physics.handbrake)&&Math.abs(physics.speed)>15,physics);this.mudSystem.update(dt,physics);}
     const underground = roadHeight < -.5;
-    this.environmentGroup.visible = !underground;
-    this.satellite.group.visible = !underground;
-    if (!underground) this.satellite.setLocation(physics.lat, physics.lng);
+    this.environmentGroup.visible = true;
+    this.satellite.group.visible = true;
+    this.satellite.setLocation(physics.lat, physics.lng);
     this.carGroup.position.y = roadHeight;
     let pitch = 0;
     if (physics.roadNetwork) {
@@ -810,6 +815,7 @@ export class CarVisualizer3D {
       this.roadGroup.position.set(-east, 0, north);
       this.trafficGroup.position.copy(this.roadGroup.position);
     }
+    this.updateGroundSurfaces(dt);
     if (this.roadOverlayEnabled && this.roadTarget && !this.roadLoading && performance.now() > (this.roadRetryAt ?? 0) && performance.now() - this.lastRoadRequestAt > 1500) {
       const p = geographicOffset(this.roadTarget, physics.lat, physics.lng);
       if (Math.hypot(p.east, p.north) > 140) {
@@ -881,6 +887,7 @@ export class CarVisualizer3D {
     const cameraLift=Math.max(0,Math.min(2,Number(this.cameraLift)||0));
     target.y += roadHeight + cameraLift*.7;
     lookAt.y += roadHeight + cameraLift*.9;
+    if(underground){this.introActive=false;target.y=Math.min(target.y,roadHeight+3.5);lookAt.y=Math.min(lookAt.y,roadHeight+3.5);}
 
     if(this.reducedMotion){this.introActive=false;this.camera.position.copy(target);}
     else if (this.introActive) {
@@ -905,11 +912,19 @@ export class CarVisualizer3D {
       this.camera.position.y += Math.cos(this.cameraShakeTime * frequency * .83) * amount * 0.08;
       this.cameraShake *= Math.max(0, 1 - dt * 7);
     }
+    if(underground)this.camera.position.y=Math.min(this.camera.position.y,roadHeight+3.5);
     this.camera.lookAt(lookAt);
     this.applyCameraRoll(physics,dt);
     this.speedometerOverlay?.update(physics.speed,dt,['cockpit','hood','bonnet'].includes(this.cameraMode));
     this.updateTrafficIndicators(performance.now());
     this.renderer.render(this.scene, this.camera);
+  }
+
+  updateGroundSurfaces(dt=0){
+    if(!this.groundOcclusion)return;
+    this.groundOpeningsTimer=(this.groundOpeningsTimer??0)-Math.max(0,Number.isFinite(dt)?dt:0);
+    if(this.groundOpeningsTimer<=0){this.selectedGroundOpenings=selectGroundOpenings(this.groundOpenings,[-this.roadGroup.position.x,-this.roadGroup.position.z]);this.groundOpeningsTimer=.5;}
+    updateGroundOcclusion(this.groundOcclusion,this.selectedGroundOpenings,this.roadGroup.position);
   }
 
   onWindowResize() {

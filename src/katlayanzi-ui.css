@@ -25,3 +25,16 @@
 .katlayanzi-vote{border:1px solid #e4c274;border-radius:14px;padding:18px;margin:0 0 20px;background:#304836;box-shadow:0 4px 24px #0003}.katlayanzi-vote h3{font:600 19px Georgia,serif;margin:0;color:#ffe8aa}.katlayanzi-vote p{font-size:13px;color:#e5ddbd;line-height:1.5}.katlayanzi-vote-actions{display:flex;gap:10px;margin:12px 0}.katlayanzi-vote small{font-size:11px;color:#ccdbca}
 @media(max-width:600px){.katlayanzi-scene{height:285px}.katlayanzi-stage{margin-bottom:20px;border-radius:14px}.katlayanzi-stage-caption{padding:9px 11px}.katlayanzi-stage-caption p{font-size:10px;max-width:210px}.katlayanzi-vote{padding:14px}.katlayanzi-vote-actions .katlayanzi-button{flex:1}}
 @media(max-height:460px) and (min-width:601px){.katlayanzi-scene{height:300px}}
+/* Walking mode keeps movement and table interaction inside the 3D viewport. */
+.katlayanzi-dialog.is-walking .katlayanzi-stage{margin-bottom:0}
+.katlayanzi-dialog.is-walking .katlayanzi-scene{height:min(65vh,620px);min-height:350px}
+.katlayanzi-walk-controls{position:absolute;inset:auto 16px 58px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end;pointer-events:none}
+.katlayanzi-walk-controls>*{pointer-events:auto}
+.katlayanzi-walk-hint{grid-column:1/-1;justify-self:center;max-width:90%;margin:0;padding:9px 14px;border:1px solid #d8be7966;border-radius:12px;background:#0a211de8;color:#fff2cd;font-size:12px;text-align:center;pointer-events:none}
+.katlayanzi-walk-pad{display:grid;grid-template-columns:repeat(3,48px);grid-template-rows:repeat(2,48px);gap:5px;touch-action:none}
+.katlayanzi-walk-pad .katlayanzi-button{padding:0;background:#0d302ade;font-size:23px;touch-action:none;user-select:none}
+.katlayanzi-walk-up{grid-column:2}.katlayanzi-walk-left{grid-column:1;grid-row:2}.katlayanzi-walk-down{grid-column:2;grid-row:2}.katlayanzi-walk-right{grid-column:3;grid-row:2}
+.katlayanzi-sit{max-width:240px;box-shadow:0 4px 20px #0008}
+.katlayanzi-stand{margin-bottom:18px}
+@media(max-width:600px){.katlayanzi-dialog.is-walking{padding:calc(12px + env(safe-area-inset-top)) 10px calc(12px + env(safe-area-inset-bottom))}.katlayanzi-dialog.is-walking .katlayanzi-scene{height:calc(100dvh - 252px - env(safe-area-inset-top) - env(safe-area-inset-bottom));min-height:320px}.katlayanzi-dialog.is-walking .katlayanzi-heading h2{font-size:25px}.katlayanzi-dialog.is-walking .katlayanzi-message{font-size:12px;margin:10px 0}.katlayanzi-walk-controls{inset:auto 10px 58px;gap:10px}.katlayanzi-walk-pad{grid-template-columns:repeat(3,44px);grid-template-rows:repeat(2,44px)}.katlayanzi-sit{max-width:165px;padding:10px;font-size:12px}.katlayanzi-walk-hint{font-size:10px}.katlayanzi-stage-caption .katlayanzi-hand-jump[hidden]{display:none}}
+@media(max-height:460px) and (min-width:601px){.katlayanzi-dialog.is-walking .katlayanzi-scene{height:320px;min-height:320px}}

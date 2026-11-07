@@ -35,6 +35,7 @@ function safeView(view) {
   const source = view && typeof view === 'object' ? view : {};
   const players = Array.isArray(source.players) ? source.players : [];
   return {
+    version: Number.isSafeInteger(source.version)?source.version:0,
     gameVote: source.gameVote && typeof source.gameVote.id==='string' && GAMES.includes(source.gameVote.game) ? source.gameVote : null,
     game: GAMES.includes(source.game) ? source.game : 'blackjack',
     phase: ['betting', 'playing', 'result'].includes(source.phase) ? source.phase : 'betting',
@@ -105,6 +106,20 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
   const sceneText=element('p','','Glass-roof lounge · Elif, your dealer');
   const handJump=button('My hand ↓','katlayanzi-hand-jump');
   sceneCaption.append(sceneText,handJump);stage.append(sceneContainer,sceneCaption);
+  const walkControls=element('div','katlayanzi-walk-controls');
+  walkControls.setAttribute('role','group');walkControls.setAttribute('aria-label','Salon hareket kontrolleri');
+  const walkHint=element('p','katlayanzi-walk-hint','WASD / yön tuşlarıyla yürü · Masaya yaklaş ve otur');
+  walkHint.setAttribute('role','status');walkHint.setAttribute('aria-live','polite');
+  const pad=element('div','katlayanzi-walk-pad');
+  const walkButtons=[];
+  for(const [direction,label] of [['up','↑'],['left','←'],['down','↓'],['right','→']]){
+    const b=button(label,`katlayanzi-walk-${direction}`);b.dataset.direction=direction;
+    b.setAttribute('aria-label',({up:'İleri yürü',left:'Sola yürü',down:'Geri yürü',right:'Sağa yürü'})[direction]);
+    pad.append(b);walkButtons.push(b);
+  }
+  const sit=button('Masaya yaklaş','katlayanzi-primary katlayanzi-sit');sit.disabled=true;
+  const stand=button('Masadan kalk · Salonda gez','katlayanzi-stand');stand.hidden=true;
+  walkControls.append(walkHint,pad,sit);stage.append(walkControls);
   const table = element('div', 'katlayanzi-table');
   const rouletteWheel = element('div', 'katlayanzi-wheel', '0');
   rouletteWheel.setAttribute('aria-label', 'Roulette wheel');
@@ -113,7 +128,7 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
   table.append(rouletteWheel, dealer, seats);
   const actions = element('section', 'katlayanzi-actions');
   const rules = element('aside', 'katlayanzi-rules');
-  dialog.append(header, message, tabs, voteBox, stage, table, actions, rules);
+  dialog.append(header, message, tabs, voteBox, stage, stand, table, actions, rules);
   overlay.append(dialog);
   root.append(overlay);
   target.append(root);
@@ -124,6 +139,51 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
   let destroyed = false;
   let scene = null;
   let voteTimer = null;
+  let walking=true;
+  let lobby=null;
+  let lobbySeatingSignature=null;
+  let lobbyTimer=null;
+  let lastNearId=null;
+  const pressed=new Set();
+  const keyDirections={KeyW:'up',ArrowUp:'up',KeyS:'down',ArrowDown:'down',KeyA:'left',ArrowLeft:'left',KeyD:'right',ArrowRight:'right'};
+  function moveInput(){scene?.setMoveInput({x:Number(pressed.has('right'))-Number(pressed.has('left')),z:Number(pressed.has('down'))-Number(pressed.has('up'))});}
+  function resetMovement(){pressed.clear();moveInput();}
+  function updateWalking(){
+    const me=lobby?.players?.find(p=>p.id===lobby.meId);
+    walking=!me?.tableId;
+    dialog.classList.toggle('is-walking',walking);
+    for(const node of [table,actions,rules,handJump])node.hidden=walking;
+    tabs.hidden=true;
+    walkControls.hidden=!walking;stand.hidden=walking;
+    scene?.setWalking(walking);
+    sceneText.textContent=walking?'KATLAYANZI · Cam tavanlı salon · 21 / Rulet / Poker':`${GAME_LABELS[view.game]} · Elif, krupiyeniz`;
+  }
+  function nearbyTable(){
+    const nearest=scene?.nearestTable();
+    if((nearest?.id??null)!==lastNearId){lastNearId=nearest?.id??null;sit.textContent=nearest?`${nearest.label} · Otur (E)`:'Masaya yaklaş';sit.disabled=!nearest;
+      walkHint.textContent=nearest?`${nearest.label} masası · Oturmak için E veya Otur`:'WASD / yön tuşlarıyla yürü · Işıklı oyun masasına yaklaş · Diğer masalar dekoratif';}
+  }
+  function sitDown(){
+    const id=scene?.nearestTable()?.id;if(!id)return;
+    resetMovement();const result=room.sitAtTable?.(id);
+    if(result?.ok===false)message.textContent=result.error||'Masa değişikliği için oyuncuların oyunu bekleniyor.';
+  }
+  function standUp(){resetMovement();const result=room.standUp?.();if(result?.ok===false)message.textContent=result.error||'Önce mevcut eli tamamlayın.';}
+  const onWalkKey=event=>{
+    if(!open)return;
+    const direction=keyDirections[event.code];
+    if(direction&&walking&&!['INPUT','SELECT','TEXTAREA'].includes(event.target?.tagName)){
+      event.preventDefault();event.stopImmediatePropagation();pressed.add(direction);moveInput();
+    }else if(event.code==='KeyE'&&walking&&!event.repeat){event.preventDefault();event.stopImmediatePropagation();sitDown();}
+  };
+  const onWalkKeyUp=event=>{const direction=keyDirections[event.code];if(direction){pressed.delete(direction);moveInput();if(open){event.preventDefault();event.stopImmediatePropagation();}}};
+  window.addEventListener('keydown',onWalkKey,true);window.addEventListener('keyup',onWalkKeyUp,true);window.addEventListener('blur',resetMovement);
+  for(const b of walkButtons){
+    b.addEventListener('pointerdown',event=>{event.preventDefault();b.setPointerCapture(event.pointerId);pressed.add(b.dataset.direction);moveInput();});
+    const release=()=>{pressed.delete(b.dataset.direction);moveInput();};
+    b.addEventListener('pointerup',release);b.addEventListener('pointercancel',release);b.addEventListener('lostpointercapture',release);
+  }
+  sit.addEventListener('click',sitDown);stand.addEventListener('click',standUp);
   const selectedDraw = new Set();
   let stake = 25;
   const background = new Map();
@@ -192,14 +252,15 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
 
   function renderSeats() {
     seats.replaceChildren();
-    const title = element('h3', '', `Players · ${view.players.length}/8`);
+    const seatedPlayers=lobby?view.players.filter(player=>lobby.players.some(peer=>peer.id===player.id&&peer.tableId===view.game)):view.players;
+    const title = element('h3', '', `Players · ${seatedPlayers.length}/8`);
     seats.append(title);
-    if (!view.players.length) {
+    if (!seatedPlayers.length) {
       seats.append(element('p', 'katlayanzi-empty', 'No players seated yet.'));
       return;
     }
     const grid = element('div', 'katlayanzi-seat-grid');
-    for (const player of view.players) {
+    for (const player of seatedPlayers) {
       const seat = element('article', `katlayanzi-seat${player.id === view.meId ? ' is-me' : ''}${player.id === view.turnId ? ' is-turn' : ''}`);
       const name = element('h4', '', player.name);
       const meta = element('p', 'katlayanzi-seat-meta', `${player.chips} chips · bet ${player.bet}${view.game==='roulette'&&player.bet?' on '+player.choice:''}`);
@@ -285,7 +346,7 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
     message.textContent = view.message;
     renderTabs(); renderVote(); renderDealer(); renderSeats(); renderActions(); renderRules();
     scene?.update(view);
-    sceneText.textContent=`Glass-roof lounge · Elif, your dealer · ${view.players.length} robot${view.players.length===1?'':'s'} seated`;
+    updateWalking();
     if(open&&!dialog.contains(document.activeElement))close.focus();
   }
 
@@ -299,13 +360,14 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
     if (open) {
       restoreFocus = document.activeElement;
       for(const child of document.body.children)if(child!==root&&!['SCRIPT','STYLE','LINK'].includes(child.tagName)){background.set(child,child.inert);child.inert=true;}
-      dispatch({ type: 'join' });
-      if(!scene)scene=new KatlayanziScene({container:sceneContainer,reducedMotion:globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches});
-      scene.update(view);scene.setActive(true);scene.resize();
+      room.enterLobby?.();
+      if(!scene)scene=new KatlayanziScene({container:sceneContainer,onMove:position=>room.moveLobby?.(position),reducedMotion:globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches});
+      scene.update(view);scene.setLobby(lobby??room.getLobby?.());updateWalking();scene.setActive(true);scene.resize();
+      lastNearId=null;nearbyTable();lobbyTimer=setInterval(nearbyTable,150);
       voteTimer=setInterval(()=>{if(view.gameVote)renderVote();},1000);
       close.focus();
     } else {
-      clearInterval(voteTimer);voteTimer=null;scene?.setActive(false);
+      clearInterval(voteTimer);voteTimer=null;clearInterval(lobbyTimer);lobbyTimer=null;resetMovement();room.leaveLobby?.();scene?.setActive(false);
       for(const [child,inert]of background)child.inert=inert;background.clear();
       restoreFocus?.focus?.();
       restoreFocus = null;
@@ -313,7 +375,8 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
     announce(open);
   }
 
-  const unsubscribe = typeof room.subscribe === 'function' ? room.subscribe(next => { if(next.round!==view.round||next.game!==view.game||next.phase!=='playing')selectedDraw.clear();view = safeView(next); render(); }) : () => {};
+  const unsubscribe = typeof room.subscribe === 'function' ? room.subscribe(next => { const previous=view; if(next.round!==view.round||next.game!==view.game||next.phase!=='playing')selectedDraw.clear();view = safeView(next); if(view.version!==previous.version||view.message!==previous.message||view.meId!==previous.meId||view.connected!==previous.connected||view.roomCode!==previous.roomCode)render(); }) : () => {};
+  const unsubscribeLobby=room.subscribeLobby?.(next=>{lobby=next;scene?.setLobby(next);updateWalking();const signature=JSON.stringify(next.players.map(p=>[p.id,p.tableId]));if(signature!==lobbySeatingSignature){lobbySeatingSignature=signature;renderSeats();}})??(()=>{});
   const onLaunch = () => setOpen(true);
   const onClose = () => setOpen(false);
   const onInvite = () => {
@@ -347,7 +410,9 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
     },
     destroy() {
       if (destroyed) return;
-      destroyed = true; clearInterval(voteTimer);scene?.dispose();handJump.removeEventListener('click',onHandJump);unsubscribe(); launch.removeEventListener('click', onLaunch); close.removeEventListener('click', onClose); invite.removeEventListener('click', onInvite);
+      destroyed = true; clearInterval(voteTimer);clearInterval(lobbyTimer);resetMovement();room.leaveLobby?.();unsubscribeLobby();
+      window.removeEventListener('keydown',onWalkKey,true);window.removeEventListener('keyup',onWalkKeyUp,true);window.removeEventListener('blur',resetMovement);
+      sit.removeEventListener('click',sitDown);stand.removeEventListener('click',standUp);scene?.dispose();handJump.removeEventListener('click',onHandJump);unsubscribe(); launch.removeEventListener('click', onLaunch); close.removeEventListener('click', onClose); invite.removeEventListener('click', onInvite);
       dialog.removeEventListener('keydown',isolateButtonSpace);
       overlay.removeEventListener('click', onBackdrop); document.removeEventListener('keydown', onKey);
       if(open){for(const [child,inert]of background)child.inert=inert;announce(false);}root.remove();

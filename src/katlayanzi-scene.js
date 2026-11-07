@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createRobotModel } from './robot-runner-view.js';
 import { createCasinoDealer, animateCasinoDealer } from './katlayanzi-dealer.js';
+import { CASINO_TABLES } from './katlayanzi-lobby.js';
 
 const PALETTE=['#2d70a6','#b24b45','#5b8c65','#8a65a2','#d09742','#43908f','#a5a9bc','#c36e96'];
 const SEAT_ANGLES=[.14,.38,.62,.86,1.12,1.32,1.68,1.88].map(n=>n*Math.PI);
@@ -79,18 +80,103 @@ export function updateCasinoLounge(root,raw={}){
   data.view={game:raw.game,phase:raw.phase,round:raw.round};
 }
 
+const DEFAULT_HALL_TABLES=CASINO_TABLES;
+function hallTables(tables){return (Array.isArray(tables)?tables:DEFAULT_HALL_TABLES).filter(t=>t&&typeof t.id==='string'&&Number.isFinite(t.x)&&Number.isFinite(t.z)&&Math.abs(t.x)<=11&&t.z>=-8&&t.z<=9).slice(0,8);}
+export function moveCasinoWalker(position,input,dt,tables=DEFAULT_HALL_TABLES){
+  const x=Number.isFinite(position?.x)?position.x:0,z=Number.isFinite(position?.z)?position.z:10;
+  const ix=Number.isFinite(input?.x)?THREE.MathUtils.clamp(input.x,-1,1):0,iz=Number.isFinite(input?.z)?THREE.MathUtils.clamp(input.z,-1,1):0;
+  const length=Math.max(1,Math.hypot(ix,iz)),step=3.2*THREE.MathUtils.clamp(Number.isFinite(dt)?dt:0,0,.1);
+  const result={x:THREE.MathUtils.clamp(x+ix/length*step,-13,13),z:THREE.MathUtils.clamp(z+iz/length*step,-10,12),heading:Number.isFinite(position?.heading)?position.heading:0};
+  for(const table of hallTables(tables)){const dx=result.x-table.x,dz=result.z-table.z,d=Math.hypot(dx,dz);if(d<2.65){const nx=d>1e-5?dx/d:0,nz=d>1e-5?dz/d:1;result.x=table.x+nx*2.65;result.z=table.z+nz*2.65;}}
+  if(ix||iz)result.heading=Math.atan2(ix,iz);
+  return result;
+}
+export function nearestCasinoTable(position,tables=DEFAULT_HALL_TABLES){
+  if(!Number.isFinite(position?.x)||!Number.isFinite(position?.z))return null;
+  let best=null,distance=4.5;
+  for(const table of hallTables(tables)){const d=Math.hypot(position.x-table.x,position.z-table.z);if(table.playable===true&&d<=distance){distance=d;best=table;}}
+  return best;
+}
+export function buildCasinoHall(tables=DEFAULT_HALL_TABLES){
+  const root=new THREE.Group();root.name='katlayanzi-walkable-hall';
+  const stone=mat('#b4aa91',.1,.7),dark=mat('#143c35'),gold=mat('#c8a45a',.65,.3),wood=mat('#35231c',.15,.4),felt=mat('#146b4c');
+  box(root,'hall-floor',29,.2,26,stone,0,-.13,1);
+  box(root,'hall-carpet',7,.018,24,dark,0,-.015,1);
+  for(const x of [-3.5,3.5])box(root,'carpet-gold-border',.045,.02,24,gold,x,.001,1);
+  box(root,'hall-back-wall',29,7,.25,dark,0,3.4,-11.5);
+  for(const x of [-14.4,14.4])box(root,'hall-side-wall',.25,7,26,dark,x,3.4,1);
+  for(const x of [-14,-7,0,7,14]){box(root,'hall-roof-beam',.14,.18,26,gold,x,7,1);for(const z of [-11,...(Math.abs(x)===14?[12]:[])])box(root,'hall-column',.24,7,.24,gold,x,3.4,z);}
+  const glass=new THREE.MeshPhysicalMaterial({color:'#b7dfdf',transparent:true,opacity:.11,roughness:.1,side:THREE.DoubleSide,depthWrite:false});
+  for(let z=-10;z<12;z+=4){box(root,'hall-sunroof-frame',29,.15,.15,gold,0,7,z);box(root,'hall-glass-sunroof',28.7,.025,3.85,glass,0,7.1,z+2);}
+  const welcome=makeLabel('KATLAYANZI');if(welcome){welcome.name='hall-welcome-sign';welcome.scale.set(8,1.8,1);welcome.position.set(0,4.8,-11.2);root.add(welcome);}
+  const validTables=hallTables(tables);
+  for(const table of validTables){
+    const group=new THREE.Group();group.name=`hall-table-${table.id}`;group.position.set(table.x,0,table.z);group.userData={tableId:table.id,playable:table.playable===true};root.add(group);
+    mesh(group,'table-pedestal',new THREE.CylinderGeometry(.5,.8,1.1,16),wood,0,.55,0);
+    mesh(group,'table-wood-rim',new THREE.CylinderGeometry(2.1,2.1,.2,40),wood,0,1.18,0);
+    mesh(group,'table-felt',new THREE.CylinderGeometry(1.96,1.96,.035,40),table.playable?felt:dark,0,1.30,0);
+    const stripe=mesh(group,'table-gold-edge',new THREE.TorusGeometry(1.98,.025,6,40),gold,0,1.33,0);stripe.rotation.x=Math.PI/2;
+    const label=makeLabel(table.label||table.id);if(label){label.name='hall-table-label';label.position.set(0,3.05,0);label.scale.set(3.25,.72,1);group.add(label);}
+    for(let i=0;i<4;i++){const a=i*Math.PI/2,chair=new THREE.Group();chair.name='hall-chair';chair.position.set(Math.sin(a)*2.6,0,Math.cos(a)*2.6);chair.rotation.y=a;group.add(chair);box(chair,'chair-seat',.8,.15,.7,dark,0,.62,0);box(chair,'chair-back',.8,.85,.12,wood,0,1,-.3);for(const x of [-.29,.29])for(const z of [-.2,.2])box(chair,'chair-leg',.06,.6,.06,gold,x,.3,z);}
+    if(table.id==='roulette'){const wheel=makeWheel(group);wheel.scale.setScalar(.85);wheel.position.set(0,1.4,0);}
+    else {for(let i=0;i<5;i++){const card=mesh(group,'display-card',new THREE.PlaneGeometry(.24,.34),mat('#f7e9c9'),-.6+i*.3,1.325,0);card.rotation.x=-Math.PI/2;}}
+    if(table.playable){const dealer=createCasinoDealer();dealer.name=`hall-dealer-${table.id}`;dealer.position.set(0,0,-2.4);dealer.scale.setScalar(.9);group.add(dealer);}
+  }
+  root.userData={players:new Map(),tables:validTables};return root;
+}
+export function updateCasinoHall(root,lobby={},now){
+  if(!Number.isFinite(now))now=typeof globalThis.performance?.now==='function'?globalThis.performance.now():0;
+  const data=root.userData,seen=new Set(),players=(Array.isArray(lobby?.players)?lobby.players:[]).filter(p=>p&&typeof p.id==='string'&&!seen.has(p.id)&&Number.isFinite(p.x)&&Number.isFinite(p.z)&&(seen.add(p.id),true)).slice(0,8);
+  for(const [id,record]of data.players)if(!seen.has(id)){releaseTree(record.group,true);data.players.delete(id);}
+  players.forEach((p,index)=>{
+    let record=data.players.get(p.id);const isNew=!record;if(!record){const group=new THREE.Group();group.name=`hall-player-${p.id}`;group.userData.peerId=p.id;const robot=createRobotModel(PALETTE[index]);robot.scale.setScalar(.72);group.add(robot);root.add(group);record={group,robot,name:null,label:null};data.players.set(p.id,record);}
+    const table=data.tables.find(t=>t.id===p.tableId),sitting=Boolean(table);
+    let x=p.x,z=p.z,heading=Number.isFinite(p.heading)?p.heading:0;
+    if(sitting){const seat=players.filter(other=>other.tableId===p.tableId).findIndex(other=>other.id===p.id),a=(seat%8)/8*Math.PI*2;x=table.x+Math.sin(a)*2.65;z=table.z+Math.cos(a)*2.65;heading=a+Math.PI;}
+    const target={x:THREE.MathUtils.clamp(x,-13,13),z:THREE.MathUtils.clamp(z,-10,12),heading},isLocal=p.id===lobby.meId;
+    const distance=record.target?Math.hypot(target.x-record.target.x,target.z-record.target.z):0;
+    const snap=isNew||isLocal||sitting||record.sitting!==sitting||distance>6;
+    if(snap){record.group.position.set(target.x,0,target.z);record.group.rotation.y=heading;record.movingUntil=0;}
+    else if(distance>.015)record.movingUntil=now+250;
+    record.target=target;record.group.userData.isLocal=isLocal;record.sitting=sitting;
+    const rig=record.robot.userData.rig;rig.motion.position.y=sitting?-.24:0;for(const side of ['left','right']){rig[`${side}Leg`].rotation.x=sitting?-1.45:0;rig[`${side}Knee`].rotation.x=sitting?1.45:0;rig[`${side}Arm`].rotation.x=sitting?-.65:0;rig[`${side}Elbow`].rotation.x=sitting?-1.1:0;}
+    const name=String(p.name||'Driver').slice(0,20)+(p.id===lobby.meId?' · Sen':'');if(record.name!==name){if(record.label)releaseTree(record.label,true);record.label=makeLabel(name);if(record.label)record.group.add(record.label);record.name=name;}
+  });
+}
+
+export function animateCasinoHall(root,dt,now,reducedMotion=false){
+  const alpha=1-Math.exp(-12*THREE.MathUtils.clamp(Number.isFinite(dt)?dt:0,0,.1));
+  for(const record of root.userData.players.values()){
+    if(record.group.userData.isLocal||record.sitting||!record.target)continue;
+    const target=record.target,position=record.group.position;
+    position.x+=(target.x-position.x)*alpha;position.z+=(target.z-position.z)*alpha;
+    const angle=target.heading-record.group.rotation.y;
+    record.group.rotation.y+=Math.atan2(Math.sin(angle),Math.cos(angle))*alpha;
+    const cycle=!reducedMotion&&now<record.movingUntil?Math.sin(now*.012)*.55:0,rig=record.robot.userData.rig;
+    rig.leftLeg.rotation.x=cycle;rig.rightLeg.rotation.x=-cycle;rig.leftArm.rotation.x=-cycle*.6;rig.rightArm.rotation.x=cycle*.6;
+  }
+}
+
 export class KatlayanziScene {
-  constructor({container,reducedMotion=false}={}){
-    this.container=container;this.reducedMotion=reducedMotion;this.active=false;this.disposed=false;this.frame=null;this.renderer=null;
+  constructor({container,reducedMotion=false,onMove,onTable}={}){
+    this.container=container;this.reducedMotion=reducedMotion;this.onMove=onMove;this.onTable=onTable;this.walking=false;this.moveInput={x:0,z:0};this.localPosition={x:0,z:10,heading:Math.PI};this.lastMoveSent=-Infinity;this.lastStep=null;this.active=false;this.disposed=false;this.frame=null;this.renderer=null;
     this.scene=new THREE.Scene();this.scene.background=new THREE.Color('#a8b9ad');this.scene.fog=new THREE.Fog('#a8b9ad',22,48);
     this.scene.add(new THREE.HemisphereLight('#fff9e4','#3d584c',2));const sun=new THREE.DirectionalLight('#ffe4b6',3.2);sun.position.set(-5,12,6);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-9;sun.shadow.camera.right=9;sun.shadow.camera.top=8;sun.shadow.camera.bottom=-8;sun.shadow.normalBias=.05;this.scene.add(sun);const fill=new THREE.PointLight('#d5f4ed',35,25);fill.position.set(3,5,-3);this.scene.add(fill);
-    this.camera=new THREE.PerspectiveCamera(35,1,.1,80);this.lounge=buildCasinoLounge();this.scene.add(this.lounge);
+    this.camera=new THREE.PerspectiveCamera(35,1,.1,80);this.lounge=buildCasinoLounge();this.scene.add(this.lounge);this.hall=buildCasinoHall();this.hall.visible=false;this.scene.add(this.hall);
     try{if(!container||typeof document==='undefined')return;this.renderer=new THREE.WebGLRenderer({antialias:container.clientWidth>600,alpha:false,powerPreference:'low-power'});this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.1;this.renderer.shadowMap.enabled=container.clientWidth>600;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.domElement.setAttribute('aria-label','3D Katlayanzi table with seated robot players and a dealer');this.renderer.domElement.setAttribute('role','img');this.renderer.domElement.style.cssText='display:block;width:100%;height:100%;';container.append(this.renderer.domElement);this.resize();if(typeof ResizeObserver!=='undefined'){this.observer=new ResizeObserver(()=>this.resize());this.observer.observe(container);}}
     catch{this.observer?.disconnect();this.renderer?.domElement.remove();this.renderer?.dispose();this.renderer=null;if(container&&typeof document!=='undefined'){this.fallback=document.createElement('p');this.fallback.textContent='3D view unavailable on this device. All table controls remain available below.';this.fallback.style.cssText='padding:24px;color:#e8d6a1;text-align:center';container.append(this.fallback);}}
   }
-  resize(){if(!this.renderer||this.disposed)return;const width=Math.max(1,this.container?.clientWidth||1),height=Math.max(1,this.container?.clientHeight||1);this.renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,width<600?1:1.5));this.renderer.setSize(width,height,false);this.camera.aspect=width/height;this.camera.position.set(5.8,5.1,8);if(this.camera.aspect<1.5)this.camera.position.set(8.4,6.8,11.8);this.camera.lookAt(0,1.1,0);this.camera.updateProjectionMatrix();if(this.active)this._render(globalThis.performance?.now?.()??0);}
-  update(view){if(this.disposed)return;this.view=view;updateCasinoLounge(this.lounge,view);if(this.active)this._render(globalThis.performance?.now?.()??0);}
-  _render(now){if(!this.renderer||this.disposed)return;const data=this.lounge.userData;for(const card of data.cards.children){const target=card.userData.dealTarget;if(!target)continue;const t=this.reducedMotion?1:Math.min(1,Math.max(0,(now-card.userData.dealStarted)/550));card.position.set(THREE.MathUtils.lerp(0,target.x,t),THREE.MathUtils.lerp(1.65,target.y,t),THREE.MathUtils.lerp(-1.4,target.z,t));}const duration=this.reducedMotion?0:2800,t=duration?Math.min(1,Math.max(0,(now-data.spinStarted)/duration)):1;data.wheel.userData.rotor.rotation.y=THREE.MathUtils.lerp(data.spinFrom,data.spinTo,1-(1-t)**3);animateCasinoDealer(data.dealer,{time:this.reducedMotion?0:now/1000,...data.view});if(!this.reducedMotion)for(const record of data.players.values()){record.robot.userData.rig.head.rotation.y=Math.sin(now*.0006+record.slot)*.07;}this.renderer.render(this.scene,this.camera);}
-  setActive(active){if(this.disposed)return;this.active=Boolean(active);if(this.frame!==null){globalThis.cancelAnimationFrame?.(this.frame);this.frame=null;}if(!this.active||!this.renderer)return;this.resize();if(this.reducedMotion){this._render(0);return;}const loop=now=>{if(!this.active||this.disposed)return;if(!this.lastFrame||now-this.lastFrame>1000/(this.container.clientWidth<600?30:60)){this.lastFrame=now;this._render(now);}this.frame=globalThis.requestAnimationFrame?.(loop)??null;};if(typeof requestAnimationFrame==='function')this.frame=requestAnimationFrame(loop);else this._render(0);}
-  dispose(){if(this.disposed)return;this.setActive(false);this.disposed=true;this.observer?.disconnect();const textures=new Set(this.lounge.userData.textureCache.values());this.lounge.traverse(object=>{for(const material of Array.isArray(object.material)?object.material:[object.material])if(material?.map)textures.add(material.map);});releaseTree(this.lounge);textures.forEach(t=>t.dispose());this.lounge.userData.textureCache.clear();this.lounge.clear();this.scene.traverse(object=>object.shadow?.dispose?.());this.renderer?.dispose();this.renderer?.forceContextLoss();this.renderer?.domElement.remove();this.fallback?.remove();this.renderer=null;}
+  resize(){if(!this.renderer||this.disposed)return;const width=Math.max(1,this.container?.clientWidth||1),height=Math.max(1,this.container?.clientHeight||1);this.renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,width<600?1:1.5));this.renderer.setSize(width,height,false);this.camera.aspect=width/height;if(this.walking)this._walkCamera();else {this.camera.position.set(5.8,5.1,8);if(this.camera.aspect<1.5)this.camera.position.set(8.4,6.8,11.8);this.camera.lookAt(0,1.1,0);}this.camera.updateProjectionMatrix();if(this.active)this._render(globalThis.performance?.now?.()??0);}
+  update(view){if(this.disposed)return;this.view=view;this._updateTableView();if(this.active)this._render(globalThis.performance?.now?.()??0);}
+  _updateTableView(){if(!this.view)return;let view=this.view;if(this.lobby){const seated=new Set((Array.isArray(this.lobby.players)?this.lobby.players:[]).filter(p=>p?.tableId===view.game).map(p=>p.id));view={...view,players:(Array.isArray(view.players)?view.players:[]).filter(p=>seated.has(p?.id))};}updateCasinoLounge(this.lounge,view);}
+  setLobby(lobby){if(this.disposed)return;this.lobby=lobby||{};const me=this.lobby.players?.find(p=>p.id===this.lobby.meId);if(me&&Number.isFinite(me.x)&&Number.isFinite(me.z)){if(this.localIdentity!==me.id||me.tableId||!this.walking||Math.hypot(this.localPosition.x-me.x,this.localPosition.z-me.z)>2){this.localPosition={x:me.x,z:me.z,heading:Number.isFinite(me.heading)?me.heading:Math.PI};}this.localIdentity=me.id;}updateCasinoHall(this.hall,this.lobby);this._updateTableView();const own=this.hall.userData.players.get(this.lobby.meId);if(own&&!own.sitting){own.group.position.set(this.localPosition.x,0,this.localPosition.z);own.group.rotation.y=this.localPosition.heading;}if(this.active)this._render(globalThis.performance?.now?.()??0);}
+  setWalking(walking){if(this.disposed||this.walking===Boolean(walking))return;this.walking=Boolean(walking);this.hall.visible=this.walking;this.lounge.visible=!this.walking;this.lastStep=null;this.setMoveInput({x:0,z:0});if(this.active)this.setActive(true);else this.resize();}
+  setMoveInput(input={}){input=input&&typeof input==='object'?input:{};this.moveInput.x=Number.isFinite(input.x)?THREE.MathUtils.clamp(input.x,-1,1):0;this.moveInput.z=Number.isFinite(input.z)?THREE.MathUtils.clamp(input.z,-1,1):0;}
+  nearestTable(){return nearestCasinoTable(this.localPosition,this.hall.userData.tables);}
+  interact(){const table=this.walking?this.nearestTable():null;if(table)this.onTable?.(table.id);return table?.id??null;}
+  _walkCamera(){const p=this.localPosition,mobile=this.camera.aspect<1;this.camera.position.set(p.x,mobile?7.4:6,p.z+(mobile?11:9));this.camera.lookAt(p.x,1,p.z-3);}
+  _walkStep(now){const dt=this.lastStep===null?0:Math.min(.1,Math.max(0,(now-this.lastStep)/1000));this.lastStep=now;animateCasinoHall(this.hall,dt,now,this.reducedMotion);const record=this.hall.userData.players.get(this.lobby?.meId);if(record&&!record.sitting){const previous=this.localPosition;this.localPosition=moveCasinoWalker(previous,this.moveInput,dt,this.hall.userData.tables);record.group.position.set(this.localPosition.x,0,this.localPosition.z);record.group.rotation.y=this.localPosition.heading;const moving=Math.hypot(this.localPosition.x-previous.x,this.localPosition.z-previous.z)>.0001;const rig=record.robot.userData.rig,cycle=moving&&!this.reducedMotion?Math.sin(now*.012)*.55:0;rig.leftLeg.rotation.x=cycle;rig.rightLeg.rotation.x=-cycle;rig.leftArm.rotation.x=-cycle*.6;rig.rightArm.rotation.x=cycle*.6;if(moving)this.moveDirty=true;if(this.moveDirty&&now-this.lastMoveSent>=100){this.lastMoveSent=now;this.moveDirty=false;this.onMove?.({...this.localPosition});}}this._walkCamera();}
+  _render(now){if(!this.renderer||this.disposed)return;if(this.walking){this._walkStep(now);this.renderer.render(this.scene,this.camera);return;}const data=this.lounge.userData;for(const card of data.cards.children){const target=card.userData.dealTarget;if(!target)continue;const t=this.reducedMotion?1:Math.min(1,Math.max(0,(now-card.userData.dealStarted)/550));card.position.set(THREE.MathUtils.lerp(0,target.x,t),THREE.MathUtils.lerp(1.65,target.y,t),THREE.MathUtils.lerp(-1.4,target.z,t));}const duration=this.reducedMotion?0:2800,t=duration?Math.min(1,Math.max(0,(now-data.spinStarted)/duration)):1;data.wheel.userData.rotor.rotation.y=THREE.MathUtils.lerp(data.spinFrom,data.spinTo,1-(1-t)**3);animateCasinoDealer(data.dealer,{time:this.reducedMotion?0:now/1000,...data.view});if(!this.reducedMotion)for(const record of data.players.values()){record.robot.userData.rig.head.rotation.y=Math.sin(now*.0006+record.slot)*.07;}this.renderer.render(this.scene,this.camera);}
+  setActive(active){if(this.disposed)return;this.active=Boolean(active);this.lastStep=null;if(this.frame!==null){globalThis.cancelAnimationFrame?.(this.frame);this.frame=null;}if(!this.active||!this.renderer)return;this.resize();if(this.reducedMotion&&!this.walking){this._render(0);return;}const loop=now=>{if(!this.active||this.disposed)return;if(!this.lastFrame||now-this.lastFrame>1000/(this.container.clientWidth<600?30:60)){this.lastFrame=now;this._render(now);}this.frame=globalThis.requestAnimationFrame?.(loop)??null;};if(typeof requestAnimationFrame==='function')this.frame=requestAnimationFrame(loop);else this._render(0);}
+  dispose(){if(this.disposed)return;this.setActive(false);this.disposed=true;this.observer?.disconnect();const textures=new Set(this.lounge.userData.textureCache.values());this.lounge.traverse(object=>{for(const material of Array.isArray(object.material)?object.material:[object.material])if(material?.map)textures.add(material.map);});this.hall.traverse(object=>{for(const material of Array.isArray(object.material)?object.material:[object.material])if(material?.map)textures.add(material.map);});releaseTree(this.hall);this.hall.clear();releaseTree(this.lounge);textures.forEach(t=>t.dispose());this.lounge.userData.textureCache.clear();this.lounge.clear();this.scene.traverse(object=>object.shadow?.dispose?.());this.renderer?.dispose();this.renderer?.forceContextLoss();this.renderer?.domElement.remove();this.fallback?.remove();this.renderer=null;}
 }
