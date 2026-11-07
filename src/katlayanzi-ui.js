@@ -313,7 +313,7 @@ export function mountKatlayanzi({ room, canEnter = () => false } = {}) {
         const label=element('label','katlayanzi-stake','Stake '),select=element('select','katlayanzi-stake-select');
         select.setAttribute('aria-label','Virtual chip stake');
         for(const amount of [5,25,50,100,250]){const option=element('option','',String(amount));option.value=String(amount);option.selected=stake===amount;select.append(option);}
-        select.addEventListener('change',()=>{stake=Number(select.value);});label.append(select);controls.append(label);
+        select.addEventListener('change',()=>{stake=Number(select.value);render();});label.append(select);controls.append(label);
         if(view.game!=='roulette'){const bet=button('Place bet','katlayanzi-primary');bet.addEventListener('click',()=>dispatch({type:'bet',amount:stake}));controls.append(bet);}
       }
       const deal=button(view.isHost?(view.game==='roulette'?'Spin wheel':'Deal cards'):'Waiting for host','katlayanzi-primary');
